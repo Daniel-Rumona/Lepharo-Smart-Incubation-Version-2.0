@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import GAPAnalysisForm from '@/routes/gap/new/form'
+import GapAnalysisLanding from '@/routes/incubatee/gap-analysis'
 
 const GAPAnalysisFormWrapper = () => {
   const { state } = useLocation()
@@ -9,17 +10,14 @@ const GAPAnalysisFormWrapper = () => {
   // here fought it for the same popstate event and hijacked "Leave" to
   // always land on /incubatee instead of wherever the SME actually came from.
 
+  // Opened directly rather than from a flow: show their results, or invite
+  // them to start.
   if (!state || !state.participantId) {
-    return <div>No participant data found.</div>
+    return <GapAnalysisLanding />
   }
 
-  return (
-    <GAPAnalysisForm
-      participantId={state.participantId}
-      prefillData={state.prefillData}
-      mode='incubatee'
-    />
-  )
+  // The form finds the SME's participant record from their email itself.
+  return <GAPAnalysisForm />
 }
 
 export default GAPAnalysisFormWrapper

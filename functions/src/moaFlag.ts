@@ -1,5 +1,5 @@
 // functions/src/moaFlag.ts
-import { onSchedule } from 'firebase-functions/v2/scheduler'
+import { scheduledJob } from "./cronHeartbeat";
 import { suppressRecordNotifications } from './syntheticData'
 import { admin, APP_BASE_URL, db, getTransporter } from './emailShared'
 import { notifyInApp, uidForParticipant } from './inAppNotifications'
@@ -35,7 +35,7 @@ async function resolveRecipient(data: any) {
  * the programme for 3+ months (and haven't signed MOA yet).
  * Also clears the flag if MOA is found later.
  */
-export const requireMoaAfter3Months = onSchedule(
+export const requireMoaAfter3Months = scheduledJob("requireMoaAfter3Months",
   { schedule: 'every 24 hours', timeZone: 'Africa/Johannesburg' },
   async () => {
     const threshold = threeMonthsAgo()

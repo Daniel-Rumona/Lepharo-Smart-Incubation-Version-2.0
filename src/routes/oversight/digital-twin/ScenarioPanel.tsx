@@ -10,8 +10,7 @@ import { useCentreStaffing } from './useCentreStaffing'
 import { buildCentreCapacity, describeHours, recentFacilitators, weeklyOpenHours, type CentreStaffing } from '@/services/digitalTwin/centreCapacity'
 import { scenarioAssumptions as buildScenario, suggestForGoal, type GoalSuggestion, type Levers } from '@/services/digitalTwin/goalSeek'
 import { PILOT, newSmeInterventionsBy } from '@/services/digitalTwin/pilotCalibration'
-import { parseScenarioIntent, type ScenarioIntent } from '@/services/digitalTwin/scenarioIntent'
-import { askScenarioIntent } from '@/services/digitalTwin/scenarioIntentApi'
+import type { ScenarioIntent } from '@/services/digitalTwin/scenarioIntent'
 import { captureSimulation, DEFAULT_ASSUMPTIONS, observedDelivery, observedInflow, simulate, type Assumptions, type SimulationResult, type SimulationSnapshot } from '@/services/digitalTwin/simulation'
 
 type Run = { snapshot: SimulationSnapshot; baselineAssumptions: Assumptions; scenarioAssumptions: Assumptions; baseline: SimulationResult; scenario: SimulationResult; inputsKey: string }
@@ -23,7 +22,7 @@ type Lever = { key: 'hours' | 'review' | 'intake' | 'cc' | 'me'; sliderMax: numb
 export function ScenarioPanel({ model, scope }: { model: ProcessModel; scope: string }) {
     // The scenario model and its levers are shared with the Overview scene; this page adds the editing UI around them.
     const { snapshot, setSnapshot, smeCount, inflow, assumptions, setAssumptions, set, extraHours, setExtraHours, extraSMEs, setExtraSMEs, scenarioWindows, setScenarioWindows, extraCc, setExtraCc, extraMe, setExtraMe,
-        run, setRun, error, setError, closedText, setClosedText, centreError, centres, centreOn, setCentreOn, share, setShare, setEdits, useCentre, effective, changed, currentLevers, parsedClosed } = useScenario()
+        run, setRun, error, setError, closedText, setClosedText, centreError, centres, centreOn, setCentreOn, share, setShare, setEdits, useCentre, effective, changed, currentLevers, parsedClosed, applyChange } = useScenario()
     const [settingsOpen, setSettingsOpen] = useState(false), [assumptionsOpen, setAssumptionsOpen] = useState(false)
     const [goalOpen, setGoalOpen] = useState(false)
     const [goalDate, setGoalDate] = useState(''), [goal, setGoal] = useState<GoalSuggestion | null>(null)
@@ -39,23 +38,12 @@ export function ScenarioPanel({ model, scope }: { model: ProcessModel; scope: st
         { key: 'me', sliderMax: 20, icon: <SafetyCertificateOutlined />, title: 'More M&E time', short: 'M&E time', plain: 'M&E has more time for its quality (ISO / QMS) validation.', unit: 'extra hours a week', min: 0, max: 100, label: 'Extra M&E hours per week', value: extraMe, onChange: setExtraMe, active: extraMe > 0, chip: `+${extraMe} h/wk` }
     ]
 
-    // A sentence becomes lever settings. Only the levers it mentions change; people are turned into hours using the centres' opening hours.
+    // A sentence becomes lever settings (see applyChange in ScenarioState).
     const describe = async (event: React.FormEvent) => {
         event.preventDefault()
         const text = intentText.trim(); if (!text || intentBusy) return
-        const openHours = centres.length ? centres.reduce((n, c) => n + weeklyOpenHours(c.hours), 0) / centres.length : 40
-        const context = { hoursPerCentreStaff: Math.round(openHours * share / 100 * 10) / 10, hoursPerMe: 40, hodWindows: assumptions.hodWindows }
         setIntentBusy(true)
-        // The assistant reads it when it can; the built-in rules take over when it is unavailable.
-        let intent: ScenarioIntent
-        try { intent = await askScenarioIntent(text, context) } catch { intent = parseScenarioIntent(text, context) }
-        const l = intent.levers
-        if (l.hours !== undefined) setExtraHours(l.hours)
-        if (l.cc !== undefined) setExtraCc(l.cc)
-        if (l.me !== undefined) setExtraMe(l.me)
-        if (l.hod !== undefined) setScenarioWindows(l.hod)
-        if (l.intake !== undefined) setExtraSMEs(l.intake)
-        if (intent.weeks !== undefined) set('weeks', intent.weeks)
+        const intent = await applyChange(text)
         setIntentNote(intent); setIntentText(''); setIntentBusy(false)
     }
 

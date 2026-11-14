@@ -65,8 +65,6 @@ const ROLE_OPTIONS = [
     'system_admin',
     'director',
     'projectadmin',
-    'projectmanager',
-    'consultant',
     'operations',
     'incubatee'
 ]

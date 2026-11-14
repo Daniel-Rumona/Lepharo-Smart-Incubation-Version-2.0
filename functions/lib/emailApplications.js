@@ -24,11 +24,11 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.taskDeadlineNotifier = exports.onTaskWriteSendEmails = exports.onApplicationDecisionEmail = exports.sendEmail = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const https_1 = require("firebase-functions/v2/https");
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const syntheticData_1 = require("./syntheticData");
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailHelpers_1 = require("./emailHelpers");
 const emailShared_1 = require("./emailShared");
 const inAppNotifications_1 = require("./inAppNotifications");
@@ -340,7 +340,7 @@ exports.onTaskWriteSendEmails = (0, firestore_1.onDocumentWritten)({ region: "us
         logger.error("onTaskWriteSendEmails.failed", { err: String(e) });
     }
 });
-exports.taskDeadlineNotifier = (0, scheduler_1.onSchedule)({
+exports.taskDeadlineNotifier = (0, cronHeartbeat_1.scheduledJob)("taskDeadlineNotifier", {
     region: "us-central1",
     schedule: "0 9,13,17 * * *",
     timeZone: "Africa/Johannesburg",

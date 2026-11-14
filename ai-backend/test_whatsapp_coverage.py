@@ -3,7 +3,7 @@ import unittest
 from lph_gateway import GatewayError
 from test_whatsapp_staff import HOD, FakeGateway, StaffWhatsAppTests
 
-EMPLOYEE = {**HOD, "role": "consultant", "roleGroup": "employee"}
+EMPLOYEE = {**HOD, "role": "employee", "roleGroup": "employee"}
 
 
 class CoverageGateway(FakeGateway):
@@ -68,7 +68,7 @@ class CoverageGateway(FakeGateway):
 class CoverageConversationTests(StaffWhatsAppTests):
     def test_facilitators_get_record_a_session_in_the_menu(self):
         self.assertIn("Record a session", self.send("hi", FakeGateway(EMPLOYEE)).reply)
-        self.assertIn("Record a session", self.send("hi", FakeGateway(HOD)).reply)
+        self.assertNotIn("Record a session", self.send("hi", FakeGateway(HOD)).reply, "HODs assign and verify; they rarely deliver")
 
     def test_the_menu_lists_sessions_waiting_for_coverage(self):
         response = self.send("lph:menu:top:3", CoverageGateway())

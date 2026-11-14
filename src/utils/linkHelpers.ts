@@ -13,5 +13,5 @@ export const Links = {
   incubatee: () => portalLink("/incubatee"),
   signedDocs: () => portalLink("/incubatee/compliance"),
   docsHub: () => portalLink("/incubatee/documents/hub"),
-  interventions: () => portalLink("/consultant/allocated"),
+  interventions: () => portalLink("/incubatee/interventions"),
 };

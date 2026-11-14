@@ -98,7 +98,7 @@ export interface User {
 export type BranchScopedRole = 'receptionist' | 'projectadmin';
 export type DepartmentScopedRole = 'operations';
 export type CompanyScopedRole = 'system_admin' | 'director';
-export type GlobalScopedRole = 'consultant' | 'incubatee' | 'funder' | 'government';
+export type GlobalScopedRole = 'incubatee' | 'funder' | 'government';
 
 export interface BranchScopedUser extends User {
   role: BranchScopedRole;

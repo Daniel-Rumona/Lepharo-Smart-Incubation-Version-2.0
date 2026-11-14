@@ -24,18 +24,18 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.refreshInterventionImpact = exports.interventionImpactCron = exports.runInterventionImpact = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const https_1 = require("firebase-functions/v2/https");
 const firebase_1 = require("./firebase");
 const syntheticData_1 = require("./syntheticData");
 const impactLogic_1 = require("./impactLogic");
 /**
- * Monthly "which interventions are working" job. Reads revenue (QuantNow sync in
- * participantMonthlyMetrics, falling back to the SME's own monthlyPerformance
- * history), SME-confirmed completions and their check-back outcomes, and writes one
- * interventionImpact/{programId}__{interventionId} document per pair with the
- * measured lift (impactLogic.ts). Demo (seeded) data is included and marked
+ * Monthly "which interventions are working" job. Reads revenue and jobs (QuantNow
+ * sync in participantMonthlyMetrics, falling back to the SME's own
+ * monthlyPerformance history), SME-confirmed completions and their check-back
+ * outcomes, and writes one interventionImpact/{programId}__{interventionId}__{metric}
+ * document per pair and measure with the measured lift (impactLogic.ts). Demo (seeded) data is included and marked
  * `demo: true`, so the method can be proven on the test project and the same code
  * reports real results once real revenue arrives.
  */
@@ -50,6 +50,12 @@ const monthOfDate = (value) => {
     return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 7) : "";
 };
 const SME_CONFIRMED = ["confirmed", "done", "completed"];
+const METRICS = ["revenue", "jobs"];
+/** Permanent plus temporary staff, or NaN when neither was reported. */
+const jobsOf = (permanent, temporary) => {
+    const known = [permanent, temporary].filter((value) => value !== undefined && value !== null && value !== "");
+    return known.length ? known.reduce((sum, value) => sum + Number(value), 0) : NaN;
+};
 const OUTCOMES = ["achieved", "partial", "not_yet"];
 async function runInterventionImpact() {
     const [applicationsSnapshot, participantsSnapshot, metricsSnapshot, historySnapshot, assignmentsSnapshot] = await Promise.all([
@@ -60,20 +66,23 @@ async function runInterventionImpact() {
         firebase_1.db.collection("assignedInterventions").get(),
     ]);
     const participants = new Map(participantsSnapshot.docs.map((doc) => [doc.id, doc.data()]));
-    const revenue = new Map();
-    const put = (participantId, month, value, overwrite) => {
+    const series = { revenue: new Map(), jobs: new Map() };
+    const put = (metric, participantId, month, value, overwrite) => {
         if (!participantId || !isMonth(month) || !Number.isFinite(value))
             return;
-        const series = revenue.get(participantId) || {};
-        if (overwrite || series[month] === undefined)
-            series[month] = value;
-        revenue.set(participantId, series);
+        const values = series[metric].get(participantId) || {};
+        if (overwrite || values[month] === undefined)
+            values[month] = value;
+        series[metric].set(participantId, values);
     };
     // QuantNow is the system of record; the SME's own report only fills gaps.
     metricsSnapshot.docs.forEach((doc) => {
         const row = doc.data();
         const month = isMonth(clean(row.sourceMonth)) ? clean(row.sourceMonth) : monthOfDate(row.createdAt);
-        put(clean(row.participantId), month, Number(row.monthlyRevenue), true);
+        const participantId = clean(row.participantId);
+        if (row.monthlyRevenue !== undefined && row.monthlyRevenue !== null)
+            put("revenue", participantId, month, Number(row.monthlyRevenue), true);
+        put("jobs", participantId, month, jobsOf(row.headcountPermanent, row.headcountTemporary), true);
     });
     historySnapshot.docs.forEach((doc) => {
         const parent = doc.ref.parent.parent;
@@ -82,7 +91,8 @@ async function runInterventionImpact() {
         const row = doc.data();
         const month = isMonth(clean(row.month)) ? clean(row.month) : monthOfDate(row.createdAt);
         if (row.revenue !== undefined && row.revenue !== null)
-            put(parent.id, month, Number(row.revenue), false);
+            put("revenue", parent.id, month, Number(row.revenue), false);
+        put("jobs", parent.id, month, jobsOf(row.headPermanent, row.headTemporary), false);
     });
     const smes = [];
     const programOf = new Map();
@@ -99,7 +109,6 @@ async function runInterventionImpact() {
             programId,
             sector: lower(participant.sector || participant.industry),
             synthetic: (0, syntheticData_1.isSyntheticData)(participant, participantId) || (0, syntheticData_1.isSyntheticData)(application, doc.id),
-            revenue: revenue.get(participantId) || {},
         });
     }
     const treatments = [];
@@ -123,11 +132,12 @@ async function runInterventionImpact() {
             outcome: OUTCOMES.includes(outcome) ? outcome : null,
         });
     }
-    const results = (0, impactLogic_1.measureAll)(smes, treatments);
+    const results = METRICS.flatMap((metric) => (0, impactLogic_1.measureAll)(smes.map((sme) => ({ ...sme, values: series[metric].get(sme.id) || {} })), treatments, undefined, metric));
     const runId = new Date().toISOString();
-    const keep = new Set(results.map((result) => `${result.programId}__${result.interventionId}`));
+    const docId = (result) => `${result.programId}__${result.interventionId}__${result.metric}`;
+    const keep = new Set(results.map(docId));
     const writes = results.map((result) => ({
-        ref: firebase_1.db.collection(RESULTS).doc(`${result.programId}__${result.interventionId}`),
+        ref: firebase_1.db.collection(RESULTS).doc(docId(result)),
         data: { ...result, runId, computedAt: firebase_1.admin.firestore.FieldValue.serverTimestamp() },
     }));
     const stale = (await firebase_1.db.collection(RESULTS).get()).docs.filter((doc) => !keep.has(doc.id));
@@ -145,7 +155,8 @@ async function runInterventionImpact() {
         pairs: results.length,
         reportable: results.filter((result) => result.status === "reportable").length,
         early: results.filter((result) => result.status === "early").length,
-        smesWithRevenue: smes.filter((sme) => Object.keys(sme.revenue).length > 0).length,
+        smesWithRevenue: smes.filter((sme) => Object.keys(series.revenue.get(sme.id) || {}).length > 0).length,
+        smesWithJobs: smes.filter((sme) => Object.keys(series.jobs.get(sme.id) || {}).length > 0).length,
         completions: treatments.length,
         runId,
     };
@@ -157,7 +168,7 @@ async function runInterventionImpact() {
     return summary;
 }
 exports.runInterventionImpact = runInterventionImpact;
-exports.interventionImpactCron = (0, scheduler_1.onSchedule)({
+exports.interventionImpactCron = (0, cronHeartbeat_1.scheduledJob)("interventionImpact", {
     region: "us-central1",
     schedule: "30 5 1 * *",
     timeZone: "Africa/Johannesburg",

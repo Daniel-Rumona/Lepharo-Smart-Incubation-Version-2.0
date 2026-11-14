@@ -31,6 +31,7 @@ import {
 import { motion, useReducedMotion } from 'framer-motion'
 
 import type { RiskLevel, SMERow } from '../types'
+import { RISK_LEVEL_COLORS, RISK_LEVEL_TINTS } from '../riskEngine'
 import {
     buildPortfolioRiskChartOptions,
     type ChartTheme
@@ -111,26 +112,12 @@ function PortfolioRiskPanel({
         color: string
         background: string
     }> = [
-            {
-                level: 'Critical',
-                color: token.colorError,
-                background: token.colorErrorBg
-            },
-            {
-                level: 'High',
-                color: token.colorWarningActive,
-                background: token.colorWarningBg
-            },
-            {
-                level: 'Medium',
-                color: token.colorWarning,
-                background: token.colorWarningBg
-            },
-            {
-                level: 'Low',
-                color: token.colorSuccess,
-                background: token.colorSuccessBg
-            }
+            // The same palette as the gauge, so a card always matches its segment.
+            ...(['Critical', 'High', 'Medium', 'Low'] as RiskLevel[]).map(level => ({
+                level,
+                color: RISK_LEVEL_COLORS[level],
+                background: RISK_LEVEL_TINTS[level]
+            }))
         ]
 
     const visibleCount = levels.reduce(
@@ -1336,13 +1323,14 @@ function DepartmentRiskPressurePanel({
     )
 }
 
-export default function AnalyticsModal({
-    open,
-    onClose,
+/**
+ * The analytics panels on their own: shown in this modal on the risk register,
+ * and inline as the Risk tab of the M&E reports.
+ */
+export function RiskAnalyticsContent({
     isDepartmentScopedView,
-    departmentScopeLabel,
     rows
-}: Props) {
+}: Pick<Props, 'isDepartmentScopedView' | 'rows'>) {
     const { token } = theme.useToken()
     const shouldReduceMotion =
         useReducedMotion()
@@ -1351,9 +1339,10 @@ export default function AnalyticsModal({
         () => ({
             primary: token.colorPrimary,
             success: token.colorSuccess,
-            mediumRisk: token.colorWarning,
-            highRisk: token.colorErrorActive,
-            criticalRisk: token.colorError,
+            mediumRisk: RISK_LEVEL_COLORS.Medium,
+            highRisk: RISK_LEVEL_COLORS.High,
+            criticalRisk: RISK_LEVEL_COLORS.Critical,
+            lowRisk: RISK_LEVEL_COLORS.Low,
             text: token.colorText,
             mutedText:
                 token.colorTextSecondary,
@@ -1376,6 +1365,69 @@ export default function AnalyticsModal({
         ]
     )
 
+    return (
+        <Row
+            gutter={[12, 12]}
+            align="top"
+        >
+            <Col xs={24} xl={8}>
+                <Space
+                    direction="vertical"
+                    size={12}
+                    style={{ width: '100%' }}
+                >
+                    <PortfolioRiskPanel
+                        rows={rows}
+                        chartTheme={chartTheme}
+                        shouldReduceMotion={
+                            shouldReduceMotion
+                        }
+                    />
+
+                    <RiskDriversPanel
+                        rows={rows}
+                        shouldReduceMotion={
+                            shouldReduceMotion
+                        }
+                    />
+                </Space>
+            </Col>
+
+            <Col xs={24} xl={16}>
+                <Space
+                    direction="vertical"
+                    size={12}
+                    style={{ width: '100%' }}
+                >
+                    <ServiceReadinessFlow
+                        rows={rows}
+                        shouldReduceMotion={
+                            shouldReduceMotion
+                        }
+                    />
+
+                    <DepartmentRiskPressurePanel
+                        rows={rows}
+                        isDepartmentScopedView={
+                            isDepartmentScopedView
+                        }
+                        shouldReduceMotion={
+                            shouldReduceMotion
+                        }
+                    />
+                </Space>
+            </Col>
+        </Row>
+    )
+}
+
+export default function AnalyticsModal({
+    open,
+    onClose,
+    isDepartmentScopedView,
+    departmentScopeLabel,
+    rows
+}: Props) {
     return (
         <Modal
             open={open}
@@ -1435,58 +1487,10 @@ export default function AnalyticsModal({
                 </div>
             }
         >
-            <Row
-                gutter={[12, 12]}
-                align="top"
-            >
-                <Col xs={24} xl={8}>
-                    <Space
-                        direction="vertical"
-                        size={12}
-                        style={{ width: '100%' }}
-                    >
-                        <PortfolioRiskPanel
-                            rows={rows}
-                            chartTheme={chartTheme}
-                            shouldReduceMotion={
-                                shouldReduceMotion
-                            }
-                        />
-
-                        <RiskDriversPanel
-                            rows={rows}
-                            shouldReduceMotion={
-                                shouldReduceMotion
-                            }
-                        />
-                    </Space>
-                </Col>
-
-                <Col xs={24} xl={16}>
-                    <Space
-                        direction="vertical"
-                        size={12}
-                        style={{ width: '100%' }}
-                    >
-                        <ServiceReadinessFlow
-                            rows={rows}
-                            shouldReduceMotion={
-                                shouldReduceMotion
-                            }
-                        />
-
-                        <DepartmentRiskPressurePanel
-                            rows={rows}
-                            isDepartmentScopedView={
-                                isDepartmentScopedView
-                            }
-                            shouldReduceMotion={
-                                shouldReduceMotion
-                            }
-                        />
-                    </Space>
-                </Col>
-            </Row>
+            <RiskAnalyticsContent
+                rows={rows}
+                isDepartmentScopedView={isDepartmentScopedView}
+            />
         </Modal>
     )
 }

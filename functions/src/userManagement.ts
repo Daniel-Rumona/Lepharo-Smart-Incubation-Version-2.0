@@ -190,7 +190,6 @@ export const createPlatformUser = onRequest(
     const role = toBackendRole(body.role)
     const HR_ALLOWED_TARGET_ROLES = new Set([
       "operations",
-      "projectmanager",
       "coordinator",
       "projectadmin",
       "receptionist",
@@ -205,7 +204,7 @@ export const createPlatformUser = onRequest(
     if (
       callerRole === "operations" &&
       !callerIsHrManager &&
-      !new Set(["coordinator", "projectmanager", "training_sme"]).has(role)
+      !new Set(["coordinator", "training_sme"]).has(role)
     ) {
       res.status(403).json({ ok: false, error: "invalid_role_for_creator" })
       return

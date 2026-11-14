@@ -1,0 +1,1897 @@
+{
+  "snapshot": {
+    "modelVersion": "pooled-process-capacity-1.0",
+    "startAt": 1791496800000,
+    "scope": "[DEMO Twin] Incubation Foundations / yYA7BNWDc6muS0FnhiaO / all",
+    "units": [
+      {
+        "id": "mov:dtseed_20261009_v1_mov_001_1",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_001_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_001_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_001_4",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_003_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_005_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_007_2",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_007_5",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_009_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_011_4",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_011_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_013_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_015_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_015_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_015_4",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_017_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_019_1",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_019_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_019_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_019_4",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_021_1",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_021_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_021_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_021_4",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_023_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_025_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_027_2",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_027_5",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_029_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_031_4",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_031_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_033_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_035_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_035_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_035_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_037_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_039_1",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_039_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_039_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_039_4",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_041_1",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_041_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_041_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_041_4",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_043_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_045_1",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_045_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_047_2",
+        "stage": "hod",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_049_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_051_4",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_051_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_053_5",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_055_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_055_4",
+        "stage": "me",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_057_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_059_2",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      },
+      {
+        "id": "mov:dtseed_20261009_v1_mov_059_3",
+        "stage": "cc",
+        "members": 1,
+        "releaseDay": 0
+      }
+    ],
+    "excluded": {
+      "Awaiting action: Awaiting Appointment Response": 11,
+      "Awaiting action: Cancelled": 9,
+      "Awaiting action: Needs Reassignment": 9,
+      "Awaiting action: Appointment Declined": 6,
+      "Evidence not ready: Draft": 6,
+      "Evidence not ready: Awaiting SME confirmation": 9,
+      "Evidence not ready: Queried": 9,
+      "Evidence not ready: Rejected": 6
+    },
+    "synthetic": true,
+    "id": "a4d39fff",
+    "capturedAt": 1791565809899
+  },
+  "baselineAssumptions": {
+    "weeks": 8,
+    "deliveryHours": 16,
+    "serviceMinutes": 60,
+    "hodWindows": 2,
+    "hodWindowMinutes": 60,
+    "reviewMinutes": 15,
+    "ccHours": 2,
+    "meHours": 2,
+    "intake": 0,
+    "intakeGroupSize": 1,
+    "intakeWeeks": 4,
+    "closedDates": []
+  },
+  "scenarioAssumptions": {
+    "weeks": 8,
+    "deliveryHours": 24,
+    "serviceMinutes": 60,
+    "hodWindows": 3,
+    "hodWindowMinutes": 60,
+    "reviewMinutes": 15,
+    "ccHours": 2,
+    "meHours": 2,
+    "intake": 30,
+    "intakeGroupSize": 1,
+    "intakeWeeks": 4,
+    "closedDates": []
+  },
+  "baseline": {
+    "version": "pooled-process-capacity-1.0",
+    "snapshotId": "a4d39fff",
+    "demand": 57,
+    "verified": 57,
+    "backlog": 0,
+    "delivered": 0,
+    "sessionsDelivered": 0,
+    "meanStartedQueueWaitDays": 11.864864864864865,
+    "minutesUsed": {
+      "delivery": 0,
+      "hod": 90,
+      "cc": 720,
+      "me": 855
+    },
+    "minutesAvailable": {
+      "delivery": 7680,
+      "hod": 960,
+      "cc": 960,
+      "me": 960
+    },
+    "days": [
+      {
+        "day": 0,
+        "date": "2026-10-09",
+        "backlog": 56,
+        "verified": 1,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 2,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 1,
+        "date": "2026-10-10",
+        "backlog": 56,
+        "verified": 1,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 2,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 2,
+        "date": "2026-10-11",
+        "backlog": 56,
+        "verified": 1,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 2,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 3,
+        "date": "2026-10-12",
+        "backlog": 54,
+        "verified": 3,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 2,
+          "cc": 43,
+          "me": 9
+        }
+      },
+      {
+        "day": 4,
+        "date": "2026-10-13",
+        "backlog": 53,
+        "verified": 4,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 2,
+          "cc": 42,
+          "me": 9
+        }
+      },
+      {
+        "day": 5,
+        "date": "2026-10-14",
+        "backlog": 51,
+        "verified": 6,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 42,
+          "me": 9
+        }
+      },
+      {
+        "day": 6,
+        "date": "2026-10-15",
+        "backlog": 49,
+        "verified": 8,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 40,
+          "me": 9
+        }
+      },
+      {
+        "day": 7,
+        "date": "2026-10-16",
+        "backlog": 48,
+        "verified": 9,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 39,
+          "me": 9
+        }
+      },
+      {
+        "day": 8,
+        "date": "2026-10-17",
+        "backlog": 48,
+        "verified": 9,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 39,
+          "me": 9
+        }
+      },
+      {
+        "day": 9,
+        "date": "2026-10-18",
+        "backlog": 48,
+        "verified": 9,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 39,
+          "me": 9
+        }
+      },
+      {
+        "day": 10,
+        "date": "2026-10-19",
+        "backlog": 46,
+        "verified": 11,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 37,
+          "me": 9
+        }
+      },
+      {
+        "day": 11,
+        "date": "2026-10-20",
+        "backlog": 45,
+        "verified": 12,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 36,
+          "me": 9
+        }
+      },
+      {
+        "day": 12,
+        "date": "2026-10-21",
+        "backlog": 43,
+        "verified": 14,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 34,
+          "me": 9
+        }
+      },
+      {
+        "day": 13,
+        "date": "2026-10-22",
+        "backlog": 41,
+        "verified": 16,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 32,
+          "me": 9
+        }
+      },
+      {
+        "day": 14,
+        "date": "2026-10-23",
+        "backlog": 40,
+        "verified": 17,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 31,
+          "me": 9
+        }
+      },
+      {
+        "day": 15,
+        "date": "2026-10-24",
+        "backlog": 40,
+        "verified": 17,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 31,
+          "me": 9
+        }
+      },
+      {
+        "day": 16,
+        "date": "2026-10-25",
+        "backlog": 40,
+        "verified": 17,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 31,
+          "me": 9
+        }
+      },
+      {
+        "day": 17,
+        "date": "2026-10-26",
+        "backlog": 38,
+        "verified": 19,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 29,
+          "me": 9
+        }
+      },
+      {
+        "day": 18,
+        "date": "2026-10-27",
+        "backlog": 37,
+        "verified": 20,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 28,
+          "me": 9
+        }
+      },
+      {
+        "day": 19,
+        "date": "2026-10-28",
+        "backlog": 35,
+        "verified": 22,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 26,
+          "me": 9
+        }
+      },
+      {
+        "day": 20,
+        "date": "2026-10-29",
+        "backlog": 33,
+        "verified": 24,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 24,
+          "me": 9
+        }
+      },
+      {
+        "day": 21,
+        "date": "2026-10-30",
+        "backlog": 32,
+        "verified": 25,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 23,
+          "me": 9
+        }
+      },
+      {
+        "day": 22,
+        "date": "2026-10-31",
+        "backlog": 32,
+        "verified": 25,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 23,
+          "me": 9
+        }
+      },
+      {
+        "day": 23,
+        "date": "2026-11-01",
+        "backlog": 32,
+        "verified": 25,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 23,
+          "me": 9
+        }
+      },
+      {
+        "day": 24,
+        "date": "2026-11-02",
+        "backlog": 30,
+        "verified": 27,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 21,
+          "me": 9
+        }
+      },
+      {
+        "day": 25,
+        "date": "2026-11-03",
+        "backlog": 29,
+        "verified": 28,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 20,
+          "me": 9
+        }
+      },
+      {
+        "day": 26,
+        "date": "2026-11-04",
+        "backlog": 27,
+        "verified": 30,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 18,
+          "me": 9
+        }
+      },
+      {
+        "day": 27,
+        "date": "2026-11-05",
+        "backlog": 25,
+        "verified": 32,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 16,
+          "me": 9
+        }
+      },
+      {
+        "day": 28,
+        "date": "2026-11-06",
+        "backlog": 24,
+        "verified": 33,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 15,
+          "me": 9
+        }
+      },
+      {
+        "day": 29,
+        "date": "2026-11-07",
+        "backlog": 24,
+        "verified": 33,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 15,
+          "me": 9
+        }
+      },
+      {
+        "day": 30,
+        "date": "2026-11-08",
+        "backlog": 24,
+        "verified": 33,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 15,
+          "me": 9
+        }
+      },
+      {
+        "day": 31,
+        "date": "2026-11-09",
+        "backlog": 22,
+        "verified": 35,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 13,
+          "me": 9
+        }
+      },
+      {
+        "day": 32,
+        "date": "2026-11-10",
+        "backlog": 21,
+        "verified": 36,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 12,
+          "me": 9
+        }
+      },
+      {
+        "day": 33,
+        "date": "2026-11-11",
+        "backlog": 19,
+        "verified": 38,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 10,
+          "me": 9
+        }
+      },
+      {
+        "day": 34,
+        "date": "2026-11-12",
+        "backlog": 17,
+        "verified": 40,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 8,
+          "me": 9
+        }
+      },
+      {
+        "day": 35,
+        "date": "2026-11-13",
+        "backlog": 16,
+        "verified": 41,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 7,
+          "me": 9
+        }
+      },
+      {
+        "day": 36,
+        "date": "2026-11-14",
+        "backlog": 16,
+        "verified": 41,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 7,
+          "me": 9
+        }
+      },
+      {
+        "day": 37,
+        "date": "2026-11-15",
+        "backlog": 16,
+        "verified": 41,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 7,
+          "me": 9
+        }
+      },
+      {
+        "day": 38,
+        "date": "2026-11-16",
+        "backlog": 14,
+        "verified": 43,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 5,
+          "me": 9
+        }
+      },
+      {
+        "day": 39,
+        "date": "2026-11-17",
+        "backlog": 13,
+        "verified": 44,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 4,
+          "me": 9
+        }
+      },
+      {
+        "day": 40,
+        "date": "2026-11-18",
+        "backlog": 11,
+        "verified": 46,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 2,
+          "me": 9
+        }
+      },
+      {
+        "day": 41,
+        "date": "2026-11-19",
+        "backlog": 9,
+        "verified": 48,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 9
+        }
+      },
+      {
+        "day": 42,
+        "date": "2026-11-20",
+        "backlog": 8,
+        "verified": 49,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 8
+        }
+      },
+      {
+        "day": 43,
+        "date": "2026-11-21",
+        "backlog": 8,
+        "verified": 49,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 8
+        }
+      },
+      {
+        "day": 44,
+        "date": "2026-11-22",
+        "backlog": 8,
+        "verified": 49,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 8
+        }
+      },
+      {
+        "day": 45,
+        "date": "2026-11-23",
+        "backlog": 6,
+        "verified": 51,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 6
+        }
+      },
+      {
+        "day": 46,
+        "date": "2026-11-24",
+        "backlog": 5,
+        "verified": 52,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 5
+        }
+      },
+      {
+        "day": 47,
+        "date": "2026-11-25",
+        "backlog": 3,
+        "verified": 54,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 3
+        }
+      },
+      {
+        "day": 48,
+        "date": "2026-11-26",
+        "backlog": 1,
+        "verified": 56,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 1
+        }
+      },
+      {
+        "day": 49,
+        "date": "2026-11-27",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 50,
+        "date": "2026-11-28",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 51,
+        "date": "2026-11-29",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 52,
+        "date": "2026-11-30",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 53,
+        "date": "2026-12-01",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 54,
+        "date": "2026-12-02",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      },
+      {
+        "day": 55,
+        "date": "2026-12-03",
+        "backlog": 0,
+        "verified": 57,
+        "delivered": 0,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 0,
+          "me": 0
+        }
+      }
+    ]
+  },
+  "scenario": {
+    "version": "pooled-process-capacity-1.0",
+    "snapshotId": "a4d39fff",
+    "demand": 87,
+    "verified": 64,
+    "backlog": 23,
+    "delivered": 30,
+    "sessionsDelivered": 30,
+    "meanStartedQueueWaitDays": 10.762886597938145,
+    "minutesUsed": {
+      "delivery": 1800,
+      "hod": 540,
+      "cc": 960,
+      "me": 960
+    },
+    "minutesAvailable": {
+      "delivery": 11520,
+      "hod": 1440,
+      "cc": 960,
+      "me": 960
+    },
+    "days": [
+      {
+        "day": 0,
+        "date": "2026-10-09",
+        "backlog": 86,
+        "verified": 1,
+        "delivered": 4,
+        "queues": {
+          "delivery": 26,
+          "hod": 6,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 1,
+        "date": "2026-10-10",
+        "backlog": 86,
+        "verified": 1,
+        "delivered": 4,
+        "queues": {
+          "delivery": 26,
+          "hod": 6,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 2,
+        "date": "2026-10-11",
+        "backlog": 86,
+        "verified": 1,
+        "delivered": 4,
+        "queues": {
+          "delivery": 26,
+          "hod": 6,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 3,
+        "date": "2026-10-12",
+        "backlog": 84,
+        "verified": 3,
+        "delivered": 8,
+        "queues": {
+          "delivery": 22,
+          "hod": 10,
+          "cc": 43,
+          "me": 9
+        }
+      },
+      {
+        "day": 4,
+        "date": "2026-10-13",
+        "backlog": 83,
+        "verified": 4,
+        "delivered": 8,
+        "queues": {
+          "delivery": 22,
+          "hod": 6,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 5,
+        "date": "2026-10-14",
+        "backlog": 81,
+        "verified": 6,
+        "delivered": 8,
+        "queues": {
+          "delivery": 22,
+          "hod": 6,
+          "cc": 44,
+          "me": 9
+        }
+      },
+      {
+        "day": 6,
+        "date": "2026-10-15",
+        "backlog": 79,
+        "verified": 8,
+        "delivered": 8,
+        "queues": {
+          "delivery": 22,
+          "hod": 2,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 7,
+        "date": "2026-10-16",
+        "backlog": 78,
+        "verified": 9,
+        "delivered": 12,
+        "queues": {
+          "delivery": 18,
+          "hod": 4,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 8,
+        "date": "2026-10-17",
+        "backlog": 78,
+        "verified": 9,
+        "delivered": 12,
+        "queues": {
+          "delivery": 18,
+          "hod": 4,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 9,
+        "date": "2026-10-18",
+        "backlog": 78,
+        "verified": 9,
+        "delivered": 12,
+        "queues": {
+          "delivery": 18,
+          "hod": 4,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 10,
+        "date": "2026-10-19",
+        "backlog": 76,
+        "verified": 11,
+        "delivered": 15,
+        "queues": {
+          "delivery": 15,
+          "hod": 7,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 11,
+        "date": "2026-10-20",
+        "backlog": 75,
+        "verified": 12,
+        "delivered": 15,
+        "queues": {
+          "delivery": 15,
+          "hod": 3,
+          "cc": 48,
+          "me": 9
+        }
+      },
+      {
+        "day": 12,
+        "date": "2026-10-21",
+        "backlog": 73,
+        "verified": 14,
+        "delivered": 15,
+        "queues": {
+          "delivery": 15,
+          "hod": 3,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 13,
+        "date": "2026-10-22",
+        "backlog": 71,
+        "verified": 16,
+        "delivered": 15,
+        "queues": {
+          "delivery": 15,
+          "hod": 0,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 14,
+        "date": "2026-10-23",
+        "backlog": 70,
+        "verified": 17,
+        "delivered": 19,
+        "queues": {
+          "delivery": 11,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 15,
+        "date": "2026-10-24",
+        "backlog": 70,
+        "verified": 17,
+        "delivered": 19,
+        "queues": {
+          "delivery": 11,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 16,
+        "date": "2026-10-25",
+        "backlog": 70,
+        "verified": 17,
+        "delivered": 19,
+        "queues": {
+          "delivery": 11,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 17,
+        "date": "2026-10-26",
+        "backlog": 68,
+        "verified": 19,
+        "delivered": 23,
+        "queues": {
+          "delivery": 7,
+          "hod": 8,
+          "cc": 44,
+          "me": 9
+        }
+      },
+      {
+        "day": 18,
+        "date": "2026-10-27",
+        "backlog": 67,
+        "verified": 20,
+        "delivered": 23,
+        "queues": {
+          "delivery": 7,
+          "hod": 4,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 19,
+        "date": "2026-10-28",
+        "backlog": 65,
+        "verified": 22,
+        "delivered": 23,
+        "queues": {
+          "delivery": 7,
+          "hod": 4,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 20,
+        "date": "2026-10-29",
+        "backlog": 63,
+        "verified": 24,
+        "delivered": 23,
+        "queues": {
+          "delivery": 7,
+          "hod": 0,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 21,
+        "date": "2026-10-30",
+        "backlog": 62,
+        "verified": 25,
+        "delivered": 27,
+        "queues": {
+          "delivery": 3,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 22,
+        "date": "2026-10-31",
+        "backlog": 62,
+        "verified": 25,
+        "delivered": 27,
+        "queues": {
+          "delivery": 3,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 23,
+        "date": "2026-11-01",
+        "backlog": 62,
+        "verified": 25,
+        "delivered": 27,
+        "queues": {
+          "delivery": 3,
+          "hod": 4,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 24,
+        "date": "2026-11-02",
+        "backlog": 60,
+        "verified": 27,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 7,
+          "cc": 44,
+          "me": 9
+        }
+      },
+      {
+        "day": 25,
+        "date": "2026-11-03",
+        "backlog": 59,
+        "verified": 28,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 3,
+          "cc": 47,
+          "me": 9
+        }
+      },
+      {
+        "day": 26,
+        "date": "2026-11-04",
+        "backlog": 57,
+        "verified": 30,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 3,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 27,
+        "date": "2026-11-05",
+        "backlog": 55,
+        "verified": 32,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 46,
+          "me": 9
+        }
+      },
+      {
+        "day": 28,
+        "date": "2026-11-06",
+        "backlog": 54,
+        "verified": 33,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 29,
+        "date": "2026-11-07",
+        "backlog": 54,
+        "verified": 33,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 30,
+        "date": "2026-11-08",
+        "backlog": 54,
+        "verified": 33,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 45,
+          "me": 9
+        }
+      },
+      {
+        "day": 31,
+        "date": "2026-11-09",
+        "backlog": 52,
+        "verified": 35,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 43,
+          "me": 9
+        }
+      },
+      {
+        "day": 32,
+        "date": "2026-11-10",
+        "backlog": 51,
+        "verified": 36,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 42,
+          "me": 9
+        }
+      },
+      {
+        "day": 33,
+        "date": "2026-11-11",
+        "backlog": 49,
+        "verified": 38,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 40,
+          "me": 9
+        }
+      },
+      {
+        "day": 34,
+        "date": "2026-11-12",
+        "backlog": 47,
+        "verified": 40,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 38,
+          "me": 9
+        }
+      },
+      {
+        "day": 35,
+        "date": "2026-11-13",
+        "backlog": 46,
+        "verified": 41,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 37,
+          "me": 9
+        }
+      },
+      {
+        "day": 36,
+        "date": "2026-11-14",
+        "backlog": 46,
+        "verified": 41,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 37,
+          "me": 9
+        }
+      },
+      {
+        "day": 37,
+        "date": "2026-11-15",
+        "backlog": 46,
+        "verified": 41,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 37,
+          "me": 9
+        }
+      },
+      {
+        "day": 38,
+        "date": "2026-11-16",
+        "backlog": 44,
+        "verified": 43,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 35,
+          "me": 9
+        }
+      },
+      {
+        "day": 39,
+        "date": "2026-11-17",
+        "backlog": 43,
+        "verified": 44,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 34,
+          "me": 9
+        }
+      },
+      {
+        "day": 40,
+        "date": "2026-11-18",
+        "backlog": 41,
+        "verified": 46,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 32,
+          "me": 9
+        }
+      },
+      {
+        "day": 41,
+        "date": "2026-11-19",
+        "backlog": 39,
+        "verified": 48,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 30,
+          "me": 9
+        }
+      },
+      {
+        "day": 42,
+        "date": "2026-11-20",
+        "backlog": 38,
+        "verified": 49,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 29,
+          "me": 9
+        }
+      },
+      {
+        "day": 43,
+        "date": "2026-11-21",
+        "backlog": 38,
+        "verified": 49,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 29,
+          "me": 9
+        }
+      },
+      {
+        "day": 44,
+        "date": "2026-11-22",
+        "backlog": 38,
+        "verified": 49,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 29,
+          "me": 9
+        }
+      },
+      {
+        "day": 45,
+        "date": "2026-11-23",
+        "backlog": 36,
+        "verified": 51,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 27,
+          "me": 9
+        }
+      },
+      {
+        "day": 46,
+        "date": "2026-11-24",
+        "backlog": 35,
+        "verified": 52,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 26,
+          "me": 9
+        }
+      },
+      {
+        "day": 47,
+        "date": "2026-11-25",
+        "backlog": 33,
+        "verified": 54,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 24,
+          "me": 9
+        }
+      },
+      {
+        "day": 48,
+        "date": "2026-11-26",
+        "backlog": 31,
+        "verified": 56,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 22,
+          "me": 9
+        }
+      },
+      {
+        "day": 49,
+        "date": "2026-11-27",
+        "backlog": 30,
+        "verified": 57,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 21,
+          "me": 9
+        }
+      },
+      {
+        "day": 50,
+        "date": "2026-11-28",
+        "backlog": 30,
+        "verified": 57,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 21,
+          "me": 9
+        }
+      },
+      {
+        "day": 51,
+        "date": "2026-11-29",
+        "backlog": 30,
+        "verified": 57,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 21,
+          "me": 9
+        }
+      },
+      {
+        "day": 52,
+        "date": "2026-11-30",
+        "backlog": 28,
+        "verified": 59,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 19,
+          "me": 9
+        }
+      },
+      {
+        "day": 53,
+        "date": "2026-12-01",
+        "backlog": 27,
+        "verified": 60,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 18,
+          "me": 9
+        }
+      },
+      {
+        "day": 54,
+        "date": "2026-12-02",
+        "backlog": 25,
+        "verified": 62,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 16,
+          "me": 9
+        }
+      },
+      {
+        "day": 55,
+        "date": "2026-12-03",
+        "backlog": 23,
+        "verified": 64,
+        "delivered": 30,
+        "queues": {
+          "delivery": 0,
+          "hod": 0,
+          "cc": 14,
+          "me": 9
+        }
+      }
+    ]
+  },
+  "notice": "Assumption-based scenario estimates. Not operational approvals or business forecasts."
+}

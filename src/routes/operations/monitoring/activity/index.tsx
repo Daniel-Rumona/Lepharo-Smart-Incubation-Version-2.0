@@ -1,1415 +1,466 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Badge, Button, Col, Drawer, Empty, Grid, Input, Pagination, Popover, Row, Segmented, Tag, message } from 'antd'
 import {
-    Alert,
-    Button,
-    Col,
-    Empty,
-    Input,
-    Modal,
-    Row,
-    Select,
-    Space,
-    Table,
-    Tag,
-    Typography,
-    message,
-    Segmented,
-    Card
-} from 'antd'
-import type { ColumnsType } from 'antd/es/table'
-import {
-    SearchOutlined,
+    ClockCircleOutlined,
     DownloadOutlined,
-    TeamOutlined,
+    FieldTimeOutlined,
+    FilterOutlined,
     HourglassOutlined,
-    UserOutlined,
-    EyeOutlined,
-    BarChartOutlined
+    SearchOutlined,
+    SortAscendingOutlined,
+    TeamOutlined,
+    ThunderboltOutlined
 } from '@ant-design/icons'
-import {
-    collection,
-    getDocs,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    where
-} from 'firebase/firestore'
-import * as XLSX from 'xlsx'
+import { collection, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { db } from '@/firebase'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
-import { PageSkeleton } from '@/components/shared/PageSkeleton'
+import { motion, useReducedMotion } from 'framer-motion'
+import dayjs from 'dayjs'
+import * as XLSX from 'xlsx'
 import { Helmet } from 'react-helmet'
+import { db } from '@/firebase'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { ChoiceFilter, EntityAvatar, FilterPanel, SortSelect, type SortOption } from '@/components/workspace'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { formatRole, isStaffRole } from '@/lib/roleLabels'
+import { canViewControlReportData, isQuantilytixControlEmail } from '@/utils/reportVisibility'
+import {
+    buildPeople,
+    dailySeries,
+    formatAgo,
+    formatDuration,
+    summarise,
+    toSession,
+    type Person,
+    type Session,
+    type SessionDoc
+} from './activityData'
+import { ActivityPersonDetail } from './ActivityPersonDetail'
+import './activity.css'
 
-const { Text } = Typography
+type PersonSort = 'recent' | 'time' | 'name'
 
-type SessionRole = 'operations' | 'consultant' | 'projectmanager' | 'projectadmin'
+const SORT_OPTIONS: SortOption<PersonSort>[] = [
+    { value: 'recent', label: 'Last seen', icon: <ClockCircleOutlined /> },
+    { value: 'time', label: 'Most time', icon: <FieldTimeOutlined /> },
+    { value: 'name', label: 'Name A–Z', icon: <SortAscendingOutlined /> }
+]
 
-type GroupedRow = {
-    id: string
-    email: string
-    name?: string
-    departmentName?: string
-    roles: string[]
-    lastStartedAt: any
-    lastSeenAt: any
-    lastEndedAt: any
-    active: boolean
-    sessionsToday: number
-    sessionsWindow: number
-    durWindowMins: number
+const WINDOWS = [7, 14, 30, 90]
+const PAGE_SIZE = 12
+/** Most sessions read per window; a notice shows if a window hits it. */
+const SESSION_LIMIT = 5000
+
+const pctChange = (current: number, previous: number) =>
+    previous > 0 ? Math.round(((current - previous) / previous) * 100) : null
+
+const changeText = (current: number, previous: number) => {
+    const pct = pctChange(current, previous)
+    return pct === null ? undefined : `${pct > 0 ? '+' : ''}${pct}% vs previous period`
 }
 
-type ActivityPoint = {
-    day: string
-    sessions: number
-    durationMins: number
-}
-
-type DeltaDirection = 'up' | 'down' | 'flat'
-
-type MetricDelta = {
-    value: number
-    percent: number
-    direction: DeltaDirection
-    label: string
-}
-
-const roundNumber = (value: number, decimals = 1) => {
-    if (!Number.isFinite(value)) return 0
-    return Number(value.toFixed(decimals))
-}
-
-const buildDelta = (
-    currentValue: number,
-    previousValue: number,
-    label = 'vs previous period',
-    decimals = 1
-): MetricDelta => {
-    const rawValue = currentValue - previousValue
-    const value = roundNumber(rawValue, decimals)
-
-    const rawPercent =
-        previousValue > 0
-            ? (rawValue / previousValue) * 100
-            : currentValue > 0
-                ? 100
-                : 0
-
-    return {
-        value,
-        percent: roundNumber(rawPercent, decimals),
-        direction: value > 0 ? 'up' : value < 0 ? 'down' : 'flat',
-        label
-    }
-}
-
-const formatDeltaNumber = (value: number, decimals = 1) => {
-    if (!Number.isFinite(value)) return '0'
-
-    return value % 1 === 0
-        ? value.toFixed(0)
-        : value.toFixed(decimals)
-}
-
-const renderDelta = (delta: MetricDelta) => {
-    const color =
-        delta.direction === 'up'
-            ? '#52c41a'
-            : delta.direction === 'down'
-                ? '#ff4d4f'
-                : 'rgba(0,0,0,.45)'
-
-    const valueSign = delta.value > 0 ? '+' : ''
-    const percentSign = delta.percent > 0 ? '+' : ''
-
-    return (
-        <span style={{ color, fontWeight: 600 }}>
-            {valueSign}
-            {formatDeltaNumber(delta.value)} ({percentSign}
-            {formatDeltaNumber(delta.percent)}%) {delta.label}
-        </span>
-    )
-}
-
-const ALLOWED_ROLES: SessionRole[] = ['operations', 'consultant', 'projectmanager', 'projectadmin']
-
-const ROLE_LABEL_MAP: Record<string, string> = {
-    consultant: 'Coordinator',
-    projectmanager: 'Coordinator',
-    operations: 'HOD',
-    projectadmin: 'Center Coordinator'
-}
-
-const roleBadgeColor = (role: string) => {
-    switch (role) {
-        case 'operations':
-            return 'blue'
-        case 'consultant':
-            return 'purple'
-        case 'projectmanager':
-            return 'geekblue'
-        case 'projectadmin':
-            return 'green'
-        default:
-            return 'default'
-    }
-}
-
-const tsToDate = (v: any): Date | null => {
-    if (!v) return null
-    if (v?.toDate) return v.toDate()
-    if (v instanceof Date) return v
-    if (typeof v === 'string' || typeof v === 'number') {
-        const d = new Date(v)
-        return Number.isNaN(d.getTime()) ? null : d
-    }
-    return null
-}
-
-const tsToMs = (v: any): number | null => {
-    const d = tsToDate(v)
-    return d ? d.getTime() : null
-}
-
-const msToMin = (ms: number) => Math.max(0, Math.round(ms / 60000))
-
-const formatDuration = (mins: number) => {
-    const m = Math.floor(mins || 0)
-    const h = Math.floor(m / 60)
-    const mm = m % 60
-    if (h <= 0) return `${mm}m`
-    return `${h}h ${mm}m`
-}
-
-const formatDateCell = (v: any) => {
-    const d = tsToDate(v)
-    return d ? d.toLocaleString() : '—'
-}
-
-const getSessionQueryLimit = (days: number) => {
-    if (days <= 7) return 1000
-    if (days <= 14) return 2000
-    if (days <= 30) return 4000
-    if (days <= 120) return 8000
-    return 12000
-}
-
-const isInternalEmail = (email: any) => {
-    const e = String(email || '').trim().toLowerCase()
-    return e.endsWith('@quantilytix.co.za')
-}
-
-const normalizeRole = (role: any) => String(role || '').trim().toLowerCase()
-
-const formatDayLabel = (date: Date) =>
-    date.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric'
-    })
-
-
+/** How staff use the app: who is on now, time spent per day and team, and each person's sessions. */
 export const MonitoringActivity: React.FC = () => {
-    const [loadingUsers, setLoadingUsers] = useState(true)
-    const [loadingSessions, setLoadingSessions] = useState(true)
-    const [loadingMetrics, setLoadingMetrics] = useState(true)
+    const screens = Grid.useBreakpoint()
+    const isMobile = !screens.lg
+    const reduceMotion = useReducedMotion()
+    const { actor } = useFullIdentity()
+    const showControl = canViewControlReportData(actor?.email)
 
-    const pageLoading = loadingUsers || loadingSessions || loadingMetrics
-    const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
-    const initialPageLoading = pageLoading && !hasLoadedOnce
+    const [days, setDays] = useState(14)
+    const [now, setNow] = useState(() => Date.now())
+    const [current, setCurrent] = useState<Session[]>([])
+    const [previous, setPrevious] = useState<Session[]>([])
+    const [truncated, setTruncated] = useState(false)
+    const [loading, setLoading] = useState(true)
+    const [directory, setDirectory] = useState<Map<string, { name: string; team: string; photo?: string; email: string }>>(new Map())
 
-    const [recentSessions, setRecentSessions] = useState<GroupedRow[]>([])
-    const [previousActiveNow, setPreviousActiveNow] = useState(0)
-    const [previousSessionsToday, setPreviousSessionsToday] = useState(0)
-    const [previousAvgMinsWindow, setPreviousAvgMinsWindow] = useState(0)
-    const [activeNow, setActiveNow] = useState(0)
-    const [sessionsToday, setSessionsToday] = useState(0)
-    const [avgMinsWindow, setAvgMinsWindow] = useState<number>(0)
-    const [windowDays, setWindowDays] = useState<number>(14)
+    const [search, setSearch] = useState('')
+    const [role, setRole] = useState('all')
+    const [team, setTeam] = useState('all')
+    const [sort, setSort] = useState<PersonSort>('recent')
+    const [page, setPage] = useState(1)
+    const [selectedId, setSelectedId] = useState<string>()
+    const [drawerOpen, setDrawerOpen] = useState(false)
 
-    const [roleFilter, setRoleFilter] = useState<string[]>([])
-    const [searchText, setSearchText] = useState<string>('')
-
-    const [nameByEmail, setNameByEmail] = useState<Map<string, string>>(new Map())
-    const [deptByEmail, setDeptByEmail] = useState<Map<string, string>>(new Map())
-    const usersLoadedRef = useRef(false)
-
-    const [viewModalOpen, setViewModalOpen] = useState(false)
-    const [selectedUser, setSelectedUser] = useState<GroupedRow | null>(null)
-    const [selectedUserSeries, setSelectedUserSeries] = useState<ActivityPoint[]>([])
-    const [loadingSelectedActivity, setLoadingSelectedActivity] = useState(false)
-
-    const windowLabel = `Last ${windowDays} days`
-
-    const isAllowedRole = (role: any) => ALLOWED_ROLES.includes(normalizeRole(role) as SessionRole)
-
-
-    const calculateWindowMetrics = (docs: any[], now = Date.now()) => {
-        const activeUsers = new Set<string>()
-        const windowUsers = new Set<string>()
-
-        let durSum = 0
-        let durN = 0
-
-        docs.forEach(s => {
-            const email = String(s?.email || '').trim().toLowerCase()
-            const role = normalizeRole(s?.role)
-
-            if (!email || isInternalEmail(email) || !isAllowedRole(role)) return
-
-            const startedMs = tsToMs(s.startedAt)
-            const lastSeenMs = tsToMs(s.lastSeenAt)
-            const endedMs = tsToMs(s.endedAt)
-
-            if (!startedMs) return
-
-            windowUsers.add(email)
-
-            if (!endedMs && lastSeenMs && now - lastSeenMs <= 10 * 60 * 1000) {
-                activeUsers.add(email)
-            }
-
-            const endMs = endedMs || lastSeenMs
-
-            if (endMs && endMs >= startedMs) {
-                durSum += msToMin(endMs - startedMs)
-                durN++
-            }
-        })
-
-        return {
-            activeNow: activeUsers.size,
-            usersInWindow: windowUsers.size,
-            avgMins: durN ? Number((durSum / durN).toFixed(1)) : 0
-        }
-    }
-
-    const calculatePreviousWindowMetrics = (docs: any[], previousEndMs: number) => {
-        const activeUsers = new Set<string>()
-        const windowUsers = new Set<string>()
-
-        let durSum = 0
-        let durN = 0
-
-        docs.forEach(s => {
-            const email = String(s?.email || '').trim().toLowerCase()
-            const role = normalizeRole(s?.role)
-
-            if (!email || isInternalEmail(email) || !isAllowedRole(role)) return
-
-            const startedMs = tsToMs(s.startedAt)
-            const lastSeenMs = tsToMs(s.lastSeenAt)
-            const endedMs = tsToMs(s.endedAt)
-
-            if (!startedMs) return
-
-            windowUsers.add(email)
-
-            if (!endedMs && lastSeenMs && previousEndMs - lastSeenMs <= 10 * 60 * 1000) {
-                activeUsers.add(email)
-            }
-
-            const endMs = endedMs || lastSeenMs
-
-            if (endMs && endMs >= startedMs) {
-                durSum += msToMin(endMs - startedMs)
-                durN++
-            }
-        })
-
-        return {
-            activeNow: activeUsers.size,
-            usersInWindow: windowUsers.size,
-            avgMins: durN ? Number((durSum / durN).toFixed(1)) : 0
-        }
-    }
-
+    // "Active now" depends on the clock as well as the data.
     useEffect(() => {
-        if (!pageLoading) {
-            setHasLoadedOnce(true)
-        }
-    }, [pageLoading])
-
-    useEffect(() => {
-        if (usersLoadedRef.current) {
-            setLoadingUsers(false)
-            return
-        }
-
-        usersLoadedRef.current = true
-
-            ; (async () => {
-                try {
-                    setLoadingUsers(true)
-
-                    const snap = await getDocs(query(collection(db, 'users'), limit(5000)))
-                    const nameMap = new Map<string, string>()
-                    const deptMap = new Map<string, string>()
-
-                    snap.docs.forEach(d => {
-                        const u: any = d.data()
-                        const email = String(u?.email || '').trim().toLowerCase()
-
-                        if (!email || isInternalEmail(email)) return
-
-                        const resolvedName =
-                            u?.name ||
-                            u?.fullName ||
-                            u?.displayName ||
-                            `${u?.firstName || ''} ${u?.lastName || ''}`.trim() ||
-                            u?.email ||
-                            ''
-
-                        const resolvedDepartment =
-                            u?.departmentName ||
-                            u?.department ||
-                            u?.departmentId ||
-                            ''
-
-                        if (resolvedName) nameMap.set(email, String(resolvedName))
-                        if (resolvedDepartment) deptMap.set(email, String(resolvedDepartment))
-                    })
-
-                    setNameByEmail(nameMap)
-                    setDeptByEmail(deptMap)
-                } catch (err) {
-                    console.error('Failed to load user lookup data:', err)
-                    setNameByEmail(new Map())
-                    setDeptByEmail(new Map())
-                } finally {
-                    setLoadingUsers(false)
-                }
-            })()
+        const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+        return () => window.clearInterval(timer)
     }, [])
 
+    // Names, teams and photos, by uid and by email (older sessions may lack a uid).
     useEffect(() => {
-        setLoadingSessions(true)
-        setLoadingMetrics(true)
+        Promise.all([getDocs(collection(db, 'users')), getDocs(collection(db, 'departments'))])
+            .then(([users, departments]) => {
+                const deptName = new Map(departments.docs.map(d => [d.id, String((d.data() as any)?.name || d.id)]))
+                const map = new Map<string, { name: string; team: string; photo?: string; email: string }>()
+                users.docs.forEach(d => {
+                    const u = d.data() as any
+                    const email = String(u.email || '').trim().toLowerCase()
+                    const entry = {
+                        name: u.name || u.fullName || u.displayName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || email,
+                        team: u.departmentName || (u.departmentId ? deptName.get(u.departmentId) || '' : '') || u.department || '',
+                        photo: u.photoURL || undefined,
+                        email
+                    }
+                    map.set(d.id, entry)
+                    if (u.uid) map.set(String(u.uid), entry)
+                    if (email) map.set(email, entry)
+                })
+                setDirectory(map)
+            })
+            .catch(error => console.error('[activity] directory load failed', error))
+    }, [])
 
-        const startDate = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000)
+    // Staff sessions only, with control (test) accounts hidden from everyone else.
+    const keep = (s: Session | null): s is Session =>
+        !!s && isStaffRole(s.role) && (showControl || !isQuantilytixControlEmail(s.email))
 
-        const qSessions = query(
-            collection(db, 'userSessions'),
-            where('startedAt', '>=', startDate),
-            orderBy('startedAt', 'desc'),
-            limit(getSessionQueryLimit(windowDays))
-        )
-
+    useEffect(() => {
+        setLoading(true)
+        const start = dayjs().subtract(days, 'day').toDate()
+        const prevStart = dayjs().subtract(days * 2, 'day').toDate()
         let cancelled = false
 
-        const unsub = onSnapshot(
-            qSessions,
+        const unsubscribe = onSnapshot(
+            query(collection(db, 'userSessions'), where('startedAt', '>=', start), orderBy('startedAt', 'desc'), limit(SESSION_LIMIT)),
             snap => {
-                try {
-                    const raw = snap.docs.map(d => d.data() as any)
-                    const currentMetrics = calculateWindowMetrics(raw, Date.now())
-
-                    if (!cancelled) {
-                        setActiveNow(currentMetrics.activeNow)
-                        setSessionsToday(currentMetrics.usersInWindow)
-                        setAvgMinsWindow(currentMetrics.avgMins)
-                    }
-                    const now = Date.now()
-                    const todayStart = new Date()
-                    todayStart.setHours(0, 0, 0, 0)
-
-                    const byEmail = new Map<string, GroupedRow>()
-
-                    const ensure = (email: string) => {
-                        const key = String(email || '').trim().toLowerCase() || 'unknown'
-
-                        if (!byEmail.has(key)) {
-                            byEmail.set(key, {
-                                id: key,
-                                email: key,
-                                name: nameByEmail.get(key),
-                                departmentName: deptByEmail.get(key),
-                                roles: [],
-                                lastStartedAt: null,
-                                lastSeenAt: null,
-                                lastEndedAt: null,
-                                active: false,
-                                sessionsToday: 0,
-                                sessionsWindow: 0,
-                                durWindowMins: 0
-                            })
-                        }
-
-                        return byEmail.get(key)!
-                    }
-
-                    raw.forEach(s => {
-                        const email = String(s?.email || '').trim().toLowerCase()
-                        const role = normalizeRole(s?.role)
-
-                        if (!email || isInternalEmail(email) || !isAllowedRole(role)) return
-
-                        const g = ensure(email)
-
-                        const startedMs = tsToMs(s.startedAt)
-                        const lastSeenMs = tsToMs(s.lastSeenAt)
-                        const endedMs = tsToMs(s.endedAt)
-
-                        if (role && !g.roles.includes(role)) g.roles.push(role)
-
-                        if (!endedMs && lastSeenMs && now - lastSeenMs <= 10 * 60 * 1000) {
-                            g.active = true
-                        }
-
-                        if (startedMs && startedMs >= todayStart.getTime()) {
-                            g.sessionsToday++
-                        }
-
-                        if (startedMs && startedMs >= startDate.getTime()) {
-                            const endMs = endedMs || lastSeenMs
-
-                            if (endMs && endMs >= startedMs) {
-                                g.sessionsWindow++
-                                g.durWindowMins += msToMin(endMs - startedMs)
-                            }
-                        }
-
-                        if (
-                            !g.lastStartedAt ||
-                            (startedMs && startedMs > (tsToMs(g.lastStartedAt) || 0))
-                        ) {
-                            g.lastStartedAt = s.startedAt
-                        }
-
-                        if (
-                            !g.lastSeenAt ||
-                            (lastSeenMs && lastSeenMs > (tsToMs(g.lastSeenAt) || 0))
-                        ) {
-                            g.lastSeenAt = s.lastSeenAt
-                        }
-
-                        if (
-                            endedMs &&
-                            (!g.lastEndedAt || endedMs > (tsToMs(g.lastEndedAt) || 0))
-                        ) {
-                            g.lastEndedAt = s.endedAt
-                        }
-                    })
-
-                    if (!cancelled) {
-                        setRecentSessions(
-                            Array.from(byEmail.values()).sort((a, b) => {
-                                const aMs =
-                                    tsToMs(a.lastSeenAt) ||
-                                    tsToMs(a.lastStartedAt) ||
-                                    0
-
-                                const bMs =
-                                    tsToMs(b.lastSeenAt) ||
-                                    tsToMs(b.lastStartedAt) ||
-                                    0
-
-                                return bMs - aMs
-                            })
-                        )
-                    }
-                } catch (err) {
-                    console.error('Failed to process monitoring sessions:', err)
-
-                    if (!cancelled) {
-                        setRecentSessions([])
-                    }
-                } finally {
-                    if (!cancelled) {
-                        setLoadingSessions(false)
-                    }
-                }
+                if (cancelled) return
+                setCurrent(snap.docs.map(d => toSession(d.data() as SessionDoc)).filter(keep))
+                setTruncated(snap.size >= SESSION_LIMIT)
+                setNow(Date.now())
+                setLoading(false)
             },
-            err => {
-                console.error('Failed to load monitoring sessions:', err)
-
-                if (!cancelled) {
-                    setRecentSessions([])
-                    setLoadingSessions(false)
-                }
+            error => {
+                console.error('[activity] sessions load failed', error)
+                message.error('Couldn’t load activity')
+                setLoading(false)
             }
         )
 
-            ; (async () => {
-                try {
-                    const now = Date.now()
-                    const windowMs = windowDays * 24 * 60 * 60 * 1000
-
-                    const currentStartDate = new Date(now - windowMs)
-                    const previousStartDate = new Date(now - windowMs * 2)
-                    const previousEndDate = currentStartDate
-
-                    const previousSnap = await getDocs(
-                        query(
-                            collection(db, 'userSessions'),
-                            where('startedAt', '>=', previousStartDate),
-                            where('startedAt', '<', previousEndDate),
-                            orderBy('startedAt', 'desc'),
-                            limit(getSessionQueryLimit(windowDays))
-                        )
-                    )
-
-                    const previousRows = previousSnap.docs.map(d => d.data() as any)
-
-                    const previous = calculatePreviousWindowMetrics(
-                        previousRows,
-                        previousEndDate.getTime()
-                    )
-
-                    if (!cancelled) {
-                        setPreviousActiveNow(previous.activeNow)
-                        setPreviousSessionsToday(previous.usersInWindow)
-                        setPreviousAvgMinsWindow(previous.avgMins)
-                    }
-                } catch (err) {
-                    console.error('Failed to load previous monitoring metrics:', err)
-
-                    if (!cancelled) {
-                        setPreviousActiveNow(0)
-                        setPreviousSessionsToday(0)
-                        setPreviousAvgMinsWindow(0)
-                    }
-                } finally {
-                    if (!cancelled) {
-                        setLoadingMetrics(false)
-                    }
-                }
-            })()
+        // The previous window of the same length, for the comparison on each tile.
+        getDocs(
+            query(
+                collection(db, 'userSessions'),
+                where('startedAt', '>=', prevStart),
+                where('startedAt', '<', start),
+                orderBy('startedAt', 'desc'),
+                limit(SESSION_LIMIT)
+            )
+        )
+            .then(snap => !cancelled && setPrevious(snap.docs.map(d => toSession(d.data() as SessionDoc)).filter(keep)))
+            .catch(() => !cancelled && setPrevious([]))
 
         return () => {
             cancelled = true
-            unsub()
+            unsubscribe()
         }
-    }, [windowDays, nameByEmail, deptByEmail])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [days, showControl])
+
+    const lookup = (personId: string, email: string) =>
+        directory.get(personId) || directory.get(email) || { name: email, team: '' }
+
+    const people = useMemo(() => buildPeople(current, lookup, now), [current, directory, now])
+    const stats = useMemo(() => summarise(current, now), [current, now])
+    const prevStats = useMemo(() => summarise(previous, now), [previous, now])
+
+    const roles = useMemo(() => Array.from(new Set(people.flatMap(p => p.roles))).map(formatRole).sort(), [people])
+    const teams = useMemo(() => Array.from(new Set(people.map(p => p.team).filter(Boolean))).sort(), [people])
+
+    const visible = useMemo(() => {
+        const q = search.trim().toLowerCase()
+        return people
+            .filter(
+                p =>
+                    (role === 'all' || p.roles.some(r => formatRole(r) === role)) &&
+                    (team === 'all' || p.team === team) &&
+                    (!q || `${p.name} ${p.email} ${p.team}`.toLowerCase().includes(q))
+            )
+            .sort((a, b) => {
+                if (sort === 'name') return a.name.localeCompare(b.name)
+                if (sort === 'time') return b.minutes - a.minutes
+                return Number(b.active) - Number(a.active) || (b.lastSeen || 0) - (a.lastSeen || 0)
+            })
+    }, [people, search, role, team, sort])
+
+    const visibleIds = useMemo(() => new Set(visible.map(p => p.id)), [visible])
+    const visibleSessions = useMemo(() => current.filter(s => visibleIds.has(s.personId)), [current, visibleIds])
+
+    useEffect(() => setPage(1), [search, role, team, sort, days])
 
     useEffect(() => {
-        if (!viewModalOpen || !selectedUser?.email) {
-            setSelectedUserSeries([])
-            return
+        if (isMobile) return
+        if (!visible.some(p => p.id === selectedId)) setSelectedId(visible[0]?.id)
+    }, [visible, selectedId, isMobile])
+
+    const selected = people.find(p => p.id === selectedId) || null
+
+    const daily = useMemo(() => dailySeries(visibleSessions, days, now), [visibleSessions, days, now])
+
+    const dailyOptions: Highcharts.Options = {
+        chart: { height: 280 },
+        title: { text: undefined },
+        credits: { enabled: false },
+        xAxis: { categories: daily.map(p => dayjs(p.key).format('D MMM')) },
+        yAxis: [
+            { min: 0, allowDecimals: false, title: { text: undefined } },
+            { min: 0, title: { text: undefined }, labels: { format: '{value}h' }, opposite: true }
+        ],
+        tooltip: { shared: true },
+        plotOptions: { column: { borderRadius: 3, borderWidth: 0 } },
+        series: [
+            { type: 'column', name: 'People active', data: daily.map(p => p.people), color: '#93c5fd' },
+            { type: 'spline', name: 'Hours', data: daily.map(p => p.hours), yAxis: 1, tooltip: { valueSuffix: 'h' } }
+        ]
+    }
+
+    const teamOptions: Highcharts.Options = useMemo(() => {
+        const minutes = new Map<string, number>()
+        visible.forEach(p => minutes.set(p.team || 'No team', (minutes.get(p.team || 'No team') || 0) + p.minutes))
+        const rows = Array.from(minutes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10)
+        return {
+            chart: { type: 'bar', height: Math.max(240, rows.length * 34 + 70) },
+            title: { text: undefined },
+            credits: { enabled: false },
+            legend: { enabled: false },
+            xAxis: { categories: rows.map(([name]) => name), title: { text: undefined } },
+            yAxis: { min: 0, title: { text: undefined }, labels: { format: '{value}h' } },
+            tooltip: { pointFormat: '<b>{point.y}h</b>' },
+            plotOptions: { bar: { borderRadius: 3, borderWidth: 0, dataLabels: { enabled: true, format: '{y}h' } } },
+            series: [{ type: 'bar', name: 'Hours', data: rows.map(([, m]) => Math.round((m / 60) * 10) / 10) }]
         }
+    }, [visible])
 
-        const startDate = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000)
-        setLoadingSelectedActivity(true)
-
-        const qSessions = query(
-            collection(db, 'userSessions'),
-            where('startedAt', '>=', startDate),
-            orderBy('startedAt', 'asc'),
-            limit(getSessionQueryLimit(windowDays))
-        )
-
-        const unsub = onSnapshot(
-            qSessions,
-            snap => {
-                const targetEmail = String(selectedUser.email || '').trim().toLowerCase()
-                const bucket = new Map<string, ActivityPoint>()
-
-                snap.docs.forEach(docSnap => {
-                    const s: any = docSnap.data()
-
-                    const email = String(s?.email || '').trim().toLowerCase()
-                    const role = normalizeRole(s?.role)
-
-                    if (!email || email !== targetEmail) return
-                    if (isInternalEmail(email) || !isAllowedRole(role)) return
-
-                    const startedAt = tsToDate(s?.startedAt)
-                    const startedMs = tsToMs(s?.startedAt)
-                    const endedMs = tsToMs(s?.endedAt)
-                    const lastSeenMs = tsToMs(s?.lastSeenAt)
-
-                    if (!startedAt || !startedMs) return
-
-                    const key = startedAt.toISOString().slice(0, 10)
-                    const label = formatDayLabel(startedAt)
-                    const endMs = endedMs || lastSeenMs || startedMs
-                    const durationMins = endMs >= startedMs ? msToMin(endMs - startedMs) : 0
-
-                    if (!bucket.has(key)) {
-                        bucket.set(key, {
-                            day: label,
-                            sessions: 0,
-                            durationMins: 0
-                        })
-                    }
-
-                    const item = bucket.get(key)!
-                    item.sessions += 1
-                    item.durationMins += durationMins
-                })
-
-                const result = Array.from(bucket.entries())
-                    .sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(([, value]) => value)
-
-                setSelectedUserSeries(result)
-                setLoadingSelectedActivity(false)
-            },
-            err => {
-                console.error('Failed to load selected user activity:', err)
-                setSelectedUserSeries([])
-                setLoadingSelectedActivity(false)
-            }
-        )
-
-        return () => unsub()
-    }, [viewModalOpen, selectedUser, windowDays])
-
-    const exportFilteredToExcel = () => {
-        if (!filteredRows.length) {
+    const exportExcel = () => {
+        if (!visible.length) {
             message.info('Nothing to export.')
             return
         }
-
-        const exportedAt = new Date()
-
-        const rows = filteredRows.map((r, index) => ({
-            '#': index + 1,
-            'User Name': r.name || '—',
-            'Role': r.roles.map(role => ROLE_LABEL_MAP[role] || role).join(', ') || '—',
-            Department: r.departmentName || '—',
-            Status: r.active ? 'Active' : 'Idle',
-            'Last Login': tsToDate(r.lastStartedAt)?.toLocaleString() || '—',
-            'Last Seen': tsToDate(r.lastSeenAt)?.toLocaleString() || '—',
-            'Sessions Today': r.sessionsToday || 0,
-            [`Sessions - Last ${windowDays} Days`]: r.sessionsWindow || 0,
-            [`Total Duration - Last ${windowDays} Days`]: formatDuration(r.durWindowMins),
-            [`Total Duration Minutes - Last ${windowDays} Days`]: r.durWindowMins || 0
+        const rows = visible.map(p => ({
+            Name: p.name,
+            Email: p.email,
+            Team: p.team || '—',
+            Role: p.roles.map(formatRole).join(', '),
+            Status: p.active ? 'Active now' : 'Not active',
+            'Last seen': p.lastSeen ? dayjs(p.lastSeen).format('YYYY-MM-DD HH:mm') : '—',
+            'Sessions today': p.sessionsToday,
+            [`Sessions (${days} days)`]: p.sessions,
+            [`Time in app (${days} days)`]: formatDuration(p.minutes),
+            [`Minutes (${days} days)`]: p.minutes
         }))
-
-        const title = `User Monitoring Activity Report`
-        const period = `Reporting Window: Last ${windowDays} days`
-        const generated = `Generated: ${exportedAt.toLocaleString()}`
-        const totalUsers = `Total Users Exported: ${filteredRows.length}`
-
-        const worksheetData = [
-            [title],
-            [period],
-            [generated],
-            [totalUsers],
-            [],
-            Object.keys(rows[0]),
-            ...rows.map(row => Object.values(row))
-        ]
-
-        const ws = XLSX.utils.aoa_to_sheet(worksheetData)
-
-        ws['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } },
-            { s: { r: 2, c: 0 }, e: { r: 2, c: 10 } },
-            { s: { r: 3, c: 0 }, e: { r: 3, c: 10 } }
-        ]
-
-        ws['!cols'] = [
-            { wch: 6 },
-            { wch: 28 },
-            { wch: 26 },
-            { wch: 28 },
-            { wch: 14 },
-            { wch: 24 },
-            { wch: 24 },
-            { wch: 18 },
-            { wch: 24 },
-            { wch: 28 },
-            { wch: 32 }
-        ]
-
-        ws['!autofilter'] = {
-            ref: `A6:K${rows.length + 6}`
-        }
-
-        ws['!freeze'] = {
-            xSplit: 0,
-            ySplit: 6
-        } as any
-
-        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-
-        for (let row = range.s.r; row <= range.e.r; row++) {
-            for (let col = range.s.c; col <= range.e.c; col++) {
-                const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
-                const cell = ws[cellAddress]
-
-                if (!cell) continue
-
-                if (row === 0) {
-                    cell.s = {
-                        font: { bold: true, sz: 16 },
-                        alignment: { horizontal: 'center' }
-                    }
-                }
-
-                if (row >= 1 && row <= 3) {
-                    cell.s = {
-                        font: { bold: true },
-                        alignment: { horizontal: 'left' }
-                    }
-                }
-
-                if (row === 5) {
-                    cell.s = {
-                        font: { bold: true },
-                        alignment: { horizontal: 'center' },
-                        fill: { fgColor: { rgb: 'F2F2F2' } },
-                        border: {
-                            top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-                            bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }
-                        }
-                    }
-                }
-            }
-        }
-
-        const wb = XLSX.utils.book_new()
-
-        XLSX.utils.book_append_sheet(wb, ws, `Activity ${windowDays}d`)
-
-        const safeDate = exportedAt
-            .toISOString()
-            .slice(0, 10)
-
-        XLSX.writeFile(
-            wb,
-            `user-monitoring-activity-last-${windowDays}-days-${safeDate}.xlsx`
-        )
+        const sheet = XLSX.utils.json_to_sheet(rows)
+        const book = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(book, sheet, `Activity ${days}d`)
+        XLSX.writeFile(book, `staff-activity-${days}-days-${dayjs().format('YYYY-MM-DD')}.xlsx`)
     }
 
-    const filteredRows = useMemo(() => {
-        const q = searchText.trim().toLowerCase()
-
-        return recentSessions
-            .filter(r => !isInternalEmail(r.email))
-            .filter(r => (r.roles || []).some(isAllowedRole))
-            .filter(r => {
-                if (roleFilter.length && !r.roles.some(rr => roleFilter.includes(rr))) return false
-                if (!q) return true
-
-                const roleLabels = r.roles
-                    .map(role => ROLE_LABEL_MAP[role] || role)
-                    .join(' ')
-                    .toLowerCase()
-
-                return (
-                    (r.name || '').toLowerCase().includes(q) ||
-                    (r.departmentName || '').toLowerCase().includes(q) ||
-                    roleLabels.includes(q)
-                )
-            })
-    }, [recentSessions, roleFilter, searchText])
-
-    const allRoles = useMemo(() => {
-        const s = new Set<string>()
-        recentSessions.forEach(r => {
-            ; (r.roles || []).forEach(role => {
-                const normalized = normalizeRole(role)
-                if (isAllowedRole(normalized)) s.add(normalized)
-            })
-        })
-        return Array.from(s)
-    }, [recentSessions])
-
-    const topUsers = useMemo(() => {
-        return [...filteredRows]
-            .sort((a, b) => {
-                if (b.durWindowMins !== a.durWindowMins) return b.durWindowMins - a.durWindowMins
-                if (b.sessionsWindow !== a.sessionsWindow) return b.sessionsWindow - a.sessionsWindow
-                return (b.sessionsToday || 0) - (a.sessionsToday || 0)
-            })
-            .slice(0, 10)
-    }, [filteredRows])
-
-    const topUsersChartOptions = useMemo(() => {
-        return {
-            chart: {
-                type: 'bar',
-                height: 420
-            },
-            title: {
-                text: undefined
-            },
-            credits: {
-                enabled: false
-            },
-            xAxis: {
-                categories: topUsers.map(u => u.name || u.departmentName || '—'),
-                title: {
-                    text: null
-                }
-            },
-            yAxis: [
-                {
-                    title: {
-                        text: 'Duration (mins)'
-                    }
-                },
-                {
-                    title: {
-                        text: 'Sessions'
-                    },
-                    opposite: true
-                }
-            ],
-            tooltip: {
-                shared: true
-            },
-            legend: {
-                enabled: true
-            },
-            plotOptions: {
-                series: {
-                    dataLabels: {
-                        enabled: true,
-                        style: {
-                            fontWeight: 'bold'
-                        }
-                    }
-                }
-            },
-            series: [
-                {
-                    type: 'bar',
-                    name: 'Duration (mins)',
-                    data: topUsers.map(u => u.durWindowMins),
-                    yAxis: 0,
-                    dataLabels: {
-                        enabled: true,
-                        format: '{y}m'
-                    }
-                },
-                {
-                    type: 'bar',
-                    name: 'Sessions',
-                    data: topUsers.map(u => u.sessionsWindow),
-                    yAxis: 1,
-                    dataLabels: {
-                        enabled: true,
-                        format: '{y}'
-                    }
-                }
-            ]
-        }
-    }, [topUsers])
-
-    const selectedUserChartOptions = useMemo(() => {
-        return {
-            chart: {
-                zoomType: 'xy',
-                height: 380
-            },
-            title: {
-                text: undefined
-            },
-            credits: {
-                enabled: false
-            },
-            xAxis: {
-                categories: selectedUserSeries.map(p => p.day)
-            },
-            yAxis: [
-                {
-                    title: {
-                        text: 'Sessions'
-                    }
-                },
-                {
-                    title: {
-                        text: 'Duration (mins)'
-                    },
-                    opposite: true
-                }
-            ],
-            tooltip: {
-                shared: true
-            },
-            legend: {
-                enabled: true
-            },
-            plotOptions: {
-                series: {
-                    dataLabels: {
-                        enabled: true,
-                        style: {
-                            fontWeight: 'bold'
-                        }
-                    }
-                }
-            },
-            series: [
-                {
-                    type: 'column',
-                    name: 'Sessions',
-                    data: selectedUserSeries.map(p => p.sessions),
-                    yAxis: 0,
-                    dataLabels: {
-                        enabled: true,
-                        format: '{y}'
-                    }
-                },
-                {
-                    type: 'spline',
-                    name: 'Duration (mins)',
-                    data: selectedUserSeries.map(p => p.durationMins),
-                    yAxis: 1,
-                    dataLabels: {
-                        enabled: true,
-                        format: '{y}m'
-                    }
-                }
-            ]
-        }
-    }, [selectedUserSeries])
-
-    const openActivityModal = (record: GroupedRow) => {
-        setSelectedUser(record)
-        setViewModalOpen(true)
-    }
-
-    const activeNowDelta = useMemo(
-        () => buildDelta(activeNow, previousActiveNow),
-        [activeNow, previousActiveNow]
+    const filterCount = Number(role !== 'all') + Number(team !== 'all')
+    const filters = (
+        <FilterPanel
+            canReset={filterCount > 0}
+            onReset={() => {
+                setRole('all')
+                setTeam('all')
+            }}
+        >
+            <ChoiceFilter id='act-role' label='Role' allLabel='All roles' value={role} values={roles} onChange={setRole} />
+            <ChoiceFilter id='act-team' label='Team' allLabel='All teams' value={team} values={teams} onChange={setTeam} />
+        </FilterPanel>
     )
 
-    const usersWindowDelta = useMemo(
-        () => buildDelta(sessionsToday, previousSessionsToday),
-        [sessionsToday, previousSessionsToday]
-    )
-
-    const avgDurationDelta = useMemo(
-        () => buildDelta(avgMinsWindow, previousAvgMinsWindow),
-        [avgMinsWindow, previousAvgMinsWindow]
-    )
-
-    const sessionColumns: ColumnsType<GroupedRow> = [
-        {
-            title: 'User',
-            key: 'user',
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{record.name || '—'}</Text>
-                    <Text type="secondary">{record.departmentName || '—'}</Text>
-                </Space>
-            )
-        },
-        {
-            title: 'Role',
-            dataIndex: 'roles',
-            key: 'roles',
-            render: (roles: string[]) => (
-                <Space wrap>
-                    {(roles || [])
-                        .filter(isAllowedRole)
-                        .map(role => (
-                            <Tag key={role} color={roleBadgeColor(role)} style={{ borderRadius: 999 }}>
-                                {ROLE_LABEL_MAP[role] || role}
-                            </Tag>
-                        ))}
-                </Space>
-            )
-        },
-        {
-            title: 'Status',
-            dataIndex: 'active',
-            key: 'active',
-            render: (v: boolean) => (
-                <Tag color={v ? 'success' : 'default'} style={{ borderRadius: 999 }}>
-                    {v ? 'Active' : 'Idle'}
-                </Tag>
-            )
-        },
-        {
-            title: 'Last Login',
-            dataIndex: 'lastStartedAt',
-            key: 'lastStartedAt',
-            render: formatDateCell
-        },
-        {
-            title: 'Last Seen',
-            dataIndex: 'lastSeenAt',
-            key: 'lastSeenAt',
-            render: formatDateCell
-        },
-        {
-            title: 'Sessions Today',
-            dataIndex: 'sessionsToday',
-            key: 'sessionsToday',
-            render: (v: number) => <Tag style={{ borderRadius: 999 }}>{v}</Tag>
-        },
-        {
-            title: `Sessions (${windowDays}d)`,
-            dataIndex: 'sessionsWindow',
-            key: 'sessionsWindow',
-            render: (v: number) => <Tag style={{ borderRadius: 999 }}>{v}</Tag>
-        },
-        {
-            title: `Duration (${windowDays}d)`,
-            dataIndex: 'durWindowMins',
-            key: 'durWindowMins',
-            render: (v: number) => (
-                <Tag color="purple" style={{ borderRadius: 999 }}>
-                    {formatDuration(v)}
-                </Tag>
-            )
-        },
-        {
-            title: 'Action',
-            key: 'action',
-            width: 140,
-            render: (_, record) => (
-                <Button
-                    icon={<EyeOutlined />}
-                    type="default"
-                    shape="round"
-                    onClick={() => openActivityModal(record)}
-                >
-                    View Activity
-                </Button>
-            )
-        }
-    ]
-
-    const topUsersColumns: ColumnsType<GroupedRow> = [
-        {
-            title: '#',
-            key: 'rank',
-            width: 60,
-            render: (_, __, index) => <Text strong>{index + 1}</Text>
-        },
-        {
-            title: 'User',
-            key: 'user',
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{record.name || '—'}</Text>
-                    <Text type="secondary">{record.departmentName || '—'}</Text>
-                </Space>
-            )
-        },
-        {
-            title: 'Duration',
-            dataIndex: 'durWindowMins',
-            key: 'durWindowMins',
-            render: (v: number) => (
-                <Tag color="purple" style={{ borderRadius: 999 }}>
-                    {formatDuration(v)}
-                </Tag>
-            )
-        }
-    ]
-
-    if (initialPageLoading) {
-        return (
-            <div style={{ minHeight: '100vh' }}>
-                <Helmet>
-                    <title>User Activity | Smart Incubation</title>
-                </Helmet>
-                <PageSkeleton variant='list' />
-            </div>
-        )
-    }
+    const detail = selected ? <ActivityPersonDetail person={selected} sessions={current} days={days} now={now} /> : null
+    const pageItems = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
     return (
-        <div style={{ padding: 24, minHeight: '100%' }}>
+        <div className='ws-page'>
             <Helmet>
-                <title>
-                    User Activity | Smart Incubation
-                </title>
+                <title>Staff activity</title>
             </Helmet>
-            <Row gutter={[16, 16]} style={{ marginBottom: 15 }}>
-                <Col xs={24} md={8}>
-                    <MotionCard>
-                        <MetricTile
-                            icon={<UserOutlined />}
-                            tone='success'
-                            title="Active Now"
-                            value={activeNow}
-                            subtitle={
-                                loadingMetrics
-                                    ? <Text type="secondary">Calculating comparison...</Text>
-                                    : renderDelta(activeNowDelta)
-                            }
-                        />
-                    </MotionCard>
-                </Col>
 
-                <Col xs={24} md={8}>
-                    <MotionCard>
-                        <MetricTile
-                            icon={<TeamOutlined />}
-                            tone='info'
-                            title={`Active Users (${windowLabel})`}
-                            value={sessionsToday}
-                            subtitle={
-                                loadingMetrics
-                                    ? <Text type="secondary">Calculating comparison...</Text>
-                                    : renderDelta(usersWindowDelta)
-                            }
-                        />
-                    </MotionCard>
+            <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+                <Col xs={12} lg={6}>
+                    <MetricTile icon={<ThunderboltOutlined />} tone='success' title='Active now' value={stats.activeNow} loading={loading} compact={isMobile} />
                 </Col>
-
-                <Col xs={24} md={8}>
-                    <MotionCard>
-                        <MetricTile
-                            icon={<HourglassOutlined />}
-                            tone='info'
-                            title={`Avg Duration (${windowLabel})`}
-                            value={`${avgMinsWindow} min`}
-                            subtitle={
-                                loadingMetrics
-                                    ? <Text type="secondary">Calculating comparison...</Text>
-                                    : renderDelta(avgDurationDelta)
-                            }
-                        />
-                    </MotionCard>
+                <Col xs={12} lg={6}>
+                    <MetricTile
+                        icon={<TeamOutlined />}
+                        tone='info'
+                        title='People active'
+                        value={stats.people}
+                        subtitle={changeText(stats.people, prevStats.people)}
+                        loading={loading}
+                        compact={isMobile}
+                    />
+                </Col>
+                <Col xs={12} lg={6}>
+                    <MetricTile
+                        icon={<FieldTimeOutlined />}
+                        tone='accent'
+                        title='Hours in the app'
+                        value={Math.round(stats.minutes / 60)}
+                        subtitle={changeText(stats.minutes, prevStats.minutes)}
+                        loading={loading}
+                        compact={isMobile}
+                    />
+                </Col>
+                <Col xs={12} lg={6}>
+                    <MetricTile
+                        icon={<HourglassOutlined />}
+                        tone='neutral'
+                        title='Average session'
+                        value={formatDuration(stats.avgMinutes)}
+                        subtitle={changeText(stats.avgMinutes, prevStats.avgMinutes)}
+                        loading={loading}
+                        compact={isMobile}
+                    />
                 </Col>
             </Row>
 
-            <Row gutter={[16, 16]}>
-                <Col xs={24} xl={16}>
-                    <MotionCard
-                        title={`Monitoring Activity — ${windowLabel}`}
-                        filterBar={
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 12,
-                                    flexWrap: 'wrap'
-                                }}
-                            >
-                                <Segmented
-                                    value={windowDays}
-                                    onChange={v => setWindowDays(Number(v))}
-                                    options={[7, 14, 30, 120].map(v => ({ label: `${v} days`, value: v }))}
-                                />
+            <DashboardFilterBar>
+                <div className='ws-toolbar'>
+                    <Input
+                        className='ws-toolbar-search'
+                        placeholder='Search by name, email or team'
+                        prefix={<SearchOutlined />}
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        allowClear
+                        aria-label='Search staff activity'
+                    />
+                    <Segmented
+                        className='ws-toolbar-status'
+                        block
+                        value={days}
+                        onChange={v => setDays(Number(v))}
+                        options={WINDOWS.map(d => ({ label: `${d} days`, value: d }))}
+                    />
+                    <Popover content={filters} trigger='click' placement='bottomLeft' title='Filters'>
+                        <Badge className='ws-toolbar-button' count={filterCount} size='small' offset={[-6, 4]}>
+                            <Button block icon={<FilterOutlined />}>
+                                Filters
+                            </Button>
+                        </Badge>
+                    </Popover>
+                    <Button className='ws-toolbar-button' icon={<DownloadOutlined />} onClick={exportExcel}>
+                        Export Excel
+                    </Button>
+                </div>
+            </DashboardFilterBar>
 
-                                <Select
-                                    mode="multiple"
-                                    allowClear
-                                    placeholder="Filter by role"
-                                    style={{ minWidth: 220, flex: '0 0 260px' }}
-                                    value={roleFilter}
-                                    onChange={setRoleFilter}
-                                    optionFilterProp="label"
-                                    options={allRoles.map(role => ({
-                                        value: role,
-                                        label: ROLE_LABEL_MAP[role] || role
-                                    }))}
-                                />
+            {truncated && (
+                <Alert
+                    type='warning'
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message={`Only the latest ${SESSION_LIMIT.toLocaleString()} sessions are included. Pick a shorter period for complete figures.`}
+                />
+            )}
 
-                                <Input
-                                    allowClear
-                                    prefix={<SearchOutlined />}
-                                    placeholder="Search user or department"
-                                    value={searchText}
-                                    onChange={e => setSearchText(e.target.value)}
-                                    style={{ minWidth: 240, flex: 1 }}
-                                />
-
-                                <Button
-                                    icon={<DownloadOutlined />}
-                                    onClick={exportFilteredToExcel}
-                                    style={{ marginLeft: 'auto' }}
-                                >
-                                    Export Excel
-                                </Button>
-                            </div>
-                        }
-                        filterBarProps={{
-                            background: '#fafafa',
-                            borderColor: '#d9d9d9',
-                            borderRadius: 12,
-                            boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.06)',
-                            padding: 14,
-                            marginBottom: 16
-                        }}
-                    >
-                        <Table<GroupedRow>
-                            rowKey="id"
-                            dataSource={filteredRows}
-                            columns={sessionColumns}
-                            pagination={{ pageSize: 10, showSizeChanger: false }}
-                            locale={{
-                                emptyText: (
-                                    <Empty
-                                        description="No monitoring activity found."
-                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                    />
-                                )
-                            }}
-                            scroll={{ x: 1100 }}
-                        />
-
-                        <Alert
-                            showIcon
-                            type="info"
-                            message="Session durations are estimated from recorded activity."
-                            style={{ marginTop: 16, borderRadius: 12 }}
-                        />
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                <Col xs={24} xl={15}>
+                    <MotionCard title='Daily activity' loading={loading} skeletonRows={6}>
+                        <HighchartsReact highcharts={Highcharts} options={dailyOptions} />
                     </MotionCard>
                 </Col>
-
-                <Col xs={24} xl={8}>
-                    <MotionCard
-                        title={`Top 10 Engaged Users — ${windowLabel}`}
-                        style={{ height: '100%' }}
-                    >
-                        {topUsers.length ? (
-                            <>
-                                <div style={{ marginBottom: 16 }}>
-                                    <HighchartsReact
-                                        highcharts={Highcharts}
-                                        options={topUsersChartOptions}
-                                    />
-                                </div>
-
-                                <Table<GroupedRow>
-                                    rowKey="id"
-                                    dataSource={topUsers}
-                                    columns={topUsersColumns}
-                                    pagination={false}
-                                    size="small"
-                                    scroll={{ x: 700 }}
-                                />
-                            </>
+                <Col xs={24} xl={9}>
+                    <MotionCard title='Hours by team' loading={loading} skeletonRows={6}>
+                        {visible.length ? (
+                            <HighchartsReact highcharts={Highcharts} options={teamOptions} />
                         ) : (
-                            <Empty
-                                description="No engagement data found."
-                                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                            />
+                            <Empty description='No activity in this period' />
                         )}
                     </MotionCard>
                 </Col>
             </Row>
 
-            <Modal
-                title={
-                    <Space>
-                        <BarChartOutlined />
-                        <span>Activity Overview</span>
-                    </Space>
-                }
-                open={viewModalOpen}
-                onCancel={() => {
-                    setViewModalOpen(false)
-                    setSelectedUser(null)
-                }}
-                footer={null}
-                width={1000}
-                destroyOnClose
-            >
-                {selectedUser ? (
-                    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                        <Row gutter={[16, 16]}>
-                            <Col xs={24} md={8}>
-                                <Card
-                                    hoverable
-                                >
-                                    <MetricTile
-                                        title="User"
-                                        value={selectedUser.name || '—'}
-                                        subtitle={selectedUser.departmentName || '—'}
-                                        icon={<UserOutlined />}
-                                        tone='info'
+            <div className='ws-layout'>
+                <MotionCard loading={loading} skeleton='list' skeletonRows={6}>
+                    <SortSelect value={sort} options={SORT_OPTIONS} onChange={setSort} label='Sort staff' />
+                    {visible.length === 0 ? (
+                        <Empty className='ws-list-empty' description='No staff activity matches these filters' />
+                    ) : (
+                        <>
+                            <div key={`${page}|${sort}|${search}|${role}|${team}|${days}`} className='ws-rows' role='listbox' aria-label='Staff'>
+                                {pageItems.map((p: Person, index) => (
+                                    <motion.button
+                                        key={p.id}
+                                        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.24, ease: 'easeOut', delay: Math.min(index * 0.035, 0.3) }}
+                                        type='button'
+                                        role='option'
+                                        aria-selected={p.id === selectedId}
+                                        className={`ws-row${p.id === selectedId ? ' is-selected' : ''}`}
+                                        onClick={() => {
+                                            setSelectedId(p.id)
+                                            if (isMobile) setDrawerOpen(true)
+                                        }}
+                                    >
+                                        <EntityAvatar name={p.name} photo={p.photo} size={36} />
+                                        <div className='ws-row-main'>
+                                            <div className='ws-row-name'>{p.name}</div>
+                                            <div className='ws-row-meta'>
+                                                {[p.team, formatDuration(p.minutes)].filter(Boolean).join(' · ')}
+                                            </div>
+                                        </div>
+                                        <div className='ws-row-side'>
+                                            {p.active ? (
+                                                <Tag color='green' bordered={false}>
+                                                    Active
+                                                </Tag>
+                                            ) : (
+                                                <span className='act-ago'>{formatAgo(p.lastSeen, now)}</span>
+                                            )}
+                                        </div>
+                                    </motion.button>
+                                ))}
+                            </div>
+                            {visible.length > PAGE_SIZE && (
+                                <div className='ws-pagination'>
+                                    <Pagination
+                                        size='small'
+                                        current={page}
+                                        pageSize={PAGE_SIZE}
+                                        total={visible.length}
+                                        onChange={setPage}
+                                        showSizeChanger={false}
                                     />
-                                </Card>
-                            </Col>
-
-                            <Col xs={24} md={8}>
-                                <Card
-                                    hoverable
-                                >
-                                    <MetricTile
-                                        title={`Sessions (${windowDays}d)`}
-                                        value={selectedUser.sessionsWindow}
-                                        subtitle={`${selectedUser.sessionsToday} today`}
-                                        icon={<TeamOutlined />}
-                                        tone='success'
-                                    />
-                                </Card>
-                            </Col>
-
-                            <Col xs={24} md={8}>
-                                <Card
-                                    hoverable
-                                >
-                                    <MetricTile
-                                        title={`Duration (${windowDays}d)`}
-                                        value={formatDuration(selectedUser.durWindowMins)}
-                                        subtitle={selectedUser.active ? 'Active now' : 'Idle'}
-                                        icon={<HourglassOutlined />}
-                                        tone='info'
-                                    />
-                                </Card>
-                            </Col>
-                        </Row>
-
-                        <Card
-                            hoverable
-                            title={`${selectedUser.name || 'User'} — Daily Activity`}
-                            extra={
-                                <Space wrap>
-                                    {(selectedUser.roles || []).filter(isAllowedRole).map(role => (
-                                        <Tag
-                                            key={role}
-                                            color={roleBadgeColor(role)}
-                                            style={{ borderRadius: 999 }}
-                                        >
-                                            {ROLE_LABEL_MAP[role] || role}
-                                        </Tag>
-                                    ))}
-                                </Space>
-                            }
-                        >
-                            {loadingSelectedActivity ? (
-                                <div style={{ padding: 40, textAlign: 'center' }}>
-                                    <Text type="secondary">Loading activity...</Text>
                                 </div>
-                            ) : selectedUserSeries.length ? (
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={selectedUserChartOptions}
-                                />
-                            ) : (
-                                <Empty
-                                    description="No activity found for this user."
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                />
                             )}
-                        </Card>
+                        </>
+                    )}
+                </MotionCard>
 
-                        <Row gutter={[16, 16]}>
-                            <Col xs={24} md={12}>
-                                <Card
-                                    hoverable
-                                >
-                                    <MetricTile
-                                        title="Last Login"
-                                        value={formatDateCell(selectedUser.lastStartedAt)}
-                                        subtitle="Latest start time"
-                                    />
-                                </Card>
-                            </Col>
+                {!isMobile && (
+                    <div className='ws-detail-sticky'>
+                        {detail || (
+                            <MotionCard loading={loading} skeleton='text' skeletonRows={8}>
+                                <Empty className='ws-detail-empty' description='Select someone to see their activity' />
+                            </MotionCard>
+                        )}
+                    </div>
+                )}
+            </div>
 
-                            <Col xs={24} md={12}>
-                                <Card
-                                    hoverable
-                                >
-                                    <MetricTile
-                                        title="Last Seen"
-                                        value={formatDateCell(selectedUser.lastSeenAt)}
-                                        subtitle="Latest activity time"
-                                    />
-                                </Card>
-                            </Col>
-                        </Row>
-                    </Space>
-                ) : null}
-            </Modal>
+            {isMobile && (
+                <Drawer
+                    className='ws-drawer'
+                    open={drawerOpen && !!selected}
+                    onClose={() => setDrawerOpen(false)}
+                    placement='right'
+                    width='100%'
+                    title={selected?.name || 'Activity'}
+                >
+                    {detail}
+                </Drawer>
+            )}
+
+            <p className='ws-muted act-note'>
+                Time is estimated from activity in the app; a session counts until the last click or keypress, up to 12 hours.
+            </p>
         </div>
     )
 }

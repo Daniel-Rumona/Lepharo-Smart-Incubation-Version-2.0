@@ -317,7 +317,7 @@ export function ControlTowerView({ access, data, nameOf }: { access: Access; dat
                         )}
                     </MotionCard>
                 </Col>
-                <Col xs={24} lg={11} className="tower-equal">
+                <Col xs={24} lg={11}>
                     <MotionCard loading={loading} skeleton="chart">
                         <PanelLabel
                             icon={<CheckCircleOutlined />}

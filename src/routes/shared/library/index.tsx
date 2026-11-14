@@ -40,6 +40,7 @@ import {
     ReadOutlined,
     ReloadOutlined,
     SearchOutlined,
+    TeamOutlined,
     UploadOutlined
 } from '@ant-design/icons'
 import {
@@ -47,9 +48,13 @@ import {
     collection,
     deleteDoc,
     doc,
+    getCountFromServer,
+    getDoc,
     getDocs,
+    increment,
     query,
     serverTimestamp,
+    setDoc,
     updateDoc,
     where
 } from 'firebase/firestore'
@@ -91,6 +96,25 @@ type LibraryMaterial = {
     uploadedByName: string
     createdAt?: any
     updatedAt?: any
+}
+
+/** One doc per SME at libraryMaterials/{id}/opens/{uid}, so counts are people, not clicks. */
+type MaterialOpen = {
+    id: string
+    uid: string
+    participantId?: string
+    name?: string
+    openCount?: number
+    downloadCount?: number
+    firstOpenedAt?: any
+    lastOpenedAt?: any
+}
+
+const formatOpenedAt = (value: any) => {
+    const date = value?.toDate?.()
+    return date
+        ? date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+        : ''
 }
 
 const CATEGORIES = ['Guide', 'Template', 'Policy', 'Training', 'Reference', 'Other']
@@ -175,6 +199,11 @@ const LibraryPage: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('all')
     const [fileList, setFileList] = useState<UploadFile[]>([])
 
+    const [openCounts, setOpenCounts] = useState<Record<string, number>>({})
+    const [opensItem, setOpensItem] = useState<LibraryMaterial | null>(null)
+    const [opensRows, setOpensRows] = useState<MaterialOpen[]>([])
+    const [opensLoading, setOpensLoading] = useState(false)
+
     const [form] = Form.useForm()
 
     const role = String(user?.role || '').toLowerCase().replace(/\s+/g, '')
@@ -223,6 +252,90 @@ const LibraryPage: React.FC = () => {
             if (previewUrl) URL.revokeObjectURL(previewUrl)
         }
     }, [previewUrl])
+
+    // Staff see how many distinct SMEs opened each item.
+    useEffect(() => {
+        if (!isOperations || !materials.length) {
+            setOpenCounts({})
+            return
+        }
+
+        let cancelled = false
+        Promise.all(
+            materials.map(async item => {
+                try {
+                    const snap = await getCountFromServer(
+                        collection(db, 'libraryMaterials', item.id, 'opens')
+                    )
+                    return [item.id, snap.data().count] as const
+                } catch (error) {
+                    console.warn('Failed to count library opens', item.id, error)
+                    return [item.id, 0] as const
+                }
+            })
+        ).then(entries => {
+            if (!cancelled) setOpenCounts(Object.fromEntries(entries))
+        })
+
+        return () => {
+            cancelled = true
+        }
+    }, [isOperations, materials])
+
+    // Records an SME opening or downloading material. Best effort: a failed
+    // write never blocks the SME from reading.
+    const recordOpen = async (item: LibraryMaterial, action: 'open' | 'download') => {
+        if (!isSme || !user?.id) return
+
+        const openRef = doc(db, 'libraryMaterials', item.id, 'opens', String(user.id))
+        const counter = action === 'download' ? 'downloadCount' : 'openCount'
+
+        try {
+            const existing = await getDoc(openRef)
+
+            if (existing.exists()) {
+                await updateDoc(openRef, {
+                    [counter]: increment(1),
+                    lastOpenedAt: serverTimestamp()
+                })
+            } else {
+                await setDoc(openRef, {
+                    uid: String(user.id),
+                    participantId: String(user.participantId || ''),
+                    name: String(user.name || ''),
+                    openCount: action === 'open' ? 1 : 0,
+                    downloadCount: action === 'download' ? 1 : 0,
+                    firstOpenedAt: serverTimestamp(),
+                    lastOpenedAt: serverTimestamp()
+                })
+            }
+        } catch (error) {
+            console.warn('Failed to record library open', error)
+        }
+    }
+
+    const showOpens = async (item: LibraryMaterial) => {
+        setOpensItem(item)
+        setOpensRows([])
+        setOpensLoading(true)
+
+        try {
+            const snapshot = await getDocs(collection(db, 'libraryMaterials', item.id, 'opens'))
+            const rows = snapshot.docs.map(entry => ({
+                id: entry.id,
+                ...(entry.data() as Omit<MaterialOpen, 'id'>)
+            }))
+
+            rows.sort((a, b) => (b.lastOpenedAt?.seconds || 0) - (a.lastOpenedAt?.seconds || 0))
+            setOpensRows(rows)
+            setOpenCounts(current => ({ ...current, [item.id]: rows.length }))
+        } catch (error) {
+            console.error('Failed to load library opens', error)
+            message.error('Could not load who opened this material.')
+        } finally {
+            setOpensLoading(false)
+        }
+    }
 
     const departments = useMemo(
         () =>
@@ -721,6 +834,8 @@ const LibraryPage: React.FC = () => {
             } else {
                 setPreviewUrl(URL.createObjectURL(blob))
             }
+
+            void recordOpen(item, 'open')
         } catch (error) {
             console.error('Failed to preview library material', error)
             message.error('Could not open this material.')
@@ -748,6 +863,7 @@ const LibraryPage: React.FC = () => {
             anchor.remove()
 
             window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+            void recordOpen(item, 'download')
         } catch (error) {
             console.error('Failed to download library material', error)
             message.error('Could not download this material.')
@@ -1465,6 +1581,27 @@ const LibraryPage: React.FC = () => {
                                                                 {formatSize(item.fileSize)}
                                                             </Text>
                                                         </div>
+
+                                                        {isOperations ? (
+                                                            <Button
+                                                                type='link'
+                                                                size='small'
+                                                                icon={<TeamOutlined />}
+                                                                onClick={() => showOpens(item)}
+                                                                style={{
+                                                                    padding: 0,
+                                                                    marginTop: 6,
+                                                                    height: 'auto',
+                                                                    fontSize: 12
+                                                                }}
+                                                            >
+                                                                {openCounts[item.id] === undefined
+                                                                    ? 'Opened by …'
+                                                                    : openCounts[item.id] === 1
+                                                                        ? 'Opened by 1 SME'
+                                                                        : `Opened by ${openCounts[item.id]} SMEs`}
+                                                            </Button>
+                                                        ) : null}
                                                     </div>
 
                                                     <div
@@ -1599,7 +1736,6 @@ const LibraryPage: React.FC = () => {
                 onCancel={closeMaterialModal}
                 onOk={() => form.submit()}
                 okText={editingMaterial ? 'Save changes' : 'Add to library'}
-                cancelText='Cancel'
                 confirmLoading={saving}
                 okButtonProps={{
                     disabled: !departmentId,
@@ -1607,7 +1743,7 @@ const LibraryPage: React.FC = () => {
                     style: { background: ACCENT, borderColor: ACCENT },
                     icon: editingMaterial ? <EditOutlined /> : <UploadOutlined />
                 }}
-                cancelButtonProps={{ disabled: saving }}
+                cancelButtonProps={{ style: { display: 'none' } }}
                 destroyOnHidden
                 centered
                 maskClosable={false}
@@ -1735,9 +1871,9 @@ const LibraryPage: React.FC = () => {
                                 justifyContent: 'space-between',
                                 gap: 12,
                                 padding: '9px 11px',
-                                border: '1px solid #edf0f3',
+                                border: `1px solid ${token.colorBorderSecondary}`,
                                 borderRadius: 9,
-                                background: '#fafcfd'
+                                background: token.colorFillAlter
                             }}
                         >
                             <div style={{ minWidth: 0 }}>
@@ -1829,7 +1965,7 @@ const LibraryPage: React.FC = () => {
                                                             width: 34,
                                                             height: 34,
                                                             borderRadius: 8,
-                                                            background: '#fff',
+                                                            background: token.colorBgContainer,
                                                             display: 'grid',
                                                             placeItems: 'center',
                                                             flex: '0 0 auto'
@@ -1864,8 +2000,8 @@ const LibraryPage: React.FC = () => {
                                             showUploadList={false}
                                             fileList={fileList}
                                             style={{
-                                                background: '#fafcfd',
-                                                borderColor: '#d6e8ee',
+                                                background: token.colorFillAlter,
+                                                borderColor: token.colorBorder,
                                                 borderRadius: 9,
                                                 padding: '2px 0'
                                             }}
@@ -1943,8 +2079,8 @@ const LibraryPage: React.FC = () => {
                                         wordBreak: 'break-word',
                                         padding: 18,
                                         borderRadius: 10,
-                                        background: '#f7f9fb',
-                                        border: '1px solid #edf1f5',
+                                        background: token.colorFillAlter,
+                                        border: `1px solid ${token.colorBorderSecondary}`,
                                         fontFamily: 'inherit'
                                     }}
                                 >
@@ -1956,6 +2092,79 @@ const LibraryPage: React.FC = () => {
                                     fileName={previewItem.fileName}
                                 />
                             ) : null}
+                        </div>
+                    )}
+                </Spin>
+            </Modal>
+
+            <Modal
+                open={!!opensItem}
+                onCancel={() => setOpensItem(null)}
+                footer={null}
+                centered
+                destroyOnHidden
+                width={520}
+                title={
+                    <Space align='center' size={10}>
+                        <TeamOutlined style={{ color: ACCENT }} />
+                        <span>Opened by SMEs</span>
+                    </Space>
+                }
+            >
+                <Text type='secondary' style={{ display: 'block', marginBottom: 12 }}>
+                    {opensItem?.title}
+                </Text>
+
+                <Spin spinning={opensLoading}>
+                    {!opensLoading && !opensRows.length ? (
+                        <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description='No SME has opened this material yet.'
+                        />
+                    ) : (
+                        <div style={{ display: 'grid', gap: 8, maxHeight: '60vh', overflow: 'auto' }}>
+                            {opensRows.map(row => {
+                                const opens = row.openCount || 0
+                                const downloads = row.downloadCount || 0
+
+                                return (
+                                    <div
+                                        key={row.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: 12,
+                                            padding: '9px 12px',
+                                            borderRadius: 10,
+                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                            background: token.colorFillAlter
+                                        }}
+                                    >
+                                        <div style={{ minWidth: 0 }}>
+                                            <Text ellipsis style={{ display: 'block', fontWeight: 500 }}>
+                                                {row.name || 'SME'}
+                                            </Text>
+                                            <Text type='secondary' style={{ fontSize: 11 }}>
+                                                Last opened {formatOpenedAt(row.lastOpenedAt) || '—'}
+                                            </Text>
+                                        </div>
+
+                                        <Space size={4} style={{ flex: '0 0 auto' }}>
+                                            {opens ? (
+                                                <Tag bordered={false} style={{ margin: 0, borderRadius: 999 }}>
+                                                    {opens} {opens === 1 ? 'view' : 'views'}
+                                                </Tag>
+                                            ) : null}
+                                            {downloads ? (
+                                                <Tag bordered={false} color='success' style={{ margin: 0, borderRadius: 999 }}>
+                                                    {downloads} {downloads === 1 ? 'download' : 'downloads'}
+                                                </Tag>
+                                            ) : null}
+                                        </Space>
+                                    </div>
+                                )
+                            })}
                         </div>
                     )}
                 </Spin>

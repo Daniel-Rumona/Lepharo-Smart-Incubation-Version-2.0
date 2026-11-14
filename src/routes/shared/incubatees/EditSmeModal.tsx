@@ -1,20 +1,38 @@
 import React, { useEffect, useState } from 'react'
-import { Row, Col, Typography, message, Input, Select, Button, Modal, Form, InputNumber, theme } from 'antd'
-import { ArrowLeftOutlined, RightOutlined, IdcardOutlined, EnvironmentOutlined, PieChartOutlined, ManOutlined, WomanOutlined, SaveOutlined } from '@ant-design/icons'
+import { Row, Col, Typography, message, Input, Select, Button, Modal, Form, InputNumber, Checkbox, AutoComplete, Spin, theme } from 'antd'
+import { ArrowLeftOutlined, RightOutlined, IdcardOutlined, EnvironmentOutlined, PieChartOutlined, ManOutlined, WomanOutlined, SaveOutlined, FileProtectOutlined, BankOutlined } from '@ant-design/icons'
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { db } from '@/firebase'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import {
+    ACCOUNT_TYPES,
+    SA_BANKS,
+    SmeBankingDetails,
+    loadSmeBankingDetails,
+    saveSmeBankingDetails,
+    useCanSeeBanking
+} from '@/services/smeBankingDetails'
 import { SA_PROVINCES, SA_SECTORS, SmeRow, cleanText, editInitialValues } from './participantsData'
 
 const { Text } = Typography
 
-export type EditSectionKey = 'identity' | 'contact' | 'ownership'
+export type EditSectionKey = 'identity' | 'contact' | 'ownership' | 'tax' | 'banking'
 
 export const EDIT_SECTIONS: { key: EditSectionKey; title: string; description: string; icon: React.ReactNode; accent: string }[] = [
     { key: 'identity', title: 'Identity', description: 'Registration number, ID number, sector and gender', icon: <IdcardOutlined />, accent: '#1677ff' },
     { key: 'contact', title: 'Contact and location', description: 'Contact number, business address, town and province', icon: <EnvironmentOutlined />, accent: '#13c2c2' },
-    { key: 'ownership', title: 'Ownership and B-BBEE', description: 'B-BBEE level and ownership percentages', icon: <PieChartOutlined />, accent: '#fa8c16' }
+    { key: 'ownership', title: 'Ownership and B-BBEE', description: 'B-BBEE level and ownership percentages', icon: <PieChartOutlined />, accent: '#fa8c16' },
+    { key: 'tax', title: 'Tax and registrations', description: 'Income tax, VAT and PAYE numbers, CSD number and tax compliance PIN', icon: <FileProtectOutlined />, accent: '#722ed1' },
+    { key: 'banking', title: 'Banking details', description: 'Bank account, checked against the Bank Confirmation Letter. Finance only', icon: <BankOutlined />, accent: '#52c41a' }
 ]
+
+// SARS and National Treasury formats. Kept loose enough to accept spaces.
+const digitsOnly = (value: string) => String(value || '').replace(/\s/g, '')
+const formatRule = (test: RegExp, label: string) => ({
+    validator: (_: unknown, value?: string) =>
+        !value || test.test(digitsOnly(value)) ? Promise.resolve() : Promise.reject(new Error(label))
+})
 
 // Matches the onboarding form: levels 1-4, and "5+" for level 5 and above.
 
@@ -153,6 +171,9 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
     const shift = reduceMotion ? 0 : 24
     const [section, setSection] = useState<EditSectionKey | null>(null)
     const [saving, setSaving] = useState(false)
+    const { user } = useFullIdentity()
+    const canSeeBanking = useCanSeeBanking()
+    const [banking, setBanking] = useState<SmeBankingDetails | null>(null)
 
     // Keep the last SME so the content doesn't empty out while the modal fades away.
     const lastRow = React.useRef<SmeRow | null>(row)
@@ -166,9 +187,32 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
 
     if (!shown) return null
 
+    // Banking needs a participant record to key on, and only finance may see it.
+    const participantId = String(shown.participantId || '').trim()
+    const sections = EDIT_SECTIONS.filter(item => item.key !== 'banking' || (canSeeBanking && !!participantId))
+
     const openSection = (key: EditSectionKey) => {
         form.setFieldsValue(editInitialValues(shown))
         setSection(key)
+        if (key === 'banking') {
+            setBanking(null)
+            loadSmeBankingDetails(participantId)
+                .then(details => {
+                    setBanking(details)
+                    form.setFieldsValue({ ...details, verified: !!details.verified })
+                })
+                .catch(error => {
+                    console.error('Failed to load banking details.', error)
+                    message.error('Could not load the banking details.')
+                    setSection(null)
+                })
+        }
+    }
+
+    // Changing any detail means it has to be checked against the letter again.
+    const handleValuesChange = (changed: Record<string, unknown>) => {
+        if (section !== 'banking') return
+        if (Object.keys(changed).some(key => key !== 'verified')) form.setFieldValue('verified', false)
     }
 
     const handleUpdate = async () => {
@@ -180,10 +224,48 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
             return
         }
 
+        if (section === 'banking') {
+            if (!banking) return
+            setSaving(true)
+            try {
+                await saveSmeBankingDetails({
+                    participantId,
+                    values,
+                    previous: banking,
+                    verifier: {
+                        uid: String((user as any)?.uid || (user as any)?.id || ''),
+                        name: String((user as any)?.name || (user as any)?.email || '')
+                    }
+                })
+                message.success('Banking details saved.')
+                setSection(null)
+            } catch (error) {
+                console.error('Failed to save banking details.', error)
+                message.error('Could not save the banking details. Please try again.')
+            } finally {
+                setSaving(false)
+            }
+            return
+        }
+
         let payload: Record<string, any> = {}
         let patch: Partial<SmeRow> = {}
 
-        if (section === 'identity') {
+        if (section === 'tax') {
+            const incomeTaxNumber = digitsOnly(values.incomeTaxNumber)
+            const vatNumber = digitsOnly(values.vatNumber)
+            const payeReference = digitsOnly(values.payeReference)
+            const csdNumber = digitsOnly(values.csdNumber).toUpperCase()
+            const taxCompliancePin = digitsOnly(values.taxCompliancePin).toUpperCase()
+            payload = { incomeTaxNumber, vatNumber, payeReference, csdNumber, taxCompliancePin }
+            patch = {
+                incomeTaxNumber: incomeTaxNumber || undefined,
+                vatNumber: vatNumber || undefined,
+                payeReference: payeReference || undefined,
+                csdNumber: csdNumber || undefined,
+                taxCompliancePin: taxCompliancePin || undefined
+            }
+        } else if (section === 'identity') {
             const registrationNumber = cleanText(values.registrationNumber)
             const idNumber = cleanText(values.idNumber)
             const sector = cleanText(values.sector)
@@ -273,7 +355,7 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
             <Text type='secondary' style={{ display: 'block', textAlign: 'center', marginBottom: 14 }}>
                 {shown.companyName}
             </Text>
-            <Form form={form} layout='vertical' requiredMark={false}>
+            <Form form={form} layout='vertical' requiredMark={false} onValuesChange={handleValuesChange}>
                 <div style={{ overflow: 'hidden' }}>
                     <AnimatePresence mode='wait' initial={false}>
                         {!section ? (
@@ -282,7 +364,7 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
                                 {...slide(-1)}
                                 style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
                             >
-                                {EDIT_SECTIONS.map((item, index) => (
+                                {sections.map((item, index) => (
                                     <motion.div
                                         key={item.key}
                                         role='button'
@@ -417,6 +499,115 @@ export const EditSmeModal: React.FC<EditSmeModalProps> = ({ row, sectors, onClos
                                             </Form.Item>
                                         </Col>
                                     </Row>
+                                )}
+                                {section === 'tax' && (
+                                    <Row gutter={12}>
+                                        <Col xs={24} sm={12}>
+                                            <Form.Item
+                                                name='incomeTaxNumber'
+                                                label='Income Tax Number'
+                                                rules={[formatRule(/^[01239]\d{9}$/, 'A SARS income tax number is 10 digits')]}
+                                            >
+                                                <Input inputMode='numeric' placeholder='10 digits' />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} sm={12}>
+                                            <Form.Item
+                                                name='vatNumber'
+                                                label='VAT Number'
+                                                rules={[formatRule(/^4\d{9}$/, 'A VAT number is 10 digits starting with 4')]}
+                                            >
+                                                <Input inputMode='numeric' placeholder='Starts with 4' />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} sm={12}>
+                                            <Form.Item
+                                                name='payeReference'
+                                                label='PAYE Reference'
+                                                rules={[formatRule(/^7\d{9}$/, 'A PAYE reference is 10 digits starting with 7')]}
+                                            >
+                                                <Input inputMode='numeric' placeholder='Starts with 7' />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} sm={12}>
+                                            <Form.Item
+                                                name='csdNumber'
+                                                label='CSD Supplier Number'
+                                                rules={[formatRule(/^MAAA\d{7}$/i, 'A CSD number looks like MAAA0123456')]}
+                                            >
+                                                <Input placeholder='MAAA0123456' />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24}>
+                                            <Form.Item
+                                                name='taxCompliancePin'
+                                                label='Tax Compliance Status PIN'
+                                                extra='Staff can check this PIN on SARS eFiling.'
+                                                rules={[formatRule(/^[A-Z0-9]{10}$/i, 'The PIN is 10 letters and numbers')]}
+                                            >
+                                                <Input placeholder='From the SME’s SARS eFiling' />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                )}
+                                {section === 'banking' && (
+                                    !banking ? (
+                                        <div style={{ display: 'grid', placeItems: 'center', padding: 32 }}><Spin /></div>
+                                    ) : (
+                                        <Row gutter={12}>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item name='bankName' label='Bank'>
+                                                    <AutoComplete
+                                                        allowClear
+                                                        placeholder='Select or type a bank'
+                                                        options={SA_BANKS.map(value => ({ value }))}
+                                                        filterOption={(input, option) =>
+                                                            String(option?.value || '').toLowerCase().includes(input.toLowerCase())
+                                                        }
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item name='accountType' label='Account Type'>
+                                                    <Select allowClear placeholder='Select type' options={ACCOUNT_TYPES.map(value => ({ value, label: value }))} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24}>
+                                                <Form.Item name='accountHolder' label='Account Holder'>
+                                                    <Input placeholder='As it appears on the bank letter' />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item
+                                                    name='accountNumber'
+                                                    label='Account Number'
+                                                    rules={[formatRule(/^\d{6,16}$/, 'Enter 6 to 16 digits')]}
+                                                >
+                                                    <Input inputMode='numeric' autoComplete='off' />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item
+                                                    name='branchCode'
+                                                    label='Branch Code'
+                                                    rules={[formatRule(/^\d{6}$/, 'A branch code is 6 digits')]}
+                                                >
+                                                    <Input inputMode='numeric' placeholder='6 digits' />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24}>
+                                                <Form.Item name='verified' valuePropName='checked' style={{ marginBottom: 4 }}>
+                                                    <Checkbox>Checked against the SME’s Bank Confirmation Letter</Checkbox>
+                                                </Form.Item>
+                                                {banking.verified && banking.verifiedByName && (
+                                                    <Text type='secondary' style={{ fontSize: 12 }}>
+                                                        Last verified by {banking.verifiedByName}
+                                                        {banking.verifiedAt?.toDate ? ` on ${banking.verifiedAt.toDate().toLocaleDateString()}` : ''}
+                                                    </Text>
+                                                )}
+                                            </Col>
+                                        </Row>
+                                    )
                                 )}
                             </motion.div>
                         )}

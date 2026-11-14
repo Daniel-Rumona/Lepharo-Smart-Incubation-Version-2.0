@@ -62,7 +62,7 @@ interface DPConfirmationOverlayProps {
  *    (accepted application + GAP romReview.status === 'confirmed')
  *  - Checks diagnosticPlans.finalConfirmation per participant
  *  - If ANY are not finalised, blocks the page with a Result
- *    and a "Go To Plans" button → /operations/plan
+ *    and a "Go To Plans" button → /plan
  */
 const DPConfirmationOverlay: React.FC<DPConfirmationOverlayProps> = ({
     children
@@ -241,7 +241,7 @@ const DPConfirmationOverlay: React.FC<DPConfirmationOverlayProps> = ({
                                 <Button
                                     type='primary'
                                     key='go'
-                                    onClick={() => navigate('/operations/plan')}
+                                    onClick={() => navigate('/plan')}
                                 >
                                     Go To Plans
                                 </Button>

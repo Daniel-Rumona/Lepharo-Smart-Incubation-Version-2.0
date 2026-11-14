@@ -5,7 +5,6 @@ import { suppressRecordNotifications } from "./syntheticData";
 import { admin, db } from "./emailShared";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
 import { NOTIFICATION_REGISTRY, type NotificationDoc } from "./notificationEmailRegistry";
-import { BREVO_EGRESS } from "./config";
 
 const REGION = "us-central1";
 const ACTION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -69,7 +68,7 @@ async function mintActionLinks(
  * entry, without a new Cloud Function trigger.
  */
 export const onNotificationCreatedEmail = onDocumentWritten(
-  { ...BREVO_EGRESS, region: REGION, document: "notifications/{notificationId}" },
+  { region: REGION, document: "notifications/{notificationId}" },
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data() as NotificationDoc | undefined;

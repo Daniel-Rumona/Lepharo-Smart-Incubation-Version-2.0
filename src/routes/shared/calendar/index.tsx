@@ -501,13 +501,9 @@ const MyCalendarPage: React.FC = () => {
         myRole === 'project admin'
     const isReceptionist = myRole === 'receptionist'
 
-    const isProjectCoordinator =
-        myRole === 'projectmanager' ||
-        myRole === 'project manager' ||
-        myRole === 'coordinator'
+    const isProjectCoordinator = myRole === 'coordinator'
 
     const isOperations = myRole === 'operations'
-    const isConsultant = myRole === 'consultant'
     const isIncubatee = myRole === 'incubatee'
 
     const canFilterByDepartment =
@@ -784,10 +780,6 @@ const MyCalendarPage: React.FC = () => {
                             allow = matchesVisibleDepartment(data)
                         } else if (isProjectCoordinator) {
                             allow = true
-                        } else if (isConsultant) {
-                            allow =
-                                String(data?.consultantId || '').trim() === consultantFilterId ||
-                                lower(data?.consultantEmail) === myEmail
                         } else if (isIncubatee) {
                             const participants = Array.isArray(data?.participants) ? data.participants : []
                             const participantMatch = participants.some((p: any) => {
@@ -881,8 +873,6 @@ const MyCalendarPage: React.FC = () => {
                         } else if (isOperations) {
                             allow = matchesVisibleDepartment(data)
                         } else if (isProjectCoordinator) {
-                            allow = belongsToCurrentAssignee
-                        } else if (isConsultant) {
                             allow = belongsToCurrentAssignee
                         } else if (isIncubatee) {
                             allow =
@@ -1022,7 +1012,7 @@ const MyCalendarPage: React.FC = () => {
                             allow = assignedToMe && matchesMyBranch(data)
                         } else if (isOperations) {
                             allow = isMainDepartment || assignedToMe
-                        } else if (isProjectCoordinator || isConsultant) {
+                        } else if (isProjectCoordinator) {
                             allow = assignedToMe
                         }
 

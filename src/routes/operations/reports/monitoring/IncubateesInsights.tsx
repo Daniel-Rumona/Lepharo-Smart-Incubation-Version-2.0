@@ -2,15 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
     App,
     Button,
-    Card,
     Col,
     Empty,
     Modal,
     Row,
-    Select,
     Skeleton,
     Space,
-    Tag,
     Typography
 } from 'antd'
 import Highcharts from 'highcharts'
@@ -20,8 +17,7 @@ import 'highcharts/modules/variable-pie'
 import 'highcharts/modules/drilldown'
 import dayjs, { Dayjs } from 'dayjs'
 import {
-    ExpandAltOutlined,
-    FilterOutlined
+    ExpandAltOutlined
 } from '@ant-design/icons'
 
 // Firestore
@@ -35,6 +31,8 @@ import {
     where
 } from 'firebase/firestore'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
+import './incubateesInsights.css'
 import { isReportRecordVisible, loadReportVisibilityContext } from '@/utils/reportVisibility'
 import {
     REPORT_CHART_COLORS,
@@ -58,13 +56,6 @@ const getAgeFromID = (idNumber?: string | null) => {
     const m = t.getMonth() - dob.getMonth()
     if (m < 0 || (m === 0 && t.getDate() < dob.getDate())) age--
     return age
-}
-
-const cardStyle: React.CSSProperties = {
-    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-    transition: 'all 0.3s ease',
-    borderRadius: 14,
-    border: '1px solid #d6e4ff'
 }
 
 type GroupLetter = 'A' | 'B' | 'C' | 'Graduated'
@@ -128,9 +119,39 @@ type ProgramMeta = {
     name?: string
 }
 
+// The demographic filters live in the page's Filters panel; this view reads
+// them and reports which values exist so the panel can offer them.
+export type IncubateeFilters = {
+    gender: string[]
+    ageBand: string[]
+    sector: string[]
+    province: string[]
+    bee: string[]
+}
+
+export const EMPTY_INCUBATEE_FILTERS: IncubateeFilters = {
+    gender: [],
+    ageBand: [],
+    sector: [],
+    province: [],
+    bee: []
+}
+
+export type IncubateeFilterOptions = {
+    genders: string[]
+    ageBands: string[]
+    sectors: string[]
+    provinces: string[]
+    beeLevels: string[]
+    // Province only applies to all programmes or a multi-branch one.
+    canFilterProvince: boolean
+}
+
 type Props = {
     programId?: string
     range: [Dayjs, Dayjs]
+    filters?: IncubateeFilters
+    onFilterOptionsChange?: (options: IncubateeFilterOptions) => void
 }
 
 const months = [
@@ -270,12 +291,6 @@ const aggregateCounts = (items: string[]) => {
 }
 
 
-const toColoredColumnData = (entries: Array<[string, number]>) =>
-    entries.map(([name, y], index) => ({
-        name,
-        y,
-        color: chartPalette[index % chartPalette.length]
-    }))
 
 const ExpandBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
     <Button
@@ -288,7 +303,12 @@ const ExpandBtn: React.FC<{ onClick: () => void }> = ({ onClick }) => (
     </Button>
 )
 
-const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
+const IncubateesInsights: React.FC<Props> = ({
+    programId,
+    range,
+    filters = EMPTY_INCUBATEE_FILTERS,
+    onFilterOptionsChange
+}) => {
     const { message } = App.useApp()
     const { user } = useFullIdentity() as any
 
@@ -299,11 +319,13 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
     const [programsMeta, setProgramsMeta] = useState<Record<string, ProgramMeta>>({})
     const [open, setOpen] = useState<Record<string, boolean>>({})
 
-    const [genderFilter, setGenderFilter] = useState<string[]>([])
-    const [ageBandFilter, setAgeBandFilter] = useState<string[]>([])
-    const [provinceFilter, setProvinceFilter] = useState<string[]>([])
-    const [sectorFilter, setSectorFilter] = useState<string[]>([])
-    const [beeFilter, setBeeFilter] = useState<string[]>([])
+    const {
+        gender: genderFilter,
+        ageBand: ageBandFilter,
+        province: provinceFilter,
+        sector: sectorFilter,
+        bee: beeFilter
+    } = filters
 
     useEffect(() => {
         let cancelled = false
@@ -319,7 +341,7 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         const load = async () => {
             try {
                 const snap = await getDocs(query(collection(db, 'applications'), ...constraints))
-                const visibilityContext = await loadReportVisibilityContext(user?.emails)
+                const visibilityContext = await loadReportVisibilityContext(user?.email)
                 try {
                     const apps: ApplicationDoc[] = []
 
@@ -461,7 +483,7 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         return () => {
             cancelled = true
         }
-    }, [programId])
+    }, [programId, user?.email])
 
     const canShowProvinceFilter = useMemo(() => {
         if (effectiveProgramId === 'all') return true
@@ -469,8 +491,12 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         return !!programsMeta[effectiveProgramId]?.isMultiBranch
     }, [effectiveProgramId, programsMeta])
 
+    // The portfolio for a period is everyone accepted by its end, not only
+    // those who applied during it: a cohort accepted last year is still in
+    // the programme this month. Filtering on the application date alone hid
+    // whole programmes whenever the period moved past their intake.
     const baseRows = useMemo(() => {
-        const [start, end] = range
+        const [, end] = range
 
         return rows.filter(r => {
             if (
@@ -482,11 +508,7 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
             }
 
             if (!r.createdAt) return true
-
-            const d = dayjs(r.createdAt)
-            if (d.isBefore(start, 'day')) return false
-            if (d.isAfter(end, 'day')) return false
-            return true
+            return !dayjs(r.createdAt).isAfter(end, 'day')
         })
     }, [rows, range, effectiveProgramId])
 
@@ -547,7 +569,6 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         return { male, female }
     }, [filteredRows])
 
-    const totalSMEs = filteredRows.length
 
     const groupAgg = useMemo(() => {
         const map = new Map<string, number>()
@@ -604,6 +625,17 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         }
     }, [baseRows])
 
+    useEffect(() => {
+        onFilterOptionsChange?.({
+            ...filterOptions,
+            ageBands: [...ageBands],
+            canFilterProvince: canShowProvinceFilter
+        })
+        // Report only when the available values change, not on every render
+        // of a parent that passes a fresh callback.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterOptions, canShowProvinceFilter])
+
     const shouldShowGenderChart = genderFilter.length === 0
     const shouldShowAgeChart = ageBandFilter.length === 0 && genderFilter.length === 0
     const shouldShowSectorChart = sectorFilter.length === 0
@@ -623,11 +655,10 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         plotOptions: {
             pie: {
                 innerSize: '60%',
+                borderWidth: 0,
                 showInLegend: true,
-                dataLabels: {
-                    enabled: true,
-                    format: '{point.name}: {point.y}'
-                }
+                // The legend and tooltip carry names and counts.
+                dataLabels: { enabled: false }
             }
         },
         series: [
@@ -657,11 +688,10 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         tooltip: { pointFormat: '<b>{point.y}</b> ({point.percentage:.1f}%)' },
         plotOptions: {
             pie: {
-                innerSize: '55%',
-                dataLabels: {
-                    enabled: true,
-                    format: '{point.name}: {point.y}'
-                }
+                innerSize: '60%',
+                borderWidth: 0,
+                showInLegend: true,
+                dataLabels: { enabled: false }
             }
         },
         series: [
@@ -728,72 +758,104 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         ]
     }
 
-    const sectorOptions = simplePieOptions(
-        sectorAgg.map(([name, y]) => ({ name, y })),
-        'Incubatees'
-    )
-
-    const provinceOptions: Highcharts.Options = {
-        chart: { type: 'bar', height: 360 },
+    // One-colour sorted bars: many categories compare better as bars than slices.
+    const countBarOptions = (
+        entries: Array<[string, number]>,
+        name: string
+    ): Highcharts.Options => ({
+        chart: { type: 'bar', height: Math.max(240, entries.length * 34 + 70) },
         title: { text: '' },
         credits: { enabled: false },
-        xAxis: {
-            categories: provinceAgg.map(([name]) => name),
-            title: { text: null }
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Incubatees' }
-        },
+        legend: { enabled: false },
+        xAxis: { categories: entries.map(([label]) => label), title: { text: undefined } },
+        yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
         plotOptions: {
-            // A colour per bar: a bar-chart option, not one for every series.
-            bar: {
-                colorByPoint: true,
-                dataLabels: { enabled: true }
-            }
+            bar: { borderRadius: 3, borderWidth: 0, dataLabels: { enabled: true } }
         },
         tooltip: { pointFormat: '<b>{point.y}</b>' },
         series: [
             {
                 type: 'bar',
-                name: 'Province',
-                data: toColoredColumnData(provinceAgg)
+                name,
+                color: REPORT_CHART_COLORS.primary,
+                data: entries.map(([, y]) => y)
+            }
+        ]
+    })
+
+    // The eight largest sectors, the rest as "Other".
+    const sectorEntries = useMemo<Array<[string, number]>>(() => {
+        if (sectorAgg.length <= 9) return sectorAgg
+        const other = sectorAgg.slice(8).reduce((sum, [, count]) => sum + count, 0)
+        return [...sectorAgg.slice(0, 8), ['Other', other]]
+    }, [sectorAgg])
+
+    const sectorOptions = countBarOptions(sectorEntries, 'Incubatees')
+
+    const provinceOptions = countBarOptions(provinceAgg, 'Incubatees')
+
+    // B-BBEE levels are a scale: Level 1 to 8 in order, then anything else.
+    const beeEntries = useMemo<Array<[string, number]>>(() => {
+        const levelOf = (name: string) => {
+            const match = /^level\s*(\d)$/i.exec(name)
+            return match ? Number(match[1]) : null
+        }
+        const rank = (name: string) =>
+            levelOf(name) ?? (name === 'Unspecified' ? 99 : 50)
+        return [...beeAgg].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+    }, [beeAgg])
+
+    const beeOptions: Highcharts.Options = {
+        chart: { type: 'column', height: 300 },
+        title: { text: '' },
+        credits: { enabled: false },
+        legend: { enabled: false },
+        xAxis: { categories: beeEntries.map(([name]) => name.replace(/^Level\s*/i, 'L')) },
+        yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
+        plotOptions: {
+            column: { borderRadius: 3, borderWidth: 0, dataLabels: { enabled: true } }
+        },
+        tooltip: { pointFormat: '<b>{point.y}</b>' },
+        series: [
+            {
+                type: 'column',
+                name: 'Incubatees',
+                color: REPORT_CHART_COLORS.primary,
+                data: beeEntries.map(([, y]) => y)
             }
         ]
     }
 
-    const beeOptions = simplePieOptions(
-        beeAgg.map(([name, y]) => ({ name, y })),
-        'Incubatees'
-    )
-
+    // Average ownership share, each bar drawn over a 100% track.
     const ownershipOptions: Highcharts.Options = {
-        chart: { type: 'column', height: 300 },
+        chart: { type: 'bar', height: 240 },
         title: { text: '' },
         credits: { enabled: false },
-        xAxis: { categories: ['Youth', 'Black', 'Female'] },
+        legend: { enabled: false },
+        xAxis: { categories: ['Youth', 'Black', 'Female'], title: { text: undefined } },
         yAxis: {
             min: 0,
             max: 100,
-            title: { text: 'Percent' }
+            title: { text: undefined },
+            labels: { format: '{value}%' }
         },
         plotOptions: {
-            column: {
-                borderRadius: 6,
-                dataLabels: {
-                    enabled: true,
-                    format: '{point.y}%'
-                }
-            }
+            bar: { grouping: false, borderRadius: 4, borderWidth: 0, pointPadding: 0.15 }
         },
-        tooltip: {
-            pointFormat: '<b>{point.y}%</b>'
-        },
+        tooltip: { pointFormat: '<b>{point.y}%</b> average' },
         series: [
             {
-                type: 'column',
-                name: 'Average %',
+                type: 'bar',
+                name: 'Track',
+                data: [100, 100, 100],
+                color: 'rgba(128, 128, 128, 0.15)',
+                enableMouseTracking: false,
+                dataLabels: { enabled: false }
+            },
+            {
+                type: 'bar',
+                name: 'Average owned',
+                dataLabels: { enabled: true, format: '{point.y}%' },
                 data: [
                     { y: ownershipAverages.youth, color: '#722ed1' },
                     { y: ownershipAverages.black, color: '#1677ff' },
@@ -803,22 +865,66 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
         ]
     }
 
+    // The only non-empty category, when there is just one.
+    const onlyCategory = (entries: Array<[string, number]>): [string, number] | null => {
+        const present = entries.filter(([, count]) => count > 0)
+        return present.length === 1 ? present[0] : null
+    }
+
+    const cells: Array<{
+        key: string
+        title: string
+        show: boolean
+        span: 4 | 6 | 8
+        options: Highcharts.Options
+        only: [string, number] | null
+    }> = [
+        {
+            key: 'gender',
+            title: 'Gender',
+            show: shouldShowGenderChart,
+            span: 4,
+            options: genderOptions,
+            only: onlyCategory([
+                ['Male', genderCounts.male],
+                ['Female', genderCounts.female],
+                ['Other/Unspecified', genderCounts.other]
+            ])
+        },
+        { key: 'age', title: 'Age', show: shouldShowAgeChart, span: 8, options: ageOptions, only: null },
+        { key: 'sectors', title: 'Sector', show: shouldShowSectorChart, span: 6, options: sectorOptions, only: onlyCategory(sectorEntries) },
+        { key: 'province', title: 'Province', show: shouldShowProvinceChart, span: 6, options: provinceOptions, only: onlyCategory(provinceAgg) },
+        { key: 'bee', title: 'B-BBEE level', show: shouldShowBeeChart, span: 4, options: beeOptions, only: onlyCategory(beeEntries) },
+        {
+            key: 'group',
+            title: 'Groups',
+            show: shouldShowGroupChart,
+            span: 4,
+            options: groupOptions,
+            only: (() => {
+                const one = onlyCategory(groupAgg)
+                return one ? [`Group ${one[0]}`, one[1]] as [string, number] : null
+            })()
+        },
+        { key: 'ownership', title: 'Ownership', show: shouldShowOwnershipChart, span: 4, options: ownershipOptions, only: null }
+    ]
+
     const openMod = (k: string) => setOpen(s => ({ ...s, [k]: true }))
     const closeMod = (k: string) => setOpen(s => ({ ...s, [k]: false }))
 
     if (loading) {
         return (
             <div style={{ marginTop: 10 }} aria-busy="true" aria-label="Loading incubatee insights">
-                <Card style={{ ...cardStyle, marginBottom: 16 }}>
+                <MotionCard style={{ marginBottom: 16 }}>
                     <Skeleton active title={{ width: 180 }} paragraph={{ rows: 2 }} />
-                </Card>
+                </MotionCard>
                 <Row gutter={[16, 16]}>
                     {[0, 1, 2, 3, 4, 5].map(item => (
                         <Col key={item} xs={24} md={12} xl={8}>
-                            <Card style={cardStyle}>
+                            <MotionCard>
                                 <Skeleton active title={{ width: 160 }} paragraph={false} />
                                 <Skeleton.Node active style={{ width: '100%', height: 260, marginTop: 16 }} />
-                            </Card>
+                            </MotionCard>
                         </Col>
                     ))}
                 </Row>
@@ -828,340 +934,44 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
 
     if (baseRows.length === 0) {
         return (
-            <Card style={{ ...cardStyle, marginTop: 10 }}>
-                <Empty description='No incubatee data found for this date range.' />
-            </Card>
+            <MotionCard style={{ marginTop: 10 }}>
+                <Empty description='No incubatees had been accepted by the end of this period.' />
+            </MotionCard>
         )
     }
 
     return (
         <div style={{ marginTop: 10 }}>
-            <Card
-                style={{ ...cardStyle, marginBottom: 16 }}
-                bodyStyle={{ padding: 16 }}
-            >
-                <Space direction="vertical" size={16} style={{ display: 'flex', width: '100%' }}>
-                    <Row justify="space-between" align="middle" gutter={[12, 12]}>
-                        <Col xs={24} lg={16}>
-                            <Space wrap size={[8, 8]} align="center">
-                                <div
-                                    style={{
-                                        width: 36,
-                                        height: 36,
-                                        borderRadius: 10,
-                                        display: 'grid',
-                                        placeItems: 'center',
-                                        background: 'rgba(22,119,255,.10)',
-                                        color: '#1677ff'
-                                    }}
-                                >
-                                    <FilterOutlined />
-                                </div>
-
-                                <div>
-                                    <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
-                                        Insight Filters
-                                    </div>
-                                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
-                                        Narrow incubatee insights by demographic and programme context
-                                    </div>
-                                </div>
-
-                                <Tag color="blue" style={{ borderRadius: 999 }}>
-                                    {effectiveProgramId === 'all' ? 'All Programs' : 'Single Program'}
-                                </Tag>
-
-                                {canShowProvinceFilter && (
-                                    <Tag color="purple" style={{ borderRadius: 999 }}>
-                                        Province filter enabled
-                                    </Tag>
-                                )}
-
-                                <Tag
-                                    style={{
-                                        borderRadius: 999,
-                                        paddingInline: 10,
-                                        height: 28,
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        background: '#f6ffed',
-                                        border: '1px solid #b7eb8f',
-                                        color: '#389e0d',
-                                        fontWeight: 600
-                                    }}
-                                >
-                                    Total SMEs: {totalSMEs}
-                                </Tag>
-                            </Space>
-                        </Col>
-
-                        <Col xs={24} lg={8}>
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    justifyContent: 'flex-end',
-                                    gap: 8,
-                                    flexWrap: 'wrap'
-                                }}
-                            >
-                                <Button
-                                    onClick={() => {
-                                        setGenderFilter([])
-                                        setAgeBandFilter([])
-                                        setSectorFilter([])
-                                        setProvinceFilter([])
-                                        setBeeFilter([])
-                                    }}
-                                >
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        </Col>
-                    </Row>
-
-                    <div
-                        style={{
-                            padding: 14,
-                            borderRadius: 12,
-                            background: '#fafcff',
-                            border: '1px solid #e6f0ff',
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.04)'
-                        }}
-                    >
-                        <Row gutter={[12, 12]}>
-                            <Col xs={24} md={12} lg={6}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <Text type="secondary">Gender</Text>
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        placeholder="Select gender"
-                                        value={genderFilter}
-                                        onChange={setGenderFilter}
-                                        style={{ width: '100%' }}
-                                        options={filterOptions.genders.map(v => ({
-                                            label: v,
-                                            value: v
-                                        }))}
-                                    />
-                                </div>
-                            </Col>
-
-                            <Col xs={24} md={12} lg={6}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <Text type="secondary">Age Group</Text>
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        placeholder="Select age groups"
-                                        value={ageBandFilter}
-                                        onChange={setAgeBandFilter}
-                                        style={{ width: '100%' }}
-                                        options={ageBands.map(v => ({
-                                            label: v,
-                                            value: v
-                                        }))}
-                                    />
-                                </div>
-                            </Col>
-
-                            <Col xs={24} md={12} lg={6}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <Text type="secondary">Sector</Text>
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        placeholder="Select sectors"
-                                        value={sectorFilter}
-                                        onChange={setSectorFilter}
-                                        style={{ width: '100%' }}
-                                        options={filterOptions.sectors.map(v => ({
-                                            label: v,
-                                            value: v
-                                        }))}
-                                    />
-                                </div>
-                            </Col>
-
-                            {canShowProvinceFilter && (
-                                <Col xs={24} md={12} lg={6}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <Text type="secondary">Province</Text>
-                                        <Select
-                                            mode="multiple"
-                                            allowClear
-                                            placeholder="Select provinces"
-                                            value={provinceFilter}
-                                            onChange={setProvinceFilter}
-                                            style={{ width: '100%' }}
-                                            options={filterOptions.provinces.map(v => ({
-                                                label: v,
-                                                value: v
-                                            }))}
-                                        />
-                                    </div>
-                                </Col>
-                            )}
-
-                            <Col xs={24} md={12} lg={6}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <Text type="secondary">BEE Level</Text>
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        placeholder="Select BEE levels"
-                                        value={beeFilter}
-                                        onChange={setBeeFilter}
-                                        style={{ width: '100%' }}
-                                        options={filterOptions.beeLevels.map(v => ({
-                                            label: v,
-                                            value: v
-                                        }))}
-                                    />
-                                </div>
-                            </Col>
-                        </Row>
-                    </div>
-
-                    {(!shouldShowGenderChart ||
-                        !shouldShowAgeChart ||
-                        !shouldShowSectorChart ||
-                        (!shouldShowProvinceChart && canShowProvinceFilter) ||
-                        !shouldShowBeeChart) && (
-                            <Space wrap size={[8, 8]}>
-                                {!shouldShowGenderChart && (
-                                    <Tag color="gold" style={{ borderRadius: 999 }}>
-                                        Gender chart hidden
-                                    </Tag>
-                                )}
-                                {!shouldShowAgeChart && (
-                                    <Tag color="gold" style={{ borderRadius: 999 }}>
-                                        Age chart hidden
-                                    </Tag>
-                                )}
-                                {!shouldShowSectorChart && (
-                                    <Tag color="gold" style={{ borderRadius: 999 }}>
-                                        Sector chart hidden
-                                    </Tag>
-                                )}
-                                {!shouldShowProvinceChart && canShowProvinceFilter && (
-                                    <Tag color="gold" style={{ borderRadius: 999 }}>
-                                        Province chart hidden
-                                    </Tag>
-                                )}
-                                {!shouldShowBeeChart && (
-                                    <Tag color="gold" style={{ borderRadius: 999 }}>
-                                        BEE chart hidden
-                                    </Tag>
-                                )}
-                            </Space>
-                        )}
-                </Space>
-            </Card>
-
             {filteredRows.length === 0 ? (
-                <Card style={cardStyle}>
+                <MotionCard>
                     <Empty description='No incubatees matched the selected filters.' />
-                </Card>
+                </MotionCard>
             ) : (
-                <Row gutter={[16, 16]}>
-                    {shouldShowGenderChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='Gender Distribution'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('gender')} />}
-                            >
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={genderOptions}
-                                />
-                            </Card>
-                        </Col>
+                // A 12-column grid: each chart gets the width its shape needs, and
+                // dense packing closes the gaps when filters hide charts.
+                <div className='ii-grid'>
+                    {cells.filter(cell => cell.show).map(cell =>
+                        cell.only ? (
+                            // One category: the figure says it better than a chart.
+                            <div key={cell.key} className='ii-cell is-single'>
+                                <MotionCard title={cell.title}>
+                                    <div className='ii-single'>
+                                        <span className='ii-single-value'>{cell.only[0]}</span>
+                                        <span className='ii-single-label'>
+                                            All {cell.only[1]} {cell.only[1] === 1 ? 'SME' : 'SMEs'}
+                                        </span>
+                                    </div>
+                                </MotionCard>
+                            </div>
+                        ) : (
+                            <div key={cell.key} className={`ii-cell ii-span-${cell.span}`}>
+                                <MotionCard title={cell.title} extra={<ExpandBtn onClick={() => openMod(cell.key)} />}>
+                                    <HighchartsReact highcharts={Highcharts} options={cell.options} />
+                                </MotionCard>
+                            </div>
+                        )
                     )}
-
-                    <Col xs={24} md={12} xl={8}>
-                        <Card
-                            title='SMEs by Group'
-                            style={cardStyle}
-                            extra={<ExpandBtn onClick={() => openMod('group')} />}
-                        >
-                            <HighchartsReact highcharts={Highcharts} options={groupOptions} />
-                        </Card>
-                    </Col>
-
-                    {shouldShowAgeChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='Age Distribution'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('age')} />}
-                            >
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={ageOptions}
-                                />
-                            </Card>
-                        </Col>
-                    )}
-
-                    {shouldShowSectorChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='Sector Distribution'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('sectors')} />}
-                            >
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={sectorOptions}
-                                />
-                            </Card>
-                        </Col>
-                    )}
-
-                    {shouldShowProvinceChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='Province Distribution'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('province')} />}
-                            >
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={provinceOptions}
-                                />
-                            </Card>
-                        </Col>
-                    )}
-
-                    {shouldShowBeeChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='B-BBEE Level Distribution'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('bee')} />}
-                            >
-                                <HighchartsReact highcharts={Highcharts} options={beeOptions} />
-                            </Card>
-                        </Col>
-                    )}
-
-                    {shouldShowOwnershipChart && (
-                        <Col xs={24} md={12} xl={8}>
-                            <Card
-                                title='Ownership Profile'
-                                style={cardStyle}
-                                extra={<ExpandBtn onClick={() => openMod('ownership')} />}
-                            >
-                                <HighchartsReact
-                                    highcharts={Highcharts}
-                                    options={ownershipOptions}
-                                />
-                            </Card>
-                        </Col>
-                    )}
-                </Row>
+                </div>
             )}
 
             <Modal

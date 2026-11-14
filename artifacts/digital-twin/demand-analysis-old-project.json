@@ -1,0 +1,1228 @@
+{
+  "project": "lph-smart-inc",
+  "generatedAt": "2026-10-12T14:14:42.604Z",
+  "note": "Aggregates only. Real records only unless includeSynthetic was set. The pilot mixes learning with steady behaviour: prefer the recent window for the model.",
+  "includeSynthetic": false,
+  "windowWeeks": 8,
+  "counts": {
+    "applications": 304,
+    "acceptedWithDate": 151,
+    "acceptedWithoutAnyDate": 99,
+    "acceptanceDateFromFallback": 50,
+    "diagnosticPlans": 231,
+    "assignments": 2569,
+    "sessions": 925,
+    "appointments": 2504,
+    "programmes": 6
+  },
+  "dataQuality": {
+    "plansSignedByFinalConfirmation": 0,
+    "plansSignedByDepartmentAndSmeConfirmations": 0,
+    "plansSignedBySmeConfirmation": 0,
+    "plansSignedByCountingConfirmations": 4,
+    "planFieldCensus": {
+      "final": 0,
+      "finalDate": 0,
+      "smeConfirmation": 0,
+      "deptMapEntries": 151,
+      "deptTrue": 151,
+      "legacyNameMap": 78,
+      "smeMapEntries": 105,
+      "smeTrue": 105,
+      "smeLegacyMap": 0,
+      "hasItems": 228,
+      "itemsWithDepartmentId": 228,
+      "itemsWithArea": 228
+    },
+    "plansSignedWithADate": 4,
+    "plansNotSigned": 224,
+    "smeDepartmentPairsSigned": 562,
+    "smeDepartmentPairsSignedWithADate": 562,
+    "assignmentsOfSmesWithAPlan": 2527,
+    "percentOfThoseThatAreInThePlanList": 97.7,
+    "assignmentsWithoutAPlan": 0
+  },
+  "all": {
+    "window": "whole history",
+    "enrolment": {
+      "acceptedSmes": 151,
+      "perWeek": {
+        "n": 52,
+        "p25": 0,
+        "median": 1,
+        "p75": 3.3,
+        "p90": 6.9,
+        "max": 23,
+        "mean": 2.6
+      }
+    },
+    "developmentalPlans": {
+      "plans": 228,
+      "fullySigned": 4,
+      "interventionsPerSme": {
+        "n": 228,
+        "p25": 4,
+        "median": 34,
+        "p75": 48,
+        "p90": 66.3,
+        "max": 76,
+        "mean": 30.9
+      },
+      "compulsoryPerSme": {
+        "n": 228,
+        "p25": 2,
+        "median": 4,
+        "p75": 5,
+        "p90": 5,
+        "max": 13,
+        "mean": 3.6
+      },
+      "departmentsPerSme": {
+        "n": 228,
+        "p25": 1,
+        "median": 6,
+        "p75": 9,
+        "p90": 11,
+        "max": 13,
+        "mean": 5.6
+      },
+      "interventionsPerSmePerDepartment": {
+        "n": 1277,
+        "p25": 4,
+        "median": 5,
+        "p75": 8,
+        "p90": 11,
+        "max": 27,
+        "mean": 5.8
+      },
+      "daysAcceptedToFullySigned": {
+        "n": 3,
+        "suppressed": true
+      }
+    },
+    "assignments": {
+      "created": 2527,
+      "createdPerWeek": {
+        "n": 52,
+        "p25": 10,
+        "median": 26.5,
+        "p75": 56.5,
+        "p90": 107.9,
+        "max": 202,
+        "mean": 41.5
+      },
+      "recurringShare": 74,
+      "cyclesCreatedPerSmeAndIntervention": {
+        "n": 1285,
+        "p25": 1,
+        "median": 1,
+        "p75": 1,
+        "p90": 2,
+        "max": 4,
+        "mean": 1.3
+      },
+      "plannedSessions": {
+        "n": 961,
+        "p25": 1,
+        "median": 1,
+        "p75": 2,
+        "p90": 3,
+        "max": 5,
+        "mean": 1.6
+      },
+      "percentNeedingMoreThanOneSession": 42,
+      "plannedSessionsMissing": 1566
+    },
+    "pace": {
+      "smes": 4,
+      "plansWithAssignmentsFromPlanCreation": 125,
+      "daysFromPlanCreatedToFirstAssignment": {
+        "n": 125,
+        "p25": 0.5,
+        "median": 10.9,
+        "p75": 41,
+        "p90": 144.2,
+        "max": 287.7,
+        "mean": 35.7
+      },
+      "daysFromFullSignOffToFirstAssignment": {
+        "n": 4,
+        "suppressed": true
+      },
+      "assignmentsCreatedBeforeSignOffPerSme": {
+        "n": 4,
+        "suppressed": true
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "smesOldEnough": 4,
+          "distinctInterventionsOpened": {
+            "n": 4,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 4,
+            "suppressed": true
+          }
+        },
+        "4w": {
+          "smesOldEnough": 3,
+          "distinctInterventionsOpened": {
+            "n": 3,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 3,
+            "suppressed": true
+          }
+        },
+        "8w": {
+          "smesOldEnough": 2,
+          "distinctInterventionsOpened": {
+            "n": 2,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 2,
+            "suppressed": true
+          }
+        },
+        "12w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "26w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        }
+      }
+    },
+    "departmentPace": {
+      "smeDepartmentPairsSigned": 562,
+      "interventionsRequiredPerPair": {
+        "n": 562,
+        "p25": 5,
+        "median": 7,
+        "p75": 9,
+        "p90": 11,
+        "max": 14,
+        "mean": 7
+      },
+      "daysFromDepartmentSignOffToFirstAssignment": {
+        "n": 482,
+        "p25": -28,
+        "median": 3.2,
+        "p75": 25.6,
+        "p90": 80.6,
+        "max": 262.4,
+        "mean": -2.1
+      },
+      "pairsWithNoAssignmentYetPercent": 14.2,
+      "assignmentsCreatedBeforeSignOffPerPair": {
+        "n": 562,
+        "p25": 0,
+        "median": 0,
+        "p75": 1,
+        "p90": 2,
+        "max": 10,
+        "mean": 0.6
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "pairsOldEnough": 561,
+          "distinctInterventionsOpened": {
+            "n": 561,
+            "p25": 0,
+            "median": 1,
+            "p75": 1,
+            "p90": 3,
+            "max": 10,
+            "mean": 1
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 561,
+            "p25": 0,
+            "median": 11.1,
+            "p75": 25,
+            "p90": 36.4,
+            "max": 100,
+            "mean": 15.2
+          }
+        },
+        "4w": {
+          "pairsOldEnough": 557,
+          "distinctInterventionsOpened": {
+            "n": 557,
+            "p25": 0,
+            "median": 1,
+            "p75": 2,
+            "p90": 3,
+            "max": 10,
+            "mean": 1.2
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 557,
+            "p25": 0,
+            "median": 14.3,
+            "p75": 28.6,
+            "p90": 37.5,
+            "max": 100,
+            "mean": 19.1
+          }
+        },
+        "8w": {
+          "pairsOldEnough": 516,
+          "distinctInterventionsOpened": {
+            "n": 516,
+            "p25": 0,
+            "median": 1,
+            "p75": 2,
+            "p90": 4,
+            "max": 10,
+            "mean": 1.6
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 516,
+            "p25": 0,
+            "median": 20,
+            "p75": 33.3,
+            "p90": 57.1,
+            "max": 100,
+            "mean": 25.1
+          }
+        },
+        "12w": {
+          "pairsOldEnough": 449,
+          "distinctInterventionsOpened": {
+            "n": 449,
+            "p25": 1,
+            "median": 1,
+            "p75": 3,
+            "p90": 4,
+            "max": 10,
+            "mean": 1.8
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 449,
+            "p25": 9.1,
+            "median": 22.2,
+            "p75": 37.5,
+            "p90": 65.2,
+            "max": 100,
+            "mean": 28.1
+          }
+        },
+        "26w": {
+          "pairsOldEnough": 188,
+          "distinctInterventionsOpened": {
+            "n": 188,
+            "p25": 1,
+            "median": 1,
+            "p75": 3,
+            "p90": 4,
+            "max": 9,
+            "mean": 1.9
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 188,
+            "p25": 9.8,
+            "median": 30,
+            "p75": 37.5,
+            "p90": 100,
+            "max": 100,
+            "mean": 32.3
+          }
+        }
+      }
+    },
+    "sessions": {
+      "held": 909,
+      "perAssignment": {
+        "n": 1445,
+        "p25": 1,
+        "median": 1,
+        "p75": 2,
+        "p90": 3,
+        "max": 7,
+        "mean": 1.6
+      },
+      "daysBetweenConsecutiveSessionsOfOneAssignment": {
+        "n": 832,
+        "p25": 6,
+        "median": 7,
+        "p75": 13,
+        "p90": 28,
+        "max": 156,
+        "mean": 13.4
+      },
+      "percentOfGapsOnTheSameDay": 1.9,
+      "percentOfGapsWithin7Days": 66.1,
+      "sameInterventionSameDay": {
+        "interventionDaysChecked": 385,
+        "percentWithMoreThanOneSession": 32.2,
+        "sessionsPerInterventionPerDay": {
+          "n": 385,
+          "p25": 1,
+          "median": 1,
+          "p75": 2,
+          "p90": 3,
+          "max": 29,
+          "mean": 2.2
+        }
+      },
+      "perFacilitatorPerDay": {
+        "n": 299,
+        "p25": 1,
+        "median": 2,
+        "p75": 3,
+        "p90": 6,
+        "max": 30,
+        "mean": 3
+      }
+    }
+  },
+  "first": {
+    "window": "first 8 weeks of each programme",
+    "enrolment": {
+      "acceptedSmes": 74,
+      "perWeek": {
+        "n": 8,
+        "p25": 5,
+        "median": 7.5,
+        "p75": 9.8,
+        "p90": 18,
+        "max": 25,
+        "mean": 9.3
+      }
+    },
+    "developmentalPlans": {
+      "plans": 125,
+      "fullySigned": 0,
+      "interventionsPerSme": {
+        "n": 125,
+        "p25": 4,
+        "median": 36,
+        "p75": 58,
+        "p90": 70,
+        "max": 76,
+        "mean": 33.6
+      },
+      "compulsoryPerSme": {
+        "n": 125,
+        "p25": 4,
+        "median": 4,
+        "p75": 5,
+        "p90": 5,
+        "max": 7,
+        "mean": 4
+      },
+      "departmentsPerSme": {
+        "n": 125,
+        "p25": 1,
+        "median": 6,
+        "p75": 10,
+        "p90": 11,
+        "max": 13,
+        "mean": 5.9
+      },
+      "interventionsPerSmePerDepartment": {
+        "n": 739,
+        "p25": 4,
+        "median": 5,
+        "p75": 8,
+        "p90": 11,
+        "max": 27,
+        "mean": 6
+      },
+      "daysAcceptedToFullySigned": {
+        "n": 0,
+        "suppressed": true
+      }
+    },
+    "assignments": {
+      "created": 84,
+      "createdPerWeek": {
+        "n": 8,
+        "p25": 0,
+        "median": 3.5,
+        "p75": 19.3,
+        "p90": 26.9,
+        "max": 36,
+        "mean": 10.5
+      },
+      "recurringShare": 66.7,
+      "cyclesCreatedPerSmeAndIntervention": {
+        "n": 55,
+        "p25": 1,
+        "median": 1,
+        "p75": 1,
+        "p90": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "plannedSessions": {
+        "n": 3,
+        "suppressed": true
+      },
+      "percentNeedingMoreThanOneSession": 66.7,
+      "plannedSessionsMissing": 81
+    },
+    "pace": {
+      "smes": 0,
+      "plansWithAssignmentsFromPlanCreation": 57,
+      "daysFromPlanCreatedToFirstAssignment": {
+        "n": 57,
+        "p25": 0.5,
+        "median": 9,
+        "p75": 23,
+        "p90": 77,
+        "max": 267.5,
+        "mean": 27.9
+      },
+      "daysFromFullSignOffToFirstAssignment": {
+        "n": 0,
+        "suppressed": true
+      },
+      "assignmentsCreatedBeforeSignOffPerSme": {
+        "n": 0,
+        "suppressed": true
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "4w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "8w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "12w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "26w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        }
+      }
+    },
+    "departmentPace": {
+      "smeDepartmentPairsSigned": 6,
+      "interventionsRequiredPerPair": {
+        "n": 6,
+        "p25": 6,
+        "median": 6,
+        "p75": 6.8,
+        "p90": 9,
+        "max": 11,
+        "mean": 6.8
+      },
+      "daysFromDepartmentSignOffToFirstAssignment": {
+        "n": 4,
+        "suppressed": true
+      },
+      "pairsWithNoAssignmentYetPercent": 33.3,
+      "assignmentsCreatedBeforeSignOffPerPair": {
+        "n": 6,
+        "p25": 0,
+        "median": 0,
+        "p75": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "pairsOldEnough": 6,
+          "distinctInterventionsOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "4w": {
+          "pairsOldEnough": 6,
+          "distinctInterventionsOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "8w": {
+          "pairsOldEnough": 6,
+          "distinctInterventionsOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "12w": {
+          "pairsOldEnough": 6,
+          "distinctInterventionsOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 0.5,
+            "max": 1,
+            "mean": 0.2
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 6,
+            "p25": 0,
+            "median": 0,
+            "p75": 0,
+            "p90": 4.5,
+            "max": 9.1,
+            "mean": 1.5
+          }
+        },
+        "26w": {
+          "pairsOldEnough": 6,
+          "distinctInterventionsOpened": {
+            "n": 6,
+            "p25": 0.3,
+            "median": 1,
+            "p75": 1,
+            "p90": 1.5,
+            "max": 2,
+            "mean": 0.8
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 6,
+            "p25": 2.3,
+            "median": 11.7,
+            "p75": 16.1,
+            "p90": 28.3,
+            "max": 40,
+            "mean": 13.3
+          }
+        }
+      }
+    },
+    "sessions": {
+      "held": 0,
+      "perAssignment": {
+        "n": 0,
+        "suppressed": true
+      },
+      "daysBetweenConsecutiveSessionsOfOneAssignment": {
+        "n": 0,
+        "suppressed": true
+      },
+      "percentOfGapsOnTheSameDay": null,
+      "percentOfGapsWithin7Days": null,
+      "sameInterventionSameDay": {
+        "interventionDaysChecked": 0,
+        "percentWithMoreThanOneSession": null,
+        "sessionsPerInterventionPerDay": {
+          "n": 0,
+          "suppressed": true
+        }
+      },
+      "perFacilitatorPerDay": {
+        "n": 0,
+        "suppressed": true
+      }
+    }
+  },
+  "recent": {
+    "window": "last 8 weeks",
+    "enrolment": {
+      "acceptedSmes": 23,
+      "perWeek": {
+        "n": 8,
+        "p25": 1,
+        "median": 1,
+        "p75": 2,
+        "p90": 5.6,
+        "max": 14,
+        "mean": 2.9
+      }
+    },
+    "developmentalPlans": {
+      "plans": 91,
+      "fullySigned": 2,
+      "interventionsPerSme": {
+        "n": 91,
+        "p25": 1,
+        "median": 4,
+        "p75": 4,
+        "p90": 19,
+        "max": 47,
+        "mean": 6.4
+      },
+      "compulsoryPerSme": {
+        "n": 91,
+        "p25": 1,
+        "median": 4,
+        "p75": 4,
+        "p90": 4,
+        "max": 13,
+        "mean": 3.6
+      },
+      "departmentsPerSme": {
+        "n": 91,
+        "p25": 1,
+        "median": 1,
+        "p75": 1,
+        "p90": 4,
+        "max": 7,
+        "mean": 1.7
+      },
+      "interventionsPerSmePerDepartment": {
+        "n": 156,
+        "p25": 1,
+        "median": 4,
+        "p75": 4,
+        "p90": 7,
+        "max": 13,
+        "mean": 3.8
+      },
+      "daysAcceptedToFullySigned": {
+        "n": 2,
+        "suppressed": true
+      }
+    },
+    "assignments": {
+      "created": 820,
+      "createdPerWeek": {
+        "n": 8,
+        "p25": 30.8,
+        "median": 68,
+        "p75": 116.3,
+        "p90": 225.6,
+        "max": 332,
+        "mean": 102.5
+      },
+      "recurringShare": 100,
+      "cyclesCreatedPerSmeAndIntervention": {
+        "n": 623,
+        "p25": 1,
+        "median": 1,
+        "p75": 1,
+        "p90": 2,
+        "max": 3,
+        "mean": 1.1
+      },
+      "plannedSessions": {
+        "n": 820,
+        "p25": 1,
+        "median": 1,
+        "p75": 2,
+        "p90": 2,
+        "max": 5,
+        "mean": 1.5
+      },
+      "percentNeedingMoreThanOneSession": 35.6,
+      "plannedSessionsMissing": 0
+    },
+    "pace": {
+      "smes": 2,
+      "plansWithAssignmentsFromPlanCreation": 12,
+      "daysFromPlanCreatedToFirstAssignment": {
+        "n": 12,
+        "p25": 1.8,
+        "median": 3.5,
+        "p75": 15.3,
+        "p90": 18.1,
+        "max": 211.9,
+        "mean": 23.6
+      },
+      "daysFromFullSignOffToFirstAssignment": {
+        "n": 2,
+        "suppressed": true
+      },
+      "assignmentsCreatedBeforeSignOffPerSme": {
+        "n": 2,
+        "suppressed": true
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "smesOldEnough": 2,
+          "distinctInterventionsOpened": {
+            "n": 2,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 2,
+            "suppressed": true
+          }
+        },
+        "4w": {
+          "smesOldEnough": 1,
+          "distinctInterventionsOpened": {
+            "n": 1,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 1,
+            "suppressed": true
+          }
+        },
+        "8w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "12w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "26w": {
+          "smesOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfRequiredListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        }
+      }
+    },
+    "departmentPace": {
+      "smeDepartmentPairsSigned": 46,
+      "interventionsRequiredPerPair": {
+        "n": 46,
+        "p25": 4.3,
+        "median": 8,
+        "p75": 9,
+        "p90": 11,
+        "max": 12,
+        "mean": 7.3
+      },
+      "daysFromDepartmentSignOffToFirstAssignment": {
+        "n": 39,
+        "p25": -0.5,
+        "median": 0,
+        "p75": 8.8,
+        "p90": 28.1,
+        "max": 48.2,
+        "mean": -31
+      },
+      "pairsWithNoAssignmentYetPercent": 15.2,
+      "assignmentsCreatedBeforeSignOffPerPair": {
+        "n": 46,
+        "p25": 0,
+        "median": 0,
+        "p75": 0,
+        "p90": 3.5,
+        "max": 10,
+        "mean": 1
+      },
+      "openedWithinWeeks": {
+        "2w": {
+          "pairsOldEnough": 45,
+          "distinctInterventionsOpened": {
+            "n": 45,
+            "p25": 0,
+            "median": 1,
+            "p75": 1,
+            "p90": 2,
+            "max": 5,
+            "mean": 1
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 45,
+            "p25": 0,
+            "median": 11.1,
+            "p75": 25,
+            "p90": 33.3,
+            "max": 45.5,
+            "mean": 14.6
+          }
+        },
+        "4w": {
+          "pairsOldEnough": 41,
+          "distinctInterventionsOpened": {
+            "n": 41,
+            "p25": 0,
+            "median": 1,
+            "p75": 2,
+            "p90": 3,
+            "max": 4,
+            "mean": 1.2
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 41,
+            "p25": 0,
+            "median": 25,
+            "p75": 28.6,
+            "p90": 33.3,
+            "max": 50,
+            "mean": 17.9
+          }
+        },
+        "8w": {
+          "pairsOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "12w": {
+          "pairsOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        },
+        "26w": {
+          "pairsOldEnough": 0,
+          "distinctInterventionsOpened": {
+            "n": 0,
+            "suppressed": true
+          },
+          "percentOfDepartmentListOpened": {
+            "n": 0,
+            "suppressed": true
+          }
+        }
+      }
+    },
+    "sessions": {
+      "held": 247,
+      "perAssignment": {
+        "n": 618,
+        "p25": 1,
+        "median": 1,
+        "p75": 2,
+        "p90": 2,
+        "max": 3,
+        "mean": 1.3
+      },
+      "daysBetweenConsecutiveSessionsOfOneAssignment": {
+        "n": 165,
+        "p25": 7,
+        "median": 7,
+        "p75": 13,
+        "p90": 13,
+        "max": 13,
+        "mean": 9.5
+      },
+      "percentOfGapsOnTheSameDay": 0.6,
+      "percentOfGapsWithin7Days": 56.4,
+      "sameInterventionSameDay": {
+        "interventionDaysChecked": 101,
+        "percentWithMoreThanOneSession": 34.7,
+        "sessionsPerInterventionPerDay": {
+          "n": 101,
+          "p25": 1,
+          "median": 1,
+          "p75": 2,
+          "p90": 4,
+          "max": 25,
+          "mean": 2.2
+        }
+      },
+      "perFacilitatorPerDay": {
+        "n": 86,
+        "p25": 1,
+        "median": 2,
+        "p75": 4,
+        "p90": 5.5,
+        "max": 11,
+        "mean": 2.9
+      }
+    }
+  },
+  "openNow": {
+    "open": 701,
+    "perSme": {
+      "n": 125,
+      "p25": 3,
+      "median": 5,
+      "p75": 8,
+      "p90": 9.6,
+      "max": 14,
+      "mean": 5.6
+    },
+    "perSmePerDepartment": {
+      "n": 414,
+      "p25": 1,
+      "median": 1,
+      "p75": 2,
+      "p90": 3,
+      "max": 6,
+      "mean": 1.7
+    },
+    "openCyclesPerSmeAndIntervention": {
+      "n": 532,
+      "p25": 1,
+      "median": 1,
+      "p75": 1,
+      "p90": 2,
+      "max": 3,
+      "mean": 1.2
+    }
+  },
+  "trendBy4Weeks": [
+    {
+      "periodStart": "2025-10-03",
+      "acceptedSmes": 29,
+      "assignmentsCreated": 1,
+      "sessionsHeld": 0,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2025-10-31",
+      "acceptedSmes": 16,
+      "assignmentsCreated": 54,
+      "sessionsHeld": 24,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2025-11-28",
+      "acceptedSmes": 3,
+      "assignmentsCreated": 61,
+      "sessionsHeld": 47,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2025-12-26",
+      "acceptedSmes": 25,
+      "assignmentsCreated": 21,
+      "sessionsHeld": 18,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-01-23",
+      "acceptedSmes": 16,
+      "assignmentsCreated": 121,
+      "sessionsHeld": 35,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-02-20",
+      "acceptedSmes": 3,
+      "assignmentsCreated": 207,
+      "sessionsHeld": 98,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-03-20",
+      "acceptedSmes": 3,
+      "assignmentsCreated": 145,
+      "sessionsHeld": 118,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-04-17",
+      "acceptedSmes": 2,
+      "assignmentsCreated": 254,
+      "sessionsHeld": 71,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-05-15",
+      "acceptedSmes": 3,
+      "assignmentsCreated": 173,
+      "sessionsHeld": 75,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-06-12",
+      "acceptedSmes": 10,
+      "assignmentsCreated": 235,
+      "sessionsHeld": 42,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-07-10",
+      "acceptedSmes": 10,
+      "assignmentsCreated": 299,
+      "sessionsHeld": 104,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-08-07",
+      "acceptedSmes": 11,
+      "assignmentsCreated": 258,
+      "sessionsHeld": 86,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-09-04",
+      "acceptedSmes": 5,
+      "assignmentsCreated": 330,
+      "sessionsHeld": 126,
+      "daysFromSignOffToFirstAssignment": null
+    },
+    {
+      "periodStart": "2026-10-02",
+      "acceptedSmes": 15,
+      "assignmentsCreated": 368,
+      "sessionsHeld": 65,
+      "daysFromSignOffToFirstAssignment": null
+    }
+  ],
+  "firstVersusRecent": [
+    {
+      "metric": "SMEs accepted per week",
+      "first": 9.3,
+      "recent": 2.9,
+      "ratioRecentToFirst": 0.31,
+      "verdict": "changed: use the recent window, the early weeks were a learning period"
+    },
+    {
+      "metric": "Interventions in a developmental plan",
+      "first": 36,
+      "recent": 4,
+      "ratioRecentToFirst": 0.11,
+      "verdict": "changed: use the recent window, the early weeks were a learning period"
+    },
+    {
+      "metric": "Days from acceptance to fully signed plan",
+      "first": null,
+      "recent": null,
+      "verdict": "not enough data in one of the windows"
+    },
+    {
+      "metric": "Days from department sign-off to first assignment",
+      "first": null,
+      "recent": 0,
+      "verdict": "not enough data in one of the windows"
+    },
+    {
+      "metric": "Department list opened within 4 weeks (%)",
+      "first": 0,
+      "recent": 25,
+      "ratioRecentToFirst": null,
+      "verdict": "changed: use the recent window, the early weeks were a learning period"
+    },
+    {
+      "metric": "Assignments created per week",
+      "first": 10.5,
+      "recent": 102.5,
+      "ratioRecentToFirst": 9.76,
+      "verdict": "changed: use the recent window, the early weeks were a learning period"
+    },
+    {
+      "metric": "Planned sessions per assignment",
+      "first": null,
+      "recent": 1.5,
+      "verdict": "not enough data in one of the windows"
+    },
+    {
+      "metric": "Days between sessions of one assignment",
+      "first": null,
+      "recent": 7,
+      "verdict": "not enough data in one of the windows"
+    }
+  ]
+}

@@ -315,6 +315,44 @@ export const resolveMovKpiNames = async (
     return Array.from(kpiNames).join(', ')
 }
 
+export type MovDeliveryFlags = {
+    methodInPerson: boolean
+    methodOnline: boolean
+    methodTelephonic: boolean
+    methodOther: string
+}
+
+/**
+ * The MOV's delivery-method tick boxes, from the delivery methods of the
+ * appointments it covers (appointments are where the method is captured now).
+ * Null when no appointment carries a method.
+ */
+export const movDeliveryFlagsFromAppointments = (rows: any[] | null | undefined): MovDeliveryFlags | null => {
+    const methods = (Array.isArray(rows) ? rows : [])
+        .map(row => cleanText(row?.deliveryMethod || row?.delivery?.mode || row?.method).toLowerCase().replace(/[_-]/g, ' '))
+        .filter(Boolean)
+    if (!methods.length) return null
+
+    const flags: MovDeliveryFlags = { methodInPerson: false, methodOnline: false, methodTelephonic: false, methodOther: '' }
+    const other: string[] = []
+    for (const m of methods) {
+        if (m.includes('hybrid')) {
+            flags.methodInPerson = true
+            flags.methodOnline = true
+        } else if (m.includes('in person') || m.includes('physical') || m.includes('onsite') || m.includes('on site')) {
+            flags.methodInPerson = true
+        } else if (m.includes('online') || m.includes('virtual') || m.includes('remote')) {
+            flags.methodOnline = true
+        } else if (m.includes('telephon') || m.includes('phone') || m.includes('call')) {
+            flags.methodTelephonic = true
+        } else if (!other.includes(m)) {
+            other.push(m)
+        }
+    }
+    flags.methodOther = other.join(', ')
+    return flags
+}
+
 /**
  * Resolve the actual appointment/session rows that belong on an MOV.
  *

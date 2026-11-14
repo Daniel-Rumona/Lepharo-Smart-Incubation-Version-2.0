@@ -1,18 +1,16 @@
 // MonitoringReports.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-    Card,
     Row,
     Col,
-    DatePicker,
-    Space,
     Typography,
+    Badge,
     Button,
-    Modal,
+    Dropdown,
+    Popover,
     message,
     Segmented,
-    Select,
-    Tag
+    Select
 } from 'antd'
 import { motion } from 'framer-motion'
 import dayjs, { Dayjs } from 'dayjs'
@@ -26,13 +24,16 @@ import {
     doc
 } from 'firebase/firestore'
 import {
-    ExpandOutlined,
-    DownloadOutlined,
+    CloseOutlined,
+    DownOutlined,
+    FilterOutlined,
     FileTextOutlined,
     BarChartOutlined,
     TeamOutlined,
     SolutionOutlined,
     WarningOutlined,
+    AuditOutlined,
+    SafetyCertificateOutlined,
     PlayCircleOutlined
 } from '@ant-design/icons'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -40,12 +41,22 @@ import { useDepartmentRoles } from '@/services/departmentRoles'
 
 // charts
 import InterventionsDeptDrilldownChart from './DepartmentInterventionsDrilldown'
-import BarRaceChart from './BarChart'
 import ProvinceMapDashboard from './ProvinceMap'
-import IncubateesInsights from './IncubateesInsights'
+import IncubateesInsights, {
+    EMPTY_INCUBATEE_FILTERS,
+    type IncubateeFilterOptions,
+    type IncubateeFilters
+} from './IncubateesInsights'
 import FacilitatorsTab from './FacilitatorsTab'
+import MovsTab from './MovsTab'
+import ComplianceTab from './ComplianceTab'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
+import { Helmet } from 'react-helmet'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { FilterPanel } from '@/components/workspace'
+// The tab / period / Filters / Report bar is shared with the project admin reports.
+import '@/routes/projectadmin/reports/projectReports.css'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
 import { filterReportRecords } from '@/utils/reportVisibility'
@@ -56,26 +67,19 @@ import { buildConsolidatedMeProgramReport } from '@/utils/buildProgramSummaryRep
 import type { MonthlyReportData } from '@/utils/monthlyReportDocx'
 import { buildExecutiveQuarterlyReportData } from '@/utils/buildExecutiveQuarterlyReport'
 import { fillDocxTemplateAndDownload } from '@/utils/docxTemplateFill'
-import SMERiskRegisterPage from './SMERiskRegister'
+import RiskTab from './RiskTab'
 import MonitoringReportPlayer from './MonitoringReportPlayer'
 import { useColorMode } from '@/contexts/ThemeContext'
 
 const { Text } = Typography
-const { RangePicker } = DatePicker
 
-const getFiscalQuarterRange = (base = dayjs()): [Dayjs, Dayjs] => {
-    const fiscalMonth = (base.month() - 3 + 12) % 12
-    const startMonth = 3 + Math.floor(fiscalMonth / 3) * 3
-    const start = base.startOf('year').month(startMonth === 12 ? 0 : startMonth)
-    return [start.startOf('month'), start.add(2, 'month').endOf('month')]
-}
-
-const getFiscalYtdRange = (base = dayjs()): [Dayjs, Dayjs] => {
-    const start = base.month() >= 3
-        ? base.startOf('year').month(3).startOf('month')
-        : base.subtract(1, 'year').startOf('year').month(3).startOf('month')
-    return [start, base.endOf('day')]
-}
+// A Reports menu item: the action, with a one-line description under it.
+const reportMenuLabel = (title: string, description: string) => (
+    <div style={{ padding: '2px 0' }}>
+        <div>{title}</div>
+        <Text type='secondary' style={{ fontSize: 12 }}>{description}</Text>
+    </div>
+)
 
 // Report exports used to be capped at a quarter (3 months); the underlying builders
 // support any span, so this only bounds the export to a sensible upper limit (2 years).
@@ -107,13 +111,6 @@ const asDate = (v: any) =>
     v?.toDate?.() ??
     (v instanceof Date ? v : typeof v === 'string' ? new Date(v) : undefined)
 
-const CARD_STYLE: React.CSSProperties = {
-    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
-    transition: 'all 0.3s ease',
-    borderRadius: 8,
-    border: '1px solid #d6e4ff'
-}
-
 const MonitoringReports: React.FC = () => {
     const { user } = useFullIdentity() as any
     const { nameOf, idForRole } = useDepartmentRoles()
@@ -130,24 +127,25 @@ const MonitoringReports: React.FC = () => {
     const [isMainDept, setIsMainDept] = useState(false)
     const [exporting, setExporting] = useState(false)
 
-    const [range, setRange] = useState<[Dayjs, Dayjs]>([
-        dayjs().startOf('year'),
-        dayjs().endOf('year')
-    ])
+    // The reporting window comes from the period control in the topbar, shared
+    // with the other dashboards. "All time" has no bounds, but the charts and
+    // exports here need real dates, so it becomes everything up to today.
+    const { range: dashboardRange, label: periodLabel } = useDashboardDateRange()
+    const range = useMemo<[Dayjs, Dayjs]>(
+        () => dashboardRange ?? [dayjs('2000-01-01').startOf('day'), dayjs().endOf('day')],
+        [dashboardRange]
+    )
     const [selectedDepartmentId, setSelectedDepartmentId] = useState<'all' | string>('all')
-    const [selectedBranch, setSelectedBranch] = useState<'all' | string>('all')
+    const [incubateeFilters, setIncubateeFilters] = useState<IncubateeFilters>(EMPTY_INCUBATEE_FILTERS)
+    const [incubateeFilterOptions, setIncubateeFilterOptions] = useState<IncubateeFilterOptions | null>(null)
     const [isMultiBranch, setIsMultiBranch] = useState(false)
-    const [reportChooserOpen, setReportChooserOpen] = useState(false)
     const [playerOpen, setPlayerOpen] = useState(false)
     const [playerData, setPlayerData] = useState<MonthlyReportData | null>(null)
     const [playerLoading, setPlayerLoading] = useState(false)
 
-    const [view, setView] = useState<'Interventions' | 'Incubatees' | 'Facilitators' | 'Risk'>(
+    const [view, setView] = useState<'Interventions' | 'Incubatees' | 'Facilitators' | 'MOVs' | 'Compliance' | 'Risk'>(
         'Interventions'
     )
-
-    const [expandedBar, setExpandedBar] = useState(false)
-    const [expandedDrill, setExpandedDrill] = useState(false)
 
     useEffect(() => {
         let mounted = true
@@ -237,8 +235,7 @@ const MonitoringReports: React.FC = () => {
 
                     if (mounted) {
                         setSelectedDepartmentId('all')
-                        setSelectedBranch('all')
-                    }
+                                    }
                 } catch (e: any) {
                     console.error('[MonitoringReports] load error:', e)
                     message.error(e?.message || 'Failed to load monitoring data.')
@@ -255,11 +252,6 @@ const MonitoringReports: React.FC = () => {
         }
     }, [user?.departmentId, activeProgramId, isAllPrograms])
 
-    const depTitleOf = useCallback(
-        (idOrName?: string) => (idOrName ? departments[idOrName] || idOrName : 'Unknown'),
-        [departments]
-    )
-
     const departmentOptions = useMemo(
         () => [
             { value: 'all', label: 'All Departments' },
@@ -271,47 +263,110 @@ const MonitoringReports: React.FC = () => {
         [departments]
     )
 
-    const branchOptions = useMemo(() => {
-        const set = new Set<string>()
-        interventions.forEach(i => {
-            if (i.branchName) set.add(i.branchName)
-        })
-        const arr = Array.from(set)
-        return [
-            { value: 'all', label: 'All Branches' },
-            ...arr.map(b => ({ value: b, label: b }))
-        ]
-    }, [interventions])
+    // Department doesn't apply to the incubatee view, which has its own
+    // demographic filters instead.
+    const showDepartmentFilter = view !== 'Incubatees'
+    const showIncubateeFilters = view === 'Incubatees' && !!incubateeFilterOptions
 
-    const filteredForBar = useMemo(() => {
-        const [start, end] = range
+    const activeFilterCount =
+        (showDepartmentFilter && selectedDepartmentId !== 'all' ? 1 : 0) +
+        (view === 'Incubatees'
+            ? Object.values(incubateeFilters).filter(values => values.length > 0).length
+            : 0)
 
-        return interventions.filter(r => {
-            const d = asDate(r.interventionDate)
-            if (!d) return false
-            if (dayjs(d).isBefore(start, 'day') || dayjs(d).isAfter(end, 'day')) return false
+    const clearFilters = () => {
+        setSelectedDepartmentId('all')
+        setIncubateeFilters(EMPTY_INCUBATEE_FILTERS)
+    }
 
-            if (selectedDepartmentId !== 'all' && r.departmentId !== selectedDepartmentId) {
-                return false
-            }
+    const setIncubateeFilter = (key: keyof IncubateeFilters) => (values: string[]) =>
+        setIncubateeFilters(current => ({ ...current, [key]: values }))
 
-            if (selectedBranch !== 'all' && r.branchName !== selectedBranch) {
-                return false
-            }
-
-            return true
-        })
-    }, [interventions, range, selectedDepartmentId, selectedBranch])
-
-    const barMonthIndex = useMemo(
-        () => range?.[0]?.month?.() ?? dayjs().month(),
-        [range]
+    // Same filter popover as the project admin reports: labelled fields and a
+    // Reset link.
+    const filterField = (id: string, label: string, control: React.ReactNode) => (
+        <div key={id}>
+            <label className='ws-filter-label' htmlFor={id}>{label}</label>
+            {control}
+        </div>
     )
 
-    const barYear = useMemo(
-        () => range?.[0]?.year?.() ?? dayjs().year(),
-        [range]
-    )
+    const multiFilter = (key: keyof IncubateeFilters, label: string, values: string[]) =>
+        filterField(
+            `me-${key}`,
+            label,
+            <Select
+                id={`me-${key}`}
+                mode='multiple'
+                allowClear
+                maxTagCount='responsive'
+                placeholder={`All ${label.toLowerCase()}`}
+                value={incubateeFilters[key]}
+                onChange={setIncubateeFilter(key)}
+                options={values.map(value => ({ label: value, value }))}
+                style={{ width: '100%' }}
+            />
+        )
+
+    const hasFilters = showDepartmentFilter || showIncubateeFilters
+
+    const filtersPanel = hasFilters ? (
+        <FilterPanel canReset={activeFilterCount > 0} onReset={clearFilters}>
+            {showDepartmentFilter && filterField(
+                'me-department',
+                'Department',
+                <Select
+                    id='me-department'
+                    value={selectedDepartmentId}
+                    onChange={value => setSelectedDepartmentId(value)}
+                    options={departmentOptions}
+                    showSearch
+                    optionFilterProp='label'
+                    style={{ width: '100%' }}
+                />
+            )}
+            {showIncubateeFilters && incubateeFilterOptions && (
+                <>
+                    {multiFilter('gender', 'Genders', incubateeFilterOptions.genders)}
+                    {multiFilter('ageBand', 'Age groups', incubateeFilterOptions.ageBands)}
+                    {multiFilter('sector', 'Sectors', incubateeFilterOptions.sectors)}
+                    {incubateeFilterOptions.canFilterProvince &&
+                        multiFilter('province', 'Provinces', incubateeFilterOptions.provinces)}
+                    {multiFilter('bee', 'B-BBEE levels', incubateeFilterOptions.beeLevels)}
+                </>
+            )}
+        </FilterPanel>
+    ) : null
+
+    // One line beside the period saying what the open view is filtered by;
+    // an active filter is highlighted with a clear button.
+    const incubateeFilterLabels: Record<keyof IncubateeFilters, string> = {
+        gender: 'Gender',
+        ageBand: 'Age',
+        sector: 'Sector',
+        province: 'Province',
+        bee: 'B-BBEE'
+    }
+    const filterSummary: Array<{ label: string; value: string; onClear?: () => void }> = [
+        ...(showDepartmentFilter
+            ? [{
+                label: 'Department',
+                value: selectedDepartmentId === 'all' ? 'All' : departments[selectedDepartmentId] || 'Selected',
+                onClear: selectedDepartmentId === 'all' ? undefined : () => setSelectedDepartmentId('all')
+            }]
+            : []),
+        ...(view === 'Incubatees'
+            ? (Object.keys(incubateeFilterLabels) as Array<keyof IncubateeFilters>)
+                .filter(key => incubateeFilters[key].length > 0)
+                .map(key => ({
+                    label: incubateeFilterLabels[key],
+                    value: incubateeFilters[key].length > 2
+                        ? `${incubateeFilters[key].length} selected`
+                        : incubateeFilters[key].join(', '),
+                    onClear: () => setIncubateeFilter(key)([])
+                }))
+            : [])
+    ]
 
     const dateFrom = range?.[0]?.toDate?.()
     const dateTo = range?.[1]?.toDate?.()
@@ -479,186 +534,138 @@ const MonitoringReports: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: '5px 24px' }}>
+        <div style={{ padding: 24, minHeight: '100vh' }}>
+            <Helmet>
+                <title>Monitoring Reports & Analytics</title>
+            </Helmet>
             {initialLoading ? (
                 <PageSkeleton variant='analytics' />
             ) : (
             <>
+                {/* Same bar as the project admin reports: tabs, what's shown
+                    (period and active filters), Filters, Report. */}
                 <DashboardFilterBar>
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 12,
-                            width: '100%',
-                            minWidth: 0,
-                            overflowX: 'auto'
-                        }}
-                    >
-                        <div style={{ flex: '1 1 0', minWidth: 180 }}>
-                            <Select
-                                size='large'
-                                value={selectedDepartmentId}
-                                onChange={value => setSelectedDepartmentId(value)}
-                                options={departmentOptions}
-                                style={{ width: '100%' }}
-                                disabled={view === 'Incubatees'}
-                            />
+                    <div className='pr-bar'>
+                        <Segmented
+                            className='pr-tabs'
+                            value={view}
+                            onChange={v => setView(v as any)}
+                            options={[
+                                { value: 'Interventions', label: 'Interventions', icon: <BarChartOutlined /> },
+                                { value: 'Incubatees', label: 'Incubatees', icon: <TeamOutlined /> },
+                                { value: 'Facilitators', label: 'Facilitators', icon: <SolutionOutlined /> },
+                                { value: 'MOVs', label: 'MOVs', icon: <AuditOutlined /> },
+                                { value: 'Compliance', label: 'Compliance', icon: <SafetyCertificateOutlined /> },
+                                { value: 'Risk', label: 'Risk', icon: <WarningOutlined /> }
+                            ]}
+                        />
+                        <div className='pr-scope' aria-label='Showing'>
+                            <span className='pr-scope-item' title='Change the period from the calendar button in the top bar'>
+                                <span className='pr-scope-label'>Period:</span> {periodLabel}
+                            </span>
+                            {filterSummary.map(item => (
+                                <span key={item.label} className={`pr-scope-item${item.onClear ? ' is-active' : ''}`}>
+                                    <span className='pr-scope-label'>{item.label}:</span> {item.value}
+                                    {item.onClear ? (
+                                        <button
+                                            type='button'
+                                            className='pr-scope-clear'
+                                            aria-label={`Clear ${item.label.toLowerCase()} filter`}
+                                            onClick={item.onClear}
+                                        >
+                                            <CloseOutlined />
+                                        </button>
+                                    ) : null}
+                                </span>
+                            ))}
                         </div>
-                        {isMultiBranch && (
-                            <div style={{ flex: '0.8 1 0', minWidth: 150 }}>
-                                <Select
-                                    size='large'
-                                    value={selectedBranch}
-                                    onChange={value => setSelectedBranch(value)}
-                                    options={branchOptions}
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
-                        )}
-                        <div style={{ flex: '1.3 1 0', minWidth: 260 }}>
-                            <RangePicker
-                                size='large'
-                                value={range}
-                                onChange={v => v && setRange(v as [Dayjs, Dayjs])}
-                                presets={[
-                                    { label: 'This Month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
-                                    { label: 'This Quarter', value: getFiscalQuarterRange() },
-                                    { label: 'YTD', value: getFiscalYtdRange() },
-                                    { label: 'Last 12 Months', value: [dayjs().subtract(11, 'month').startOf('month'), dayjs().endOf('month')] },
-                                    { label: 'This Year', value: [dayjs().startOf('year'), dayjs().endOf('year')] }
-                                ]}
-                                style={{ width: '100%' }}
-                                allowClear={false}
-                            />
-                        </div>
-
-                        <div style={{ flex: '0 0 auto' }}>
-                            <Segmented
-                                value={view}
-                                onChange={v => setView(v as any)}
-                                options={[
-                                    { value: 'Interventions', label: 'Interventions', icon: <BarChartOutlined /> },
-                                    { value: 'Incubatees', label: 'Incubatees', icon: <TeamOutlined /> },
-                                    { value: 'Facilitators', label: 'Facilitators', icon: <SolutionOutlined /> },
-                                    { value: 'Risk', label: 'Risk', icon: <WarningOutlined /> }
-                                ]}
-                            />
-                        </div>
+                        {filtersPanel ? (
+                            <Popover content={filtersPanel} trigger='click' placement='bottomRight' title='Filters'>
+                                <Badge count={activeFilterCount} size='small' offset={[-6, 4]}>
+                                    <Button size='large' icon={<FilterOutlined />}>
+                                        Filters
+                                    </Button>
+                                </Badge>
+                            </Popover>
+                        ) : null}
                         {isMainDept && (
-                            <div style={{ flex: '0 0 auto' }}>
-                                <Space.Compact>
+                                <Dropdown
+                                    trigger={['click']}
+                                    placement='bottomRight'
+                                    disabled={exporting || playerLoading}
+                                    menu={{
+                                        items: [
+                                            {
+                                                key: 'play',
+                                                icon: <PlayCircleOutlined />,
+                                                label: reportMenuLabel(
+                                                    'Play programme summary',
+                                                    'An animated walkthrough of the selected period'
+                                                ),
+                                                onClick: () => void handlePlayProgrammeSummary()
+                                            },
+                                            { type: 'divider' },
+                                            {
+                                                key: 'programme',
+                                                icon: <BarChartOutlined />,
+                                                disabled: isAllPrograms,
+                                                label: reportMenuLabel(
+                                                    'Export programme report',
+                                                    isAllPrograms
+                                                        ? 'Choose a programme first'
+                                                        : 'Detailed: interventions, departments, incubatees and delivery'
+                                                ),
+                                                onClick: () => void handleExportProgrammeSummary()
+                                            },
+                                            {
+                                                key: 'executive',
+                                                icon: <FileTextOutlined />,
+                                                disabled: isAllPrograms,
+                                                label: reportMenuLabel(
+                                                    'Export executive report',
+                                                    isAllPrograms
+                                                        ? 'Choose a programme first'
+                                                        : 'Leadership view: progress, outcomes and risks'
+                                                ),
+                                                onClick: () => void handleExportExecutiveReport()
+                                            }
+                                        ]
+                                    }}
+                                >
                                     <Button
                                         size='large'
                                         shape='round'
                                         type='primary'
                                         icon={<FileTextOutlined />}
-                                        loading={exporting}
-                                        onClick={() => setReportChooserOpen(true)}
-                                        disabled={isAllPrograms}
+                                        loading={exporting || playerLoading}
                                     >
-                                        Reports
+                                        Report <DownOutlined />
                                     </Button>
-                                    <Button
-                                        size='large'
-                                        shape='round'
-                                        icon={<PlayCircleOutlined />}
-                                        loading={playerLoading}
-                                        onClick={() => void handlePlayProgrammeSummary()}
-                                    >
-                                        Play
-                                    </Button>
-                                </Space.Compact>
-                            </div>
+                                </Dropdown>
                         )}
                     </div>
                 </DashboardFilterBar>
 
                 {view === 'Interventions' && (
-                    <div style={{ marginTop: 16 }}>
-                        <Row>
-                            <Col span={24}>
-                                <Card
-                                    style={CARD_STYLE}
-                                    title='Interventions per Department (Drilldown)'
-                                    extra={
-                                        <Button
-                                            size='small'
-                                            icon={<ExpandOutlined />}
-                                            onClick={() => setExpandedDrill(true)}
-                                        >
-                                            Expand
-                                        </Button>
-                                    }
-                                >
-                                    <InterventionsDeptDrilldownChart
-                                        programId={activeProgramId}
-                                        departmentId={
-                                            selectedDepartmentId === 'all'
-                                                ? undefined
-                                                : selectedDepartmentId
-                                        }
-                                        dateFrom={dateFrom}
-                                        dateTo={dateTo}
-                                    />
-                                </Card>
-                            </Col>
-
-                            <Col style={{ marginTop: 16 }} span={24}>
-                                <ProvinceMapDashboard
-                                    metric='interventions'
-                                    dateFrom={range[0].toDate()}
-                                    dateTo={range[1].toDate()}
-                                    programId={activeProgramId}
-                                />
-                            </Col>
-                        </Row>
-
-                        <Modal
-                            open={expandedBar}
-                            footer={null}
-                            onCancel={() => setExpandedBar(false)}
-                            width={1100}
-                            title={
-                                <Space>
-                                    <Text strong>Completed Interventions (Expanded)</Text>
-                                    <Text type='secondary'>
-                                        • {dayjs(
-                                            `${barYear}-${String(barMonthIndex + 1).padStart(2, '0')}-01`
-                                        ).format('MMMM YYYY')} • Departments
-                                    </Text>
-                                </Space>
-                            }
-                        >
-                            <BarRaceChart
-                                data={filteredForBar as any}
-                                groupBy='department'
-                                monthIndex={barMonthIndex}
-                                year={barYear}
-                                depTitleOf={depTitleOf}
-                                title=''
-                            />
-                        </Modal>
-
-                        <Modal
-                            open={expandedDrill}
-                            footer={null}
-                            onCancel={() => setExpandedDrill(false)}
-                            width={1100}
-                            title='Interventions per Department (Expanded Drilldown)'
-                        >
+                    <Row gutter={[16, 16]}>
+                        <Col xs={24}>
                             <InterventionsDeptDrilldownChart
+                                title='Department intervention snapshot'
                                 programId={activeProgramId}
-                                departmentId={
-                                    selectedDepartmentId === 'all'
-                                        ? undefined
-                                        : selectedDepartmentId
-                                }
+                                departmentId={selectedDepartmentId === 'all' ? undefined : selectedDepartmentId}
                                 dateFrom={dateFrom}
                                 dateTo={dateTo}
                             />
-                        </Modal>
-                    </div>
+                        </Col>
+                        <Col xs={24}>
+                            <ProvinceMapDashboard
+                                metric='interventions'
+                                dateFrom={range[0].toDate()}
+                                dateTo={range[1].toDate()}
+                                programId={activeProgramId}
+                            />
+                        </Col>
+                    </Row>
                 )}
 
                 {view === 'Incubatees' && (
@@ -671,6 +678,8 @@ const MonitoringReports: React.FC = () => {
                         <IncubateesInsights
                             programId={activeProgramId}
                             range={range}
+                            filters={incubateeFilters}
+                            onFilterOptionsChange={setIncubateeFilterOptions}
                         />
                     </motion.div>
                 )}
@@ -691,6 +700,37 @@ const MonitoringReports: React.FC = () => {
                     </motion.div>
                 )}
 
+                {view === 'MOVs' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                        style={{ marginTop: 16 }}
+                    >
+                        <MovsTab
+                            programId={activeProgramId}
+                            departmentId={effectiveDepartmentIdForConsultants}
+                            dateFrom={dateFrom}
+                            dateTo={dateTo}
+                        />
+                    </motion.div>
+                )}
+
+                {view === 'Compliance' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                        style={{ marginTop: 16 }}
+                    >
+                        <ComplianceTab
+                            programId={activeProgramId}
+                            dateFrom={dateFrom}
+                            dateTo={dateTo}
+                        />
+                    </motion.div>
+                )}
+
                 {view === 'Risk' && (
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
@@ -698,84 +738,9 @@ const MonitoringReports: React.FC = () => {
                         transition={{ duration: 0.3 }}
                         style={{ marginTop: 16 }}
                     >
-                        <SMERiskRegisterPage
-                            programId={activeProgramId}
-                        />
+                        <RiskTab programId={activeProgramId} />
                     </motion.div>
                 )}
-
-                <Modal
-                    open={reportChooserOpen}
-                    onCancel={() => setReportChooserOpen(false)}
-                    footer={null}
-                    width={780}
-                    title={
-                        <Space direction='vertical' size={2}>
-                            <Text strong style={{ fontSize: 20 }}>Choose a report</Text>
-                            <Text type='secondary'>Select the report that matches the level of detail you need.</Text>
-                        </Space>
-                    }
-                >
-                    <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-                        <Col xs={24} md={12}>
-                            <Card
-                                hoverable
-                                style={{ height: '100%', borderRadius: 14, border: '1px solid #dbeafe', boxShadow: '0 8px 24px rgba(37, 99, 235, .10)' }}
-                                bodyStyle={{ padding: 20 }}
-                            >
-                                <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                                    <Space align='center'>
-                                        <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center', background: '#eff6ff', color: '#2563eb' }}>
-                                            <BarChartOutlined style={{ fontSize: 20 }} />
-                                        </div>
-                                        <div>
-                                            <Text strong style={{ fontSize: 16 }}>Programme summary</Text>
-                                            <div><Tag color='blue'>Detailed</Tag></div>
-                                        </div>
-                                    </Space>
-                                    <Text type='secondary'>A consolidated view of interventions, department performance, incubatee activity and programme delivery for the selected period.</Text>
-                                    <Button
-                                        block
-                                        type='primary'
-                                        icon={<DownloadOutlined />}
-                                        loading={exporting}
-                                        onClick={() => { setReportChooserOpen(false); void handleExportProgrammeSummary() }}
-                                    >
-                                        Export programme report
-                                    </Button>
-                                </Space>
-                            </Card>
-                        </Col>
-                        <Col xs={24} md={12}>
-                            <Card
-                                hoverable
-                                style={{ height: '100%', borderRadius: 14, border: '1px solid #dcfce7', boxShadow: '0 8px 24px rgba(22, 163, 74, .10)' }}
-                                bodyStyle={{ padding: 20 }}
-                            >
-                                <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                                    <Space align='center'>
-                                        <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center', background: '#f0fdf4', color: '#16a34a' }}>
-                                            <FileTextOutlined style={{ fontSize: 20 }} />
-                                        </div>
-                                        <div>
-                                            <Text strong style={{ fontSize: 16 }}>Executive report</Text>
-                                            <div><Tag color='green'>Leadership view</Tag></div>
-                                        </div>
-                                    </Space>
-                                    <Text type='secondary'>A concise leadership-ready report covering progress, headline outcomes, risks and key programme-level insights.</Text>
-                                    <Button
-                                        block
-                                        icon={<DownloadOutlined />}
-                                        loading={exporting}
-                                        onClick={() => { setReportChooserOpen(false); void handleExportExecutiveReport() }}
-                                    >
-                                        Export executive report
-                                    </Button>
-                                </Space>
-                            </Card>
-                        </Col>
-                    </Row>
-                </Modal>
 
                 <MonitoringReportPlayer
                     dark={isDark}

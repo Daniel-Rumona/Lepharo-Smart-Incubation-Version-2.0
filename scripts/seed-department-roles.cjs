@@ -3,7 +3,7 @@
 // The app used to recognise ROM, M&E, HR, Legal, ... by matching department
 // names. It now reads this role map instead, so a rename changes nothing but
 // the label. This script fills the map once by matching today's names the way
-// the old code did. Afterwards, manage it from System Admin -> Department Roles.
+// the old code did. Afterwards, manage it from System Setup -> Departments (each department's Role).
 //
 //   - Top-level departments are preferred; a sub-department is used only when
 //     no top-level department matches (e.g. NVC and QMS under Training).

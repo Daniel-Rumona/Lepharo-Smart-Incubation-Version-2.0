@@ -82,6 +82,12 @@ export interface FeatureGovernanceRecord {
     imageUrls: string[];
   };
   createdBy: string;
+  /** Given the work: may update status, progress and dates. Set by the governance owner only. */
+  assigneeIds?: string[];
+  /** May see the record but not change it. Set by the governance owner only. */
+  viewerIds?: string[];
+  /** createdBy + assigneeIds + viewerIds; what firestore.rules and the "records I can see" query check. */
+  accessIds?: string[];
   createdByName: string;
   createdAt?: any;
   updatedAt?: any;

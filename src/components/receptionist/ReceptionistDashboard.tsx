@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Col, Row, Spin, Table, Tag, Typography } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Alert, Button, Col, Row, Spin } from 'antd'
 import { getDocs, collection } from 'firebase/firestore'
 import dayjs from 'dayjs'
 
 import { useAuth } from '@/hooks/useAuth'
+import { useDataColor } from '@/lib/chartColors'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { inquiryService } from '@/services/inquiryService'
 import { ReceptionistDashboardData } from '@/types/inquiry'
@@ -11,25 +12,11 @@ import { db } from '@/firebase'
 
 import DashboardMetrics from './DashboardMetrics'
 import RecentInquiries from './RecentInquiries'
-import UrgentInquiries from './UrgentInquiries'
-
-const { Text } = Typography
-
-type ScheduleKind = 'event' | 'appointment'
-
-type ScheduleItem = {
-    id: string
-    kind: ScheduleKind
-    title: string
-    date: Date
-    startTime?: string
-    endTime?: string
-    participant?: string
-    facilitator?: string
-    location?: string
-    branchId?: string
-    programId?: string
-}
+import WeekAgenda, { agendaWeekStart, type ScheduleItem } from './WeekAgenda'
+import { followUpService, type FollowUp } from '@/services/followUpService'
+import { countDueFollowUps, isOpenFollowUp } from '@/lib/followUpBuckets'
+import '@/styles/admin-overview.css'
+import '@/styles/receptionist-dashboard.css'
 
 const clean = (value: unknown) => String(value ?? '').trim()
 
@@ -64,6 +51,8 @@ const resolveScheduleDate = (data: any) =>
 
 const ReceptionistDashboard: React.FC = () => {
     const { user } = useAuth()
+    // Mini bars on the tiles use the data colour (lib/chartColors), set here for the page.
+    const DATA = useDataColor()
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
 
     const [dashboardData, setDashboardData] =
@@ -73,6 +62,7 @@ const ReceptionistDashboard: React.FC = () => {
     const [refreshing, setRefreshing] = useState(false)
     const [scheduleLoading, setScheduleLoading] = useState(false)
     const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([])
+    const [branchFollowUps, setBranchFollowUps] = useState<FollowUp[]>([])
     const [branchMap, setBranchMap] = useState<Record<string, string>>({})
 
     const userEmail = clean(user?.email).toLowerCase()
@@ -256,10 +246,11 @@ const ReceptionistDashboard: React.FC = () => {
                 })
                 .filter(Boolean) as ScheduleItem[]
 
-            const now = dayjs().startOf('day')
+            // From the Monday the agenda shows, so earlier days this week still list what happened.
+            const weekStart = agendaWeekStart()
 
             const combined = [...eventItems, ...appointmentItems]
-                .filter(item => dayjs(item.date).isSame(now, 'day') || dayjs(item.date).isAfter(now, 'day'))
+                .filter(item => !dayjs(item.date).isBefore(weekStart, 'day'))
                 .sort((a, b) => {
                     const aTime = `${dayjs(a.date).format('YYYY-MM-DD')} ${a.startTime || '00:00'}`
                     const bTime = `${dayjs(b.date).format('YYYY-MM-DD')} ${b.startTime || '00:00'}`
@@ -311,77 +302,33 @@ const ReceptionistDashboard: React.FC = () => {
         isAllPrograms
     ])
 
+    // The follow-ups tile counts the same records as the follow-ups page: the whole branch's.
+    const fetchFollowUps = async () => {
+        if (!user?.uid || !assignedBranch) return setBranchFollowUps([])
+        try {
+            setBranchFollowUps(await followUpService.getFollowUpsByBranch(assignedBranch))
+        } catch (followUpError) {
+            console.error('ReceptionistDashboard: Error fetching follow-ups:', followUpError)
+            setBranchFollowUps([])
+        }
+    }
+
+    useEffect(() => {
+        fetchFollowUps()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [assignedBranch, user?.uid])
+
     const handleRefresh = async () => {
         await Promise.all([
             fetchDashboardData(true),
-            fetchSchedule()
+            fetchSchedule(),
+            fetchFollowUps()
         ])
     }
 
     const headerBranchName = assignedBranch
         ? branchMap[assignedBranch] || 'Unknown Branch'
         : 'Not Assigned'
-
-    const scheduleColumns = useMemo(
-        () => [
-            {
-                title: 'Type',
-                dataIndex: 'kind',
-                key: 'kind',
-                width: 120,
-                render: (kind: ScheduleKind) => (
-                    <Tag color={kind === 'appointment' ? 'blue' : 'purple'}>
-                        {kind === 'appointment' ? 'Appointment' : 'Event'}
-                    </Tag>
-                )
-            },
-            {
-                title: 'Date',
-                dataIndex: 'date',
-                key: 'date',
-                width: 125,
-                render: (date: Date) => dayjs(date).format('DD MMM YYYY')
-            },
-            {
-                title: 'Time',
-                key: 'time',
-                width: 120,
-                render: (_: unknown, item: ScheduleItem) =>
-                    [item.startTime, item.endTime].filter(Boolean).join(' – ') || '—'
-            },
-            {
-                title: 'Activity',
-                dataIndex: 'title',
-                key: 'title',
-                render: (title: string, item: ScheduleItem) => (
-                    <div>
-                        <Text strong>{title}</Text>
-                        {(item.participant || item.facilitator) && (
-                            <div>
-                                <Text type='secondary'>
-                                    {[
-                                        item.participant,
-                                        item.facilitator ? `Coordinator: ${item.facilitator}` : ''
-                                    ]
-                                        .filter(Boolean)
-                                        .join(' • ')}
-                                </Text>
-                            </div>
-                        )}
-                    </div>
-                )
-            },
-            {
-                title: 'Location',
-                dataIndex: 'location',
-                key: 'location',
-                width: 180,
-                ellipsis: true,
-                render: (location?: string) => location || '—'
-            }
-        ],
-        []
-    )
 
     if (loading) {
         return (
@@ -456,49 +403,29 @@ const ReceptionistDashboard: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: '24px', minHeight: '100vh' }}>
-            <DashboardMetrics dashboardData={dashboardData} />
+        <div className='admin-overview rcp-dashboard' style={{ ['--rcp-data' as any]: DATA }}>
+            <DashboardMetrics
+                inquiries={dashboardData.recentInquiries}
+                dueFollowUps={countDueFollowUps(branchFollowUps, new Date())}
+                openFollowUps={branchFollowUps.filter(isOpenFollowUp).length}
+            />
 
-            <Row gutter={[24, 24]} style={{ marginTop: '24px' }}>
+            <Row gutter={[16, 16]} className='admin-overview-row'>
                 <Col xs={24} lg={12}>
                     <RecentInquiries
                         inquiries={dashboardData.recentInquiries}
+                        urgentInquiries={dashboardData.urgentInquiries}
                         onRefresh={handleRefresh}
                     />
                 </Col>
 
                 <Col xs={24} lg={12}>
-                    <UrgentInquiries
-                        urgentInquiries={dashboardData.urgentInquiries}
-                        pendingFollowUps={dashboardData.pendingFollowUps}
+                    <WeekAgenda
+                        items={scheduleItems}
+                        loading={scheduleLoading || refreshing}
+                        branchName={headerBranchName}
                         onRefresh={handleRefresh}
                     />
-                </Col>
-
-                <Col span={24}>
-                    <Card
-                        title={`Upcoming Schedule · ${headerBranchName}`}
-                        extra={
-                            <Button onClick={handleRefresh} loading={refreshing || scheduleLoading}>
-                                Refresh
-                            </Button>
-                        }
-                    >
-                        <Table
-                            rowKey='id'
-                            columns={scheduleColumns as any}
-                            dataSource={scheduleItems}
-                            loading={scheduleLoading}
-                            pagination={{
-                                pageSize: 6,
-                                position: ['bottomCenter'],
-                                showSizeChanger: false
-                            }}
-                            locale={{
-                                emptyText: 'No upcoming appointments or events found.'
-                            }}
-                        />
-                    </Card>
                 </Col>
             </Row>
         </div>

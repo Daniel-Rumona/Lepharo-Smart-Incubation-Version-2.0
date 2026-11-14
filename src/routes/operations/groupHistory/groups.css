@@ -1,0 +1,183 @@
+/* Groups page (gpx-): the parts the shared review workspace (ws-) doesn't
+   have — row ticks for batch actions, progress bars, the requirement and
+   intervention lists and the movement timeline. Success and danger match
+   the metric tones (metrics.css). */
+
+:root {
+    --gpx-success: #16a34a;
+    --gpx-danger: #dc2626;
+}
+
+html[data-theme="dark"] {
+    --gpx-success: #4ade80;
+    --gpx-danger: #f87171;
+}
+
+.gpx-bulk {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.gpx-tick {
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+/* --- Progress -------------------------------------------------------------- */
+.gpx-bar {
+    height: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--app-text) 8%, transparent);
+    border-radius: 999px;
+}
+
+.gpx-bar.is-large {
+    height: 8px;
+    margin: 8px 0 6px;
+}
+
+.gpx-bar span {
+    display: block;
+    height: 100%;
+    background: var(--app-accent);
+    border-radius: 999px;
+    transition: width 500ms ease;
+}
+
+.gpx-bar.is-done span {
+    background: var(--gpx-success);
+}
+
+.gpx-progress {
+    padding: 14px 20px 0;
+}
+
+.gpx-progress-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.gpx-progress-path {
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.gpx-progress-path .anticon {
+    margin-inline: 4px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.gpx-progress-value {
+    font-size: 18px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text);
+}
+
+/* --- Requirement and intervention lists ----------------------------------- */
+.gpx-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.gpx-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--app-border);
+}
+
+.gpx-item:first-child {
+    border-top: 0;
+}
+
+.gpx-item .ant-tag {
+    flex: 0 0 auto;
+    margin-inline-end: 0;
+}
+
+.gpx-item-icon {
+    flex: 0 0 auto;
+    font-size: 16px;
+    color: var(--gpx-danger);
+}
+
+.gpx-item-icon.is-met {
+    color: var(--gpx-success);
+}
+
+.gpx-item-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.gpx-item-title {
+    font-weight: 600;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.gpx-item.is-met .gpx-item-title {
+    font-weight: 500;
+    color: var(--app-text-muted);
+}
+
+.gpx-item-sub {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.gpx-item-title .anticon {
+    margin-inline: 4px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+/* --- Movement history ------------------------------------------------------ */
+.gpx-timeline {
+    display: grid;
+    gap: 14px;
+    /* The dots straddle the line; the inset keeps their left half inside the
+       scrolling pane, which would otherwise clip it. */
+    margin: 0 0 0 6px;
+    padding: 0 0 0 16px;
+    list-style: none;
+    border-inline-start: 2px solid var(--app-border);
+}
+
+.gpx-timeline li {
+    position: relative;
+}
+
+.gpx-timeline li::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: -22px;
+    width: 10px;
+    height: 10px;
+    background: var(--app-accent);
+    border: 2px solid var(--app-surface);
+    border-radius: 50%;
+}
+
+.gpx-timeline .ws-prose {
+    margin-top: 4px;
+}

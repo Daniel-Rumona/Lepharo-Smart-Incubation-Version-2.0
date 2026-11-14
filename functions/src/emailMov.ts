@@ -1,5 +1,6 @@
+import { scheduledJob } from "./cronHeartbeat";
+import { holdForDigest } from "./dailyBrief";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import {
   getCCRecipients,
   getMERecipients,
@@ -13,7 +14,7 @@ import {
  * One daily scheduler replaces the former HOD, CC and M&E scheduler resources.
  * HOD reminders run daily, with CC and M&E reminders added on the 4th and 7th.
  */
-export const movReminderCron = onSchedule(
+export const movReminderCron = scheduledJob("movReminderCron",
   { region: "us-central1", schedule: "0 8 * * *", timeZone: "Africa/Johannesburg" },
   async () => {
     const dayOfMonth = Number(
@@ -58,7 +59,15 @@ export const movReminderCron = onSchedule(
       const recipients = await job.recipients();
       if (!recipients.length) continue;
       const content = buildPackReminderEmail(job.type, job.message, job.url);
-      await sendStatusChangeNotification(recipients, content.subject, content.html, content.text);
+      // People on daily digest get this in their morning brief instead.
+      const emailNow = await holdForDigest(recipients, {
+        category: "mov",
+        title: `MOV packs: ${job.type} action this month`,
+        detail: job.message,
+        link: job.url,
+        dedupeKey: `pack:${job.type}`,
+      });
+      if (emailNow.length) await sendStatusChangeNotification(emailNow, content.subject, content.html, content.text);
       logger.info("movReminderCron.sent", {
         reminderType: job.type,
         count: recipients.length,

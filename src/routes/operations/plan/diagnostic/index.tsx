@@ -564,14 +564,14 @@ const DiagnosticPlanBuilder: React.FC = () => {
     }, [isDirty, saving])
 
     const leave = () => {
-        if (!isDirty) return navigate('/operations/plan')
+        if (!isDirty) return navigate('/plan')
         Modal.confirm({
             title: 'Leave without saving?',
             content: 'The interventions you added or removed here have not been saved.',
             okText: 'Leave',
             cancelText: 'Stay',
             centered: true,
-            onOk: () => navigate('/operations/plan')
+            onOk: () => navigate('/plan')
         })
     }
 
@@ -800,7 +800,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
                         : 'Developmental Plan saved and MOV prepared for SME signature'
                 ; (movCreationFailed ? message.warning : message.success)(savedMessage)
             setSavedKey(currentKey)
-            navigate('/operations/plan')
+            navigate('/plan')
         } catch (error) {
             console.error('[DiagnosticPlanBuilder] Failed to save:', error)
             message.error('Failed to save plan')
@@ -810,7 +810,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
     }
 
     const backToList = (
-        <Button shape="round" onClick={() => navigate('/operations/plan')}>
+        <Button shape="round" onClick={() => navigate('/plan')}>
             Back to Development Plans
         </Button>
     )
@@ -856,7 +856,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
                     status="warning"
                     title="Your profile has no department"
                     subTitle="A plan is built for one department. Ask an administrator to set your department, then open this page again."
-                    extra={<Button shape="round" onClick={() => navigate('/operations/plan')}>Back to Development Plans</Button>}
+                    extra={<Button shape="round" onClick={() => navigate('/plan')}>Back to Development Plans</Button>}
                 />
             </div>
         )

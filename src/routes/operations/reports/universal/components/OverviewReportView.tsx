@@ -20,6 +20,7 @@ import {
     cardStyle,
     completionDate,
     createdDate,
+    inRangeInclusive,
     isReportCompleted,
     REPORT_COLORS,
     turnaroundDays,
@@ -134,7 +135,18 @@ const OverviewReportView: React.FC<
             },
         ];
 
+        // Only the months inside the reporting period, each one shown even when
+        // nothing happened in it. A month with no completions or ratings gets a
+        // gap in the turnaround and feedback lines rather than a fake 0.
         const monthlyData = useMemo(() => {
+            const [start, end] = dateRange;
+            const keys: string[] = [];
+            let cursor = start.startOf("month");
+            while (!cursor.isAfter(end, "month")) {
+                keys.push(cursor.format("YYYY-MM"));
+                cursor = cursor.add(1, "month");
+            }
+
             const map: Record<
                 string,
                 {
@@ -142,97 +154,41 @@ const OverviewReportView: React.FC<
                     turnaround: number[];
                     feedback: number[];
                 }
-            > = {};
+            > = Object.fromEntries(
+                keys.map((key) => [key, { completed: 0, turnaround: [], feedback: [] }])
+            );
 
             scopedRows.forEach((row) => {
-                const completed =
-                    completionDate(row);
+                const completed = completionDate(row);
+                const activityDate = completed || createdDate(row);
 
-                const activityDate =
-                    completed || createdDate(row);
+                if (!activityDate || !inRangeInclusive(activityDate, start, end)) return;
 
-                if (!activityDate) return;
+                const bucket = map[activityDate.format("YYYY-MM")];
+                if (!bucket) return;
 
-                const key =
-                    activityDate.format(
-                        "YYYY-MM"
-                    );
+                if (isReportCompleted(row)) {
+                    bucket.completed += 1;
 
-                if (!map[key]) {
-                    map[key] = {
-                        completed: 0,
-                        turnaround: [],
-                        feedback: [],
-                    };
+                    const days = turnaroundDays(row);
+                    if (days != null) bucket.turnaround.push(days);
                 }
 
-                if (
-                    isReportCompleted(row)
-                ) {
-                    map[key].completed += 1;
-
-                    const days =
-                        turnaroundDays(row);
-
-                    if (days != null) {
-                        map[
-                            key
-                        ].turnaround.push(
-                            days
-                        );
-                    }
-                }
-
-                const rating = Number(
-                    row.feedback?.rating
-                );
-
-                if (
-                    Number.isFinite(rating)
-                ) {
-                    map[
-                        key
-                    ].feedback.push(
-                        rating
-                    );
-                }
+                const rating = Number(row.feedback?.rating);
+                if (Number.isFinite(rating)) bucket.feedback.push(rating);
             });
 
-            const keys =
-                Object.keys(map).sort();
-
             return {
-                categories: keys.map(
-                    (key) =>
-                        dayjs(
-                            `${key}-01`
-                        ).format(
-                            "MMM YYYY"
-                        )
+                categories: keys.map((key) => dayjs(`${key}-01`).format("MMM YYYY")),
+                completed: keys.map((key) => map[key].completed),
+                avgTurnaround: keys.map((key) =>
+                    map[key].turnaround.length ? average(map[key].turnaround) : null
                 ),
-
-                completed: keys.map(
-                    (key) =>
-                        map[key].completed
+                avgFeedback: keys.map((key) =>
+                    map[key].feedback.length ? average(map[key].feedback) : null
                 ),
-
-                avgTurnaround:
-                    keys.map((key) =>
-                        average(
-                            map[key]
-                                .turnaround
-                        )
-                    ),
-
-                avgFeedback:
-                    keys.map((key) =>
-                        average(
-                            map[key]
-                                .feedback
-                        )
-                    ),
             };
-        }, [scopedRows]);
+        }, [scopedRows, dateRange]);
 
         const monthlyOptions: Highcharts.Options =
         {
@@ -242,7 +198,7 @@ const OverviewReportView: React.FC<
             },
 
             title: {
-                text: "Monthly Performance: Completion, Turnaround and Feedback",
+                text: undefined,
             },
 
             credits: {
@@ -364,6 +320,7 @@ const OverviewReportView: React.FC<
                         >
                             <Card
                                 title="Intervention Health"
+                                extra={<Text type="secondary" style={{ fontSize: 12 }}>{`${dateRange[0].format("DD MMM")} – ${dateRange[1].format("DD MMM YYYY")}`}</Text>}
                                 style={{
                                     ...cardStyle,
                                     height: "100%",
@@ -521,9 +478,8 @@ const OverviewReportView: React.FC<
                                                         {
                                                             neededTotal
                                                         }{" "}
-                                                        required
-                                                        interventions
-                                                        completed
+                                                        interventions completed in
+                                                        this period
                                                     </Text>
                                                 </div>
                                             </Col>
@@ -623,7 +579,7 @@ const OverviewReportView: React.FC<
                                         </div>
                                     </>
                                 ) : (
-                                    <Empty description="No interventions for this department yet" />
+                                    <Empty description="No interventions in this period" />
                                 )}
                             </Card>
                         </motion.div>
@@ -650,7 +606,7 @@ const OverviewReportView: React.FC<
                                     ...cardStyle,
                                     borderRadius: 16,
                                 }}
-                                title="Monthly Performance"
+                                title="Monthly Performance: Completion, Turnaround and Feedback"
                             >
                                 {monthlyData
                                     .categories
@@ -664,7 +620,7 @@ const OverviewReportView: React.FC<
                                         }
                                     />
                                 ) : (
-                                    <Empty description="No monthly activity to show yet" />
+                                    <Empty description="No monthly activity in this period" />
                                 )}
                             </Card>
                         </motion.div>

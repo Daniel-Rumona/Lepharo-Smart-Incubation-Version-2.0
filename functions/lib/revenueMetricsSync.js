@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.revenueMetricsSyncCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firebase_1 = require("./firebase");
 // QuantNow has no Firestore persistence of its own - the Finance page reads it
 // live, per SME company, keyed by email (see routes/operations/finance/index.tsx).
@@ -109,7 +109,7 @@ async function runInBatches(items, size, worker) {
         await Promise.allSettled(items.slice(i, i + size).map(worker));
     }
 }
-exports.revenueMetricsSyncCron = (0, scheduler_1.onSchedule)({
+exports.revenueMetricsSyncCron = (0, cronHeartbeat_1.scheduledJob)("revenueMetricsSyncCron", {
     region: "us-central1",
     schedule: "0 5 * * *",
     timeZone: "Africa/Johannesburg",

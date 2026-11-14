@@ -21,11 +21,6 @@
     font-size: 13px;
 }
 
-.imp-help {
-    font-size: 12.5px;
-    line-height: 1.6;
-}
-
 .imp-footer {
     display: flex;
     justify-content: flex-end;
@@ -46,9 +41,9 @@
 /* Sheets */
 .imp-sheet {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 10px 16px;
+    gap: 12px;
+    cursor: pointer;
     padding: 10px 12px;
     background: var(--app-surface);
     border: 1px solid var(--app-border);
@@ -84,17 +79,6 @@
     font-size: 12px;
     white-space: nowrap;
     text-overflow: ellipsis;
-}
-
-.imp-sheet-role {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-
-.imp-sheet-role .ant-input {
-    width: 180px;
 }
 
 /* Columns and branches */
@@ -215,18 +199,7 @@
         display: none;
     }
 
-    .imp-column-select,
-    .imp-sheet-role .ant-input {
-        width: 100%;
-    }
-}
-
-.imp-status-input {
-    width: 180px;
-}
-
-@media (max-width: 640px) {
-    .imp-status-input {
+    .imp-column-select {
         width: 100%;
     }
 }

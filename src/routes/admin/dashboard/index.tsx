@@ -1,318 +1,411 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Col, Empty, Grid, Pagination, Row, Space, Tag, Typography } from 'antd'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Col, Empty, Progress, Row, Skeleton, Tag, theme, Typography } from 'antd'
 import {
-    CheckCircleFilled,
-    CloseCircleFilled,
-    ExclamationCircleFilled,
-    MailOutlined,
-    SafetyCertificateOutlined,
-    ClockCircleOutlined,
-    HistoryOutlined,
-    SyncOutlined,
-    TeamOutlined
+    ArrowDownOutlined,
+    ArrowUpOutlined,
+    CheckCircleOutlined,
+    MinusOutlined,
+    RightOutlined,
+    TeamOutlined,
+    WarningOutlined
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
-import { Link, useNavigate } from 'react-router-dom'
-import dayjs from 'dayjs'
-import relativeTime from 'dayjs/plugin/relativeTime'
-import { collection, getCountFromServer, getDocs, limit, orderBy, query, Timestamp, where } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
+import dayjs, { type Dayjs } from 'dayjs'
+import { collection, getDocs, query, Timestamp, where } from 'firebase/firestore'
+import Highcharts from 'highcharts'
+import HighchartsReact from 'highcharts-react-official'
 import { db } from '@/firebase'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricTile, type MetricTone } from '@/components/dashboards/metrics/MetricTile'
-import { MobileCardList } from '@/components/shared/MobileCardList'
-import '@/components/shared/setup-segmented.css'
+import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
+import { formatRole } from '@/lib/roleLabels'
+import '@/styles/admin-overview.css'
 
-dayjs.extend(relativeTime)
+/*
+ * System admin overview: platform size, growth, who uses it, applications,
+ * sign-in activity and email delivery failures. The period comes from the
+ * topbar date filter (lib/useDashboardDateRange); "All time" shows everything
+ * with no comparison.
+ */
 
-const { Text } = Typography
+const dateFormatter = new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
 
-const WINDOW_HOURS = 24
-const LIST_PAGE_SIZE = 6
-const EMAIL_LOG_CAP = 500
-const HOUR_MS = 3_600_000
+type Trend = { amount: string; direction: 'up' | 'down' | 'flat'; tone: 'good' | 'bad' | 'neutral'; text: string }
 
-/** Scheduled jobs that write to systemHeartbeats, and how often they should report. */
-const HEARTBEAT_JOBS: Record<string, { label: string; purpose: string; cadence: string; expectedEveryHours: number }> = {
-    brevoApiKeepAlive: { label: 'Brevo API keep-alive', purpose: 'Keeps the email provider connection active', cadence: 'Weekly', expectedEveryHours: 24 * 7 },
-    revenueMetricsSyncCron: { label: 'Revenue metrics sync', purpose: 'Pulls SME revenue into participant metrics', cadence: 'Daily', expectedEveryHours: 24 }
-}
-// A job is "late" once it is this many times past its expected cadence.
-const STALE_FACTOR = 1.5
-
-/** 'pending' = the job has never reported; shown neutrally and not counted as a problem. */
-type Severity = 'ok' | 'warn' | 'error' | 'pending'
-
-type EmailFailure = {
-    id: string
-    to: string
-    subject: string
-    type: string
-    status: string
-    error: string
-    at: Date | null
-}
-
-type Job = {
-    id: string
-    label: string
-    severity: Severity
-    detail: string
-    lastAt: Date | null
-    purpose: string
-    cadence: string
-}
-
-type StuckUser = { id: string; name: string; email: string; role: string; createdAt: Date | null }
-
-type AuditRow = { id: string; type: string; actor: string; target: string; when: Date | null }
-
-type DashboardData = {
-    emailSent: number
-    emailFailed: EmailFailure[]
-    emailCapped: boolean
-    suppressions: number
-    jobs: Job[]
-    mustChangePassword: StuckUser[]
-    audit: AuditRow[]
-    loadedAt: Date
-}
+type UserRow = { id: string; role: string; createdAt: Date | null; active: boolean }
+type ApplicationRow = { id: string; status: 'accepted' | 'pending' | 'rejected'; at: Date | null }
+type FailureRow = { id: string; type: string; to: string; error: string; at: Date | null }
+type SessionRow = { uid: string; at: Date }
+type Month = { month: Date; newUsers: number; totalUsers: number; activeUsers: number; applications: number; errors: number }
 
 const toDate = (value: any): Date | null => {
     if (!value) return null
-    if (value instanceof Timestamp) return value.toDate()
     if (typeof value?.toDate === 'function') return value.toDate()
     const d = new Date(value)
     return Number.isNaN(d.getTime()) ? null : d
 }
 
+const between = (d: Date | null, from: Dayjs, to: Dayjs) => !!d && d >= from.toDate() && d <= to.toDate()
+/** Undated records count as existing from the start, rather than vanishing. */
+const byEnd = (d: Date | null, end: Dayjs) => !d || d <= end.toDate()
+
+const applicationStatus = (v: unknown): ApplicationRow['status'] => {
+    const s = String(v || '').trim().toLowerCase()
+    return s === 'accepted' || s === 'rejected' ? s : 'pending'
+}
+
 const humanise = (value: string) => value.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
-const SEVERITY_COLOR: Record<Severity, string> = { ok: '#52c41a', warn: '#faad14', error: '#ff4d4f', pending: '#8c8c8c' }
-const SEVERITY_BG: Record<Severity, string> = { ok: '#f6ffed', warn: '#fff7e6', error: '#fff2f0', pending: '#f5f5f5' }
-const SEVERITY_LABEL: Record<Severity, string> = { ok: 'Healthy', warn: 'Late', error: 'Failed', pending: 'Awaiting first run' }
-
-const SeverityIcon = ({ severity }: { severity: Severity }) =>
-    severity === 'ok' ? (
-        <CheckCircleFilled style={{ color: SEVERITY_COLOR.ok }} />
-    ) : severity === 'warn' ? (
-        <ExclamationCircleFilled style={{ color: SEVERITY_COLOR.warn }} />
-    ) : severity === 'error' ? (
-        <CloseCircleFilled style={{ color: SEVERITY_COLOR.error }} />
-    ) : (
-        <ClockCircleOutlined style={{ color: SEVERITY_COLOR.pending }} />
-    )
-
-const evaluateJob = (id: string, data: any): Job => {
-    const meta = HEARTBEAT_JOBS[id]
-    const lastAt = toDate(data?.lastRunAt) || toDate(data?.lastPingAt)
-    const base = { id, label: meta?.label || humanise(id), purpose: meta?.purpose || '', cadence: meta?.cadence || '', lastAt }
-    const status = String(data?.lastStatus || '').toLowerCase()
-
-    if (status === 'failed' || status === 'error') {
-        return { ...base, severity: 'error', detail: String(data?.lastError || 'Last run failed') }
-    }
-    if (meta && lastAt && Date.now() - lastAt.getTime() > meta.expectedEveryHours * STALE_FACTOR * HOUR_MS) {
-        return { ...base, severity: 'warn', detail: `No run reported since ${dayjs(lastAt).fromNow()}` }
-    }
-    if (!lastAt) return { ...base, severity: 'pending', detail: 'Has not reported a run yet' }
-    return { ...base, severity: 'ok', detail: `Last run ${dayjs(lastAt).fromNow()}` }
-}
-
-const loadDashboard = async (): Promise<DashboardData> => {
-    const since = Timestamp.fromMillis(Date.now() - WINDOW_HOURS * HOUR_MS)
-
-    const [emailSnap, suppressionCount, heartbeatSnap, stuckSnap, auditSnap] = await Promise.all([
-        getDocs(
-            query(collection(db, 'emailLogs'), where('createdAt', '>=', since), orderBy('createdAt', 'desc'), limit(EMAIL_LOG_CAP))
-        ),
-        getCountFromServer(collection(db, 'emailSuppressions')),
-        getDocs(collection(db, 'systemHeartbeats')),
-        getDocs(query(collection(db, 'users'), where('mustChangePassword', '==', true), limit(100))),
-        getDocs(query(collection(db, 'auditLogs'), orderBy('when', 'desc'), limit(10)))
-    ])
-
-    const emailFailed: EmailFailure[] = []
-    let emailSent = 0
-    emailSnap.docs.forEach(d => {
-        const row = d.data() as any
-        const status = String(row.status || '').toLowerCase()
-        if (status === 'failed' || status === 'bounced') {
-            emailFailed.push({
-                id: d.id,
-                to: String(row.to || ''),
-                subject: String(row.subject || ''),
-                type: String(row.type || ''),
-                status,
-                error: String(row.error || ''),
-                at: toDate(row.createdAt)
-            })
-        } else if (status === 'sent') {
-            emailSent += 1
-        }
-    })
-
-    // Jobs we expect to hear from are listed even if they have never written a heartbeat.
-    const seen = new Set<string>()
-    const jobs = heartbeatSnap.docs.map(d => {
-        seen.add(d.id)
-        return evaluateJob(d.id, d.data())
-    })
-    Object.keys(HEARTBEAT_JOBS).forEach(id => {
-        if (!seen.has(id)) {
-            jobs.push(evaluateJob(id, null))
-        }
-    })
-    const rank: Record<Severity, number> = { error: 0, warn: 1, pending: 2, ok: 3 }
-    jobs.sort((a, b) => rank[a.severity] - rank[b.severity] || a.label.localeCompare(b.label))
-
-    const mustChangePassword: StuckUser[] = stuckSnap.docs
-        .map(d => {
-            const u = d.data() as any
-            return {
-                id: d.id,
-                name: String(u.name || u.displayName || [u.firstName, u.surname].filter(Boolean).join(' ') || ''),
-                email: String(u.email || ''),
-                role: String(u.role || ''),
-                createdAt: toDate(u.createdAt)
-            }
-        })
-        .sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
-
-    const audit: AuditRow[] = auditSnap.docs.map(d => {
-        const a = d.data() as any
-        return {
-            id: d.id,
-            type: String(a.type || 'event'),
-            actor: String(a.actor?.email || a.actor?.uid || 'system'),
-            target: String(a.target?.email || a.target?.uid || ''),
-            when: toDate(a.when)
-        }
-    })
-
+/** Higher is good for most figures; for errors a rise is bad news. */
+const trendOf = (current: number, previous: number, higherIsGood = true): Trend => {
+    const change = current - previous
+    const percent = previous ? Math.round((Math.abs(change) / previous) * 100) : undefined
     return {
-        emailSent,
-        emailFailed,
-        emailCapped: emailSnap.size >= EMAIL_LOG_CAP,
-        suppressions: suppressionCount.data().count,
-        jobs,
-        mustChangePassword,
-        audit,
-        loadedAt: new Date()
+        amount: percent !== undefined ? `${percent}%` : String(Math.abs(change)),
+        direction: change > 0 ? 'up' : change < 0 ? 'down' : 'flat',
+        tone: change === 0 ? 'neutral' : change > 0 === higherIsGood ? 'good' : 'bad',
+        text: `${change >= 0 ? '+' : ''}${change} vs previous period`
     }
 }
 
-type Tile = {
-    key: string
-    title: string
-    value: number
-    subtitle: string
-    severity: Severity
-    icon: React.ReactNode
-    tone: MetricTone
-    to?: string
+/** A figure in a soft rounded card: icon disc, large number, change badge and small monthly bars. */
+const KpiTile: React.FC<{ icon: React.ReactNode; label: string; value: number; trend?: Trend; months: Month[]; pick: (m: Month) => number; loading: boolean }> = ({
+    icon,
+    label,
+    value,
+    trend,
+    months,
+    pick,
+    loading
+}) => {
+    const max = Math.max(...months.map(pick), 1)
+    return (
+        <Card className='admin-card admin-kpi' bordered={false}>
+            {loading ? (
+                <Skeleton active paragraph={{ rows: 1 }} />
+            ) : (
+                <div className='admin-kpi-body'>
+                    <div className='admin-kpi-copy'>
+                        <span className='admin-kpi-label'>{label}</span>
+                        <div className='admin-kpi-value-line'>
+                            <span className='admin-kpi-icon'>{icon}</span>
+                            <span className='admin-kpi-value'>{value.toLocaleString()}</span>
+                            {trend && (
+                                <span className={`admin-kpi-trend is-${trend.tone}`} title={trend.text} aria-label={trend.text}>
+                                    {trend.direction === 'up' ? <ArrowUpOutlined /> : trend.direction === 'down' ? <ArrowDownOutlined /> : <MinusOutlined />}
+                                    {trend.amount}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <div className='admin-kpi-bars' aria-hidden='true'>
+                        {months.map((m, i) => (
+                            <div key={m.month.getTime()} className='admin-kpi-bar-col'>
+                                <span
+                                    className={i === months.length - 1 ? 'admin-kpi-bar is-current' : 'admin-kpi-bar'}
+                                    style={{ height: `${Math.max(8, (pick(m) / max) * 100)}%` }}
+                                />
+                                <small>{dayjs(m.month).format('MMM')}</small>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </Card>
+    )
 }
 
-/** One row inside a card: leading marker, title, detail, and a right-aligned note. */
-const ListRow: React.FC<{ leading?: React.ReactNode; title: React.ReactNode; detail?: React.ReactNode; note?: React.ReactNode }> = ({
-    leading,
-    title,
-    detail,
-    note
-}) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid rgba(128,128,128,.15)' }}>
-        {leading}
-        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
-            {detail ? (
-                <Text type='secondary' style={{ fontSize: 12 }} ellipsis>
-                    {detail}
-                </Text>
-            ) : null}
+const CardHead: React.FC<{ title: string; subtitle: React.ReactNode; onMore?: () => void }> = ({ title, subtitle, onMore }) => (
+    <div className='admin-card-head'>
+        <div>
+            <h3>{title}</h3>
+            <span>{subtitle}</span>
         </div>
-        {note ? (
-            <Text type='secondary' style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                {note}
-            </Text>
-        ) : null}
+        {onMore && (
+            <Button type='text' size='small' onClick={onMore}>
+                View more <RightOutlined />
+            </Button>
+        )}
     </div>
 )
 
-const CardEmpty: React.FC<{ text: string }> = ({ text }) => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text} />
-
 const SystemAdminDashboard: React.FC = () => {
     const navigate = useNavigate()
-    const screens = Grid.useBreakpoint()
-    const isMobile = !screens.md
-    const [data, setData] = useState<DashboardData | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-    const [failurePage, setFailurePage] = useState(1)
-    const [onboardingPage, setOnboardingPage] = useState(1)
+    const { token } = theme.useToken()
+    const { range } = useDashboardDateRange()
 
-    const refresh = useCallback(async () => {
-        setLoading(true)
-        setError(null)
-        try {
-            setData(await loadDashboard())
-        } catch (e: any) {
-            setError(String(e?.message || e))
-        } finally {
-            setLoading(false)
+    const [users, setUsers] = useState<UserRow[]>([])
+    const [applications, setApplications] = useState<ApplicationRow[]>([])
+    const [failures, setFailures] = useState<FailureRow[]>([])
+    const [sessions, setSessions] = useState<SessionRow[]>([])
+    const [baseLoading, setBaseLoading] = useState(true)
+    const [sessionsLoading, setSessionsLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+
+    // Accent shades from the theme, so charts follow the selected accent and colour mode.
+    const ACCENT = token.colorPrimary
+    const ACCENT_DEEP = token.colorPrimaryActive
+    const ACCENT_LIGHT = token.colorPrimaryBorderHover
+    const ACCENT_SOFT = token.colorPrimaryBorder
+    const ROLE_COLORS = [ACCENT, ACCENT_LIGHT, ACCENT_DEEP, '#0d9488', '#d97706', '#94a3b8', '#db2777', '#0891b2']
+    const STATUS_META = [
+        { key: 'accepted', label: 'Accepted', color: ACCENT },
+        { key: 'pending', label: 'In review', color: ACCENT_LIGHT },
+        { key: 'rejected', label: 'Declined', color: '#94a3b8' }
+    ] as const
+
+    // The period on screen; "All time" runs to today.
+    const end = range ? range[1].endOf('day') : dayjs().endOf('day')
+    const start = range ? range[0].startOf('day') : null
+    const previous = useMemo(() => {
+        if (!range) return null
+        const days = range[1].diff(range[0], 'day') + 1
+        const prevEnd = range[0].subtract(1, 'day').endOf('day')
+        return [prevEnd.subtract(days - 1, 'day').startOf('day'), prevEnd] as [Dayjs, Dayjs]
+    }, [range])
+
+    // Sessions chart: the last 31 days of the period at most, and never past today.
+    const activityEnd = end.isAfter(dayjs()) ? dayjs().endOf('day') : end
+    const activityStart = (() => {
+        const floor = activityEnd.subtract(30, 'day').startOf('day')
+        return start && start.isAfter(floor) ? start : floor
+    })()
+    const activityKey = `${activityStart.valueOf()}|${activityEnd.valueOf()}`
+
+    // Accounts, applications and delivery failures are read once; the period only filters them.
+    useEffect(() => {
+        let active = true
+        Promise.all([
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'applications')),
+            getDocs(query(collection(db, 'emailLogs'), where('status', 'in', ['failed', 'bounced'])))
+        ])
+            .then(([userSnap, appSnap, failSnap]) => {
+                if (!active) return
+                setUsers(
+                    userSnap.docs.map(d => {
+                        const u = d.data() as any
+                        return {
+                            id: d.id,
+                            role: String(u.role || 'unknown').trim().toLowerCase().replace(/\s+/g, '_'),
+                            createdAt: toDate(u.createdAt),
+                            active: String(u.status || '').toLowerCase() !== 'inactive' && u.active !== false && u.disabled !== true
+                        }
+                    })
+                )
+                setApplications(
+                    appSnap.docs.map(d => {
+                        const a = d.data() as any
+                        return {
+                            id: d.id,
+                            status: applicationStatus(a.applicationStatus),
+                            at: toDate(a.submittedAt) || toDate(a.createdAt) || toDate(a.appliedAt)
+                        }
+                    })
+                )
+                setFailures(
+                    failSnap.docs
+                        .map(d => {
+                            const row = d.data() as any
+                            return {
+                                id: d.id,
+                                type: String(row.type || 'email'),
+                                to: String(row.to || ''),
+                                error: String(row.error || 'Unknown delivery error'),
+                                at: toDate(row.createdAt)
+                            }
+                        })
+                        .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0))
+                )
+            })
+            .catch(e => active && setError(String(e?.message || e)))
+            .finally(() => active && setBaseLoading(false))
+        return () => {
+            active = false
         }
     }, [])
 
     useEffect(() => {
-        void refresh()
-    }, [refresh])
+        let active = true
+        setSessionsLoading(true)
+        getDocs(
+            query(
+                collection(db, 'userSessions'),
+                where('startedAt', '>=', Timestamp.fromDate(activityStart.toDate())),
+                where('startedAt', '<=', Timestamp.fromDate(activityEnd.toDate()))
+            )
+        )
+            .then(snap => {
+                if (!active) return
+                setSessions(
+                    snap.docs.flatMap(d => {
+                        const s = d.data() as any
+                        const at = toDate(s.startedAt)
+                        return at ? [{ uid: String(s.uid || d.id), at }] : []
+                    })
+                )
+            })
+            // Activity is a nice-to-have: the rest of the overview still loads without it.
+            .catch(() => active && setSessions([]))
+            .finally(() => active && setSessionsLoading(false))
+        return () => {
+            active = false
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activityKey])
 
-    const tiles: Tile[] = useMemo(() => {
-        const failedJobs = data ? data.jobs.filter(j => j.severity === 'error' || j.severity === 'warn').length : 0
-        const jobsError = !!data?.jobs.some(j => j.severity === 'error')
-        return [
-            {
-                key: 'email',
-                title: 'Failed Emails',
-                value: data?.emailFailed.length ?? 0,
-                subtitle: data ? `Failed or bounced in ${WINDOW_HOURS}h · ${data.emailSent} sent` : '',
-                severity: data?.emailFailed.length ? 'error' : 'ok',
-                icon: <MailOutlined style={{ fontSize: 18 }} />,
-                tone: 'danger',
-                to: '/system_admin/email'
-            },
-            {
-                key: 'jobs',
-                title: 'Jobs Needing Attention',
-                value: failedJobs,
-                subtitle: data ? `Failing or late · ${data.jobs.length} tracked` : '',
-                severity: jobsError ? 'error' : failedJobs ? 'warn' : 'ok',
-                icon: <SyncOutlined style={{ fontSize: 18 }} />,
-                tone: 'warning'
-            },
-            {
-                key: 'onboarding',
-                title: 'Awaiting Onboarding',
-                value: data?.mustChangePassword.length ?? 0,
-                subtitle: 'Users yet to set their password',
-                severity: data?.mustChangePassword.length ? 'warn' : 'ok',
-                icon: <TeamOutlined style={{ fontSize: 18 }} />,
-                tone: 'info',
-                to: '/system_admin/users'
-            },
-            {
-                key: 'suppressions',
-                title: 'Suppressed Addresses',
-                value: data?.suppressions ?? 0,
-                subtitle: 'Hard-bounced, no longer emailed',
-                severity: 'ok',
-                icon: <SafetyCertificateOutlined style={{ fontSize: 18 }} />,
-                tone: 'info',
-                to: '/system_admin/email'
+    const loading = baseLoading
+
+    const summary = useMemo(() => {
+        const inPeriod = (d: Date | null) => (start ? between(d, start, end) : true)
+        const usersBy = (e: Dayjs) => users.filter(u => byEnd(u.createdAt, e))
+        const currentUsers = usersBy(end)
+        const periodApps = applications.filter(a => inPeriod(a.at))
+        const periodErrors = failures.filter(f => inPeriod(f.at))
+
+        const months: Month[] = Array.from({ length: 12 }, (_, i) => {
+            const mStart = end.startOf('month').subtract(11 - i, 'month')
+            const mEnd = mStart.endOf('month')
+            const total = usersBy(mEnd)
+            return {
+                month: mStart.toDate(),
+                newUsers: users.filter(u => between(u.createdAt, mStart, mEnd)).length,
+                totalUsers: total.length,
+                activeUsers: total.filter(u => u.active).length,
+                applications: applications.filter(a => between(a.at, mStart, mEnd)).length,
+                errors: failures.filter(f => between(f.at, mStart, mEnd)).length
             }
-        ]
-    }, [data])
+        })
+
+        const usersByRole: Record<string, number> = {}
+        currentUsers.filter(u => u.active).forEach(u => (usersByRole[u.role] = (usersByRole[u.role] || 0) + 1))
+
+        const byStatus = { accepted: 0, pending: 0, rejected: 0 }
+        periodApps.forEach(a => (byStatus[a.status] += 1))
+
+        const prev = previous && {
+            users: usersBy(previous[1]).length,
+            activeUsers: usersBy(previous[1]).filter(u => u.active).length,
+            errors: failures.filter(f => between(f.at, previous[0], previous[1])).length
+        }
+
+        return {
+            users: currentUsers.length,
+            activeUsers: currentUsers.filter(u => u.active).length,
+            errors: periodErrors.length,
+            recentErrors: periodErrors.slice(0, 5),
+            prev,
+            months,
+            usersByRole,
+            applications: periodApps.length,
+            byStatus
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [users, applications, failures, start?.valueOf(), end.valueOf(), previous])
+
+    const recentMonths = summary.months.slice(-6)
+
+    const growthChart = useMemo<Highcharts.Options>(
+        () => ({
+            chart: { type: 'areaspline', height: 290, spacing: [12, 4, 4, 4], backgroundColor: 'transparent' },
+            title: { text: undefined },
+            credits: { enabled: false },
+            xAxis: { categories: summary.months.map(m => dayjs(m.month).format('MMM')), lineWidth: 0, tickLength: 0 },
+            yAxis: { title: { text: undefined }, allowDecimals: false, gridLineDashStyle: 'Dash' },
+            legend: { align: 'right', verticalAlign: 'top', itemDistance: 16, symbolRadius: 6 },
+            tooltip: { shared: true },
+            plotOptions: { areaspline: { marker: { radius: 3, symbol: 'circle' }, lineWidth: 2.5 } },
+            series: [
+                {
+                    type: 'areaspline',
+                    name: 'New users',
+                    data: summary.months.map(m => m.newUsers),
+                    color: ACCENT,
+                    fillColor: {
+                        linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                        stops: [
+                            [0, Highcharts.color(ACCENT).setOpacity(0.32).get('rgba') as string],
+                            [1, Highcharts.color(ACCENT).setOpacity(0).get('rgba') as string]
+                        ]
+                    }
+                },
+                {
+                    type: 'areaspline',
+                    name: 'Applications',
+                    data: summary.months.map(m => m.applications),
+                    color: ACCENT_DEEP,
+                    fillColor: 'transparent',
+                    dashStyle: 'ShortDash'
+                }
+            ]
+        }),
+        [summary.months, ACCENT, ACCENT_DEEP]
+    )
+
+    const roleEntries = useMemo(() => Object.entries(summary.usersByRole).sort((a, b) => b[1] - a[1]), [summary.usersByRole])
+    const roleTotal = roleEntries.reduce((t, [, n]) => t + n, 0)
+    const roleChart = useMemo<Highcharts.Options>(
+        () => ({
+            chart: { type: 'pie', height: 220, spacing: [0, 0, 0, 0], backgroundColor: 'transparent' },
+            title: { text: undefined },
+            credits: { enabled: false },
+            tooltip: { pointFormat: '<b>{point.y}</b> ({point.percentage:.0f}%)' },
+            plotOptions: { pie: { innerSize: '74%', borderWidth: 3, borderColor: token.colorBgContainer, borderRadius: 6, dataLabels: { enabled: false } } },
+            series: [
+                {
+                    type: 'pie',
+                    name: 'Users',
+                    data: roleEntries.map(([role, count], i) => ({ name: formatRole(role), y: count, color: ROLE_COLORS[i % ROLE_COLORS.length] }))
+                }
+            ]
+        }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [roleEntries, ACCENT, token.colorBgContainer]
+    )
+
+    const dailySessions = useMemo(() => {
+        const days = new Map<string, { day: Dayjs; sessions: number; uids: Set<string> }>()
+        for (let d = activityStart; !d.isAfter(activityEnd); d = d.add(1, 'day')) {
+            days.set(d.format('YYYY-MM-DD'), { day: d, sessions: 0, uids: new Set() })
+        }
+        sessions.forEach(s => {
+            const bucket = days.get(dayjs(s.at).format('YYYY-MM-DD'))
+            if (!bucket) return
+            bucket.sessions += 1
+            bucket.uids.add(s.uid)
+        })
+        return [...days.values()]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessions, activityKey])
+    const totalSessions = dailySessions.reduce((t, d) => t + d.sessions, 0)
+
+    const activityChart = useMemo<Highcharts.Options>(
+        () => ({
+            chart: { type: 'column', height: 230, spacing: [8, 0, 0, 0], backgroundColor: 'transparent' },
+            title: { text: undefined },
+            credits: { enabled: false },
+            legend: { enabled: false },
+            xAxis: {
+                categories: dailySessions.map(d => d.day.format('D MMM')),
+                lineWidth: 0,
+                tickLength: 0,
+                labels: { step: Math.max(1, Math.ceil(dailySessions.length / 6)) }
+            },
+            yAxis: { title: { text: undefined }, allowDecimals: false, gridLineDashStyle: 'Dash' },
+            tooltip: { shared: true },
+            plotOptions: { column: { borderRadius: 4, pointPadding: 0.08, groupPadding: 0.12 } },
+            series: [
+                { type: 'column', name: 'Sessions', data: dailySessions.map(d => d.sessions), color: ACCENT_SOFT, states: { hover: { color: ACCENT } } },
+                { type: 'spline', name: 'Users signed in', data: dailySessions.map(d => d.uids.size), color: ACCENT, marker: { enabled: false }, lineWidth: 2 }
+            ]
+        }),
+        [dailySessions, ACCENT, ACCENT_SOFT]
+    )
+
+    const acceptedShare = summary.applications ? Math.round((summary.byStatus.accepted / summary.applications) * 100) : 0
+    const periodLabel = range ? 'In the selected period' : 'All time'
 
     return (
-        <div style={{ padding: '5px 24px' }}>
+        <div className='admin-overview'>
             <Helmet>
                 <title>System Admin Dashboard | Smart Incubation</title>
             </Helmet>
@@ -320,236 +413,145 @@ const SystemAdminDashboard: React.FC = () => {
             {error && <Alert type='error' showIcon message='Could not load the dashboard' description={error} style={{ marginBottom: 16 }} />}
 
             <Row gutter={[16, 16]}>
-                {tiles.map(tile => (
-                    <Col key={tile.key} xs={12} md={6}>
-                        <MetricTile
-                            icon={tile.icon}
-                            tone={tile.tone}
-                            title={tile.title}
-                            value={tile.value}
-                            subtitle={isMobile ? undefined : tile.subtitle}
-                            onClick={tile.to ? () => navigate(tile.to!) : undefined}
-                            loading={loading && !data}
-                        />
-                    </Col>
-                ))}
+                <Col xs={24} md={8}>
+                    <KpiTile
+                        loading={loading}
+                        icon={<TeamOutlined />}
+                        label='Users'
+                        value={summary.users}
+                        trend={summary.prev ? trendOf(summary.users, summary.prev.users) : undefined}
+                        months={recentMonths}
+                        pick={m => m.totalUsers}
+                    />
+                </Col>
+                <Col xs={24} md={8}>
+                    <KpiTile
+                        loading={loading}
+                        icon={<CheckCircleOutlined />}
+                        label='Active users'
+                        value={summary.activeUsers}
+                        trend={summary.prev ? trendOf(summary.activeUsers, summary.prev.activeUsers) : undefined}
+                        months={recentMonths}
+                        pick={m => m.activeUsers}
+                    />
+                </Col>
+                <Col xs={24} md={8}>
+                    <KpiTile
+                        loading={loading}
+                        icon={<WarningOutlined />}
+                        label='Email delivery errors'
+                        value={summary.errors}
+                        trend={summary.prev ? trendOf(summary.errors, summary.prev.errors, false) : undefined}
+                        months={recentMonths}
+                        pick={m => m.errors}
+                    />
+                </Col>
             </Row>
 
-            <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-                <Col xs={24} xl={12}>
-                    <MotionCard
-                        title='Recent Email Failures'
-                        extra={<Link to='/system_admin/email'>Email monitor</Link>}
-                        loading={loading && !data}
-                        skeleton='list'
-                    >
-                        {isMobile && data && data.emailFailed.length > 0 ? (
-                            <MobileCardList
-                                data={data.emailFailed}
-                                getKey={row => row.id}
-                                pageSize={LIST_PAGE_SIZE}
-                                renderCard={row => ({
-                                    title: row.to || '(unknown recipient)',
-                                    subtitle: humanise(row.type || 'email'),
-                                    badge: (
-                                        <Tag color={row.status === 'bounced' ? 'orange' : 'red'}>{row.status}</Tag>
-                                    ),
-                                    fields: [{ label: 'When', value: row.at ? dayjs(row.at).fromNow() : '\u2014' }],
-                                    note: row.error ? <Text type='danger'>{row.error}</Text> : undefined
-                                })}
-                            />
-                        ) : !data || data.emailFailed.length === 0 ? (
-                            <CardEmpty text={`No failures in the last ${WINDOW_HOURS}h`} />
-                        ) : (
-                            <>
-                                {data.emailFailed.slice((failurePage - 1) * LIST_PAGE_SIZE, failurePage * LIST_PAGE_SIZE).map(row => (
-                                    <ListRow
-                                        key={row.id}
-                                        leading={
-                                            <Tag color={row.status === 'bounced' ? 'orange' : 'red'} style={{ margin: 0, borderRadius: 999 }}>
-                                                {row.status}
-                                            </Tag>
-                                        }
-                                        title={row.to || '(unknown recipient)'}
-                                        detail={`${humanise(row.type || 'email')} · ${row.error || 'No error detail'}`}
-                                        note={row.at ? dayjs(row.at).fromNow() : ''}
-                                    />
-                                ))}
-                                {data.emailFailed.length > LIST_PAGE_SIZE && (
-                                    <Pagination
-                                        current={failurePage}
-                                        pageSize={LIST_PAGE_SIZE}
-                                        total={data.emailFailed.length}
-                                        showSizeChanger={false}
-                                        onChange={setFailurePage}
-                                        style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}
-                                    />
-                                )}
-                                {data.emailCapped && (
-                                    <Text type='secondary' style={{ fontSize: 12, display: 'block', marginTop: 8, textAlign: 'center' }}>
-                                        Based on the latest {EMAIL_LOG_CAP} log entries
-                                    </Text>
-                                )}
-                            </>
-                        )}
-                    </MotionCard>
+            <Row gutter={[16, 16]} className='admin-overview-row'>
+                <Col xs={24} lg={16}>
+                    <Card className='admin-card' bordered={false} loading={loading}>
+                        <CardHead title='Platform growth' subtitle='New users and applications over 12 months' />
+                        <HighchartsReact highcharts={Highcharts} options={growthChart} />
+                    </Card>
                 </Col>
-
-                <Col xs={24} xl={12}>
-                    <MotionCard
-                        title='Scheduled Jobs'
-                        extra={<Text type='secondary' style={{ fontSize: 12 }}>Background tasks that report a heartbeat</Text>}
-                        loading={loading && !data}
-                        skeleton='stats'
-                    >
-                        {isMobile && data && data.jobs.length > 0 ? (
-                            <MobileCardList
-                                data={data.jobs}
-                                getKey={job => job.id}
-                                pageSize={LIST_PAGE_SIZE}
-                                renderCard={job => ({
-                                    title: job.label,
-                                    subtitle: job.purpose || undefined,
-                                    badge: (
-                                        <Tag
-                                            color={job.severity === 'pending' ? 'default' : job.severity === 'ok' ? 'success' : job.severity === 'warn' ? 'warning' : 'error'}
-                                        >
-                                            {SEVERITY_LABEL[job.severity]}
-                                        </Tag>
-                                    ),
-                                    fields: [
-                                        { label: 'Schedule', value: job.cadence || '\u2014' },
-                                        { label: 'Last run', value: job.lastAt ? dayjs(job.lastAt).fromNow() : 'Never' }
-                                    ],
-                                    note:
-                                        job.severity === 'error' || job.severity === 'warn' ? (
-                                            <Text type={job.severity === 'error' ? 'danger' : 'warning'}>{job.detail}</Text>
-                                        ) : undefined
-                                })}
-                            />
-                        ) : !data || data.jobs.length === 0 ? (
-                            <CardEmpty text='No job heartbeats yet' />
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {data.jobs.map(job => (
-                                    <div
-                                        key={job.id}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 10,
-                                            flexWrap: 'wrap',
-                                            padding: '6px 12px',
-                                            borderRadius: 10,
-                                            border: `1px solid ${job.severity === 'error' || job.severity === 'warn' ? SEVERITY_COLOR[job.severity] : 'rgba(128,128,128,.3)'}`
-                                        }}
-                                    >
-                                        <span style={{ fontSize: 16, flex: '0 0 auto', display: 'inline-flex' }}>
-                                            <SeverityIcon severity={job.severity} />
-                                        </span>
-                                        <div style={{ minWidth: 160, flex: '1 1 200px', lineHeight: 1.3 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 13 }}>{job.label}</div>
-                                            <Text type='secondary' style={{ fontSize: 11 }}>
-                                                {job.severity === 'error' || job.severity === 'warn' ? job.detail : job.purpose || job.detail}
-                                            </Text>
-                                        </div>
-                                        <Space size={6} wrap>
-                                            {job.cadence && (
-                                                <Tag icon={<ClockCircleOutlined />} style={{ margin: 0, borderRadius: 999 }}>
-                                                    {job.cadence}
-                                                </Tag>
-                                            )}
-                                            <Tag icon={<HistoryOutlined />} style={{ margin: 0, borderRadius: 999 }}>
-                                                {job.lastAt ? `Last run ${dayjs(job.lastAt).fromNow()}` : 'Never run'}
-                                            </Tag>
-                                            <Tag
-                                                color={job.severity === 'pending' ? 'default' : job.severity === 'ok' ? 'success' : job.severity === 'warn' ? 'warning' : 'error'}
-                                                style={{ margin: 0, borderRadius: 999 }}
-                                            >
-                                                {SEVERITY_LABEL[job.severity]}
-                                            </Tag>
-                                        </Space>
+                <Col xs={24} lg={8}>
+                    <Card className='admin-card' bordered={false} loading={loading}>
+                        <CardHead title='Users by role' subtitle='Active accounts' onMore={() => navigate('/system_admin/users')} />
+                        {roleTotal ? (
+                            <>
+                                <div className='admin-donut'>
+                                    <HighchartsReact highcharts={Highcharts} options={roleChart} />
+                                    <div className='admin-donut-center'>
+                                        <strong>{roleTotal.toLocaleString()}</strong>
+                                        <span>Users</span>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} xl={12}>
-                    <MotionCard
-                        title='Awaiting First Sign-in'
-                        extra={<Link to='/system_admin/users'>Manage users</Link>}
-                        loading={loading && !data}
-                        skeleton='list'
-                    >
-                        {isMobile && data && data.mustChangePassword.length > 0 ? (
-                            <MobileCardList
-                                data={data.mustChangePassword}
-                                getKey={u => u.id}
-                                pageSize={LIST_PAGE_SIZE}
-                                renderCard={u => ({
-                                    title: u.name || u.email,
-                                    subtitle: u.name ? u.email : undefined,
-                                    fields: [
-                                        { label: 'Role', value: u.role ? humanise(u.role) : '\u2014' },
-                                        { label: 'Invited', value: u.createdAt ? dayjs(u.createdAt).fromNow() : '\u2014' }
-                                    ]
-                                })}
-                            />
-                        ) : !data || data.mustChangePassword.length === 0 ? (
-                            <CardEmpty text='Everyone has completed onboarding' />
-                        ) : (
-                            <>
-                                {data.mustChangePassword.slice((onboardingPage - 1) * LIST_PAGE_SIZE, onboardingPage * LIST_PAGE_SIZE).map(u => (
-                                    <ListRow
-                                        key={u.id}
-                                        title={u.name || u.email}
-                                        detail={`${u.email}${u.role ? ` · ${humanise(u.role)}` : ''}`}
-                                        note={u.createdAt ? `invited ${dayjs(u.createdAt).fromNow()}` : ''}
-                                    />
-                                ))}
-                                {data.mustChangePassword.length > LIST_PAGE_SIZE && (
-                                    <Pagination
-                                        current={onboardingPage}
-                                        pageSize={LIST_PAGE_SIZE}
-                                        total={data.mustChangePassword.length}
-                                        showSizeChanger={false}
-                                        onChange={setOnboardingPage}
-                                        style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}
-                                    />
-                                )}
+                                </div>
+                                <ul className='admin-legend'>
+                                    {roleEntries.slice(0, 6).map(([role, count], i) => (
+                                        <li key={role}>
+                                            <i style={{ background: ROLE_COLORS[i % ROLE_COLORS.length] }} />
+                                            <span>{formatRole(role)}</span>
+                                            <b>{count}</b>
+                                        </li>
+                                    ))}
+                                </ul>
                             </>
-                        )}
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} xl={12}>
-                    <MotionCard title='Recent Admin Activity' loading={loading && !data} skeleton='list'>
-                        {isMobile && data && data.audit.length > 0 ? (
-                            <MobileCardList
-                                data={data.audit}
-                                getKey={a => a.id}
-                                pageSize={LIST_PAGE_SIZE}
-                                renderCard={a => ({
-                                    title: humanise(a.type),
-                                    subtitle: `${a.actor}${a.target ? ` \u2192 ${a.target}` : ''}`,
-                                    fields: [{ label: 'When', value: a.when ? dayjs(a.when).fromNow() : '\u2014' }]
-                                })}
-                            />
-                        ) : !data || data.audit.length === 0 ? (
-                            <CardEmpty text='No audit entries yet' />
                         ) : (
-                            data.audit.map(a => (
-                                <ListRow
-                                    key={a.id}
-                                    title={humanise(a.type)}
-                                    detail={`${a.actor}${a.target ? ` → ${a.target}` : ''}`}
-                                    note={a.when ? dayjs(a.when).fromNow() : ''}
-                                />
-                            ))
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
                         )}
-                    </MotionCard>
+                    </Card>
+                </Col>
+            </Row>
+
+            <Row gutter={[16, 16]} className='admin-overview-row' align='top'>
+                <Col xs={24} md={12} xl={8}>
+                    <Card className='admin-card admin-card-accent is-fit' bordered={false} loading={loading}>
+                        <CardHead title='Applications' subtitle={periodLabel} onMore={() => navigate('/applications')} />
+                        <div className='admin-pipeline-hero'>
+                            <span className='admin-pipeline-total'>{summary.applications.toLocaleString()}</span>
+                            <span>applications received</span>
+                        </div>
+                        <div className='admin-pipeline-bar' aria-hidden='true'>
+                            {STATUS_META.map(s =>
+                                summary.byStatus[s.key] ? <span key={s.key} style={{ flex: summary.byStatus[s.key], background: s.color }} /> : null
+                            )}
+                        </div>
+                        <ul className='admin-pipeline-steps'>
+                            {STATUS_META.map(s => (
+                                <li key={s.key}>
+                                    <i style={{ background: s.color }} />
+                                    <span>{s.label}</span>
+                                    <b>{summary.byStatus[s.key]}</b>
+                                </li>
+                            ))}
+                        </ul>
+                        <div className='admin-pipeline-foot'>
+                            <Progress type='circle' percent={acceptedShare} size={34} strokeColor={ACCENT} showInfo={false} strokeWidth={12} />
+                            <span>
+                                <b>{acceptedShare}%</b> accepted
+                            </span>
+                        </div>
+                    </Card>
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                    <Card className='admin-card is-fit' bordered={false} loading={sessionsLoading}>
+                        <CardHead
+                            title='Platform activity'
+                            subtitle={`${totalSessions.toLocaleString()} sessions · ${activityStart.format('D MMM')} – ${activityEnd.format('D MMM')}`}
+                            onMore={() => navigate('/system_admin/usage')}
+                        />
+                        {totalSessions ? (
+                            <HighchartsReact highcharts={Highcharts} options={activityChart} />
+                        ) : (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No sign-ins in this period.' />
+                        )}
+                    </Card>
+                </Col>
+                <Col xs={24} xl={8}>
+                    <Card className='admin-card' bordered={false} loading={loading}>
+                        <CardHead title='Delivery errors' subtitle='Most recent failures' onMore={() => navigate('/system_admin/email')} />
+                        {summary.recentErrors.length ? (
+                            <ol className='admin-timeline'>
+                                {summary.recentErrors.map(row => (
+                                    <li key={row.id}>
+                                        <div className='admin-timeline-top'>
+                                            <Tag color='orange' bordered={false}>
+                                                {humanise(row.type)}
+                                            </Tag>
+                                            <time>{row.at ? dateFormatter.format(row.at) : 'N/A'}</time>
+                                        </div>
+                                        <Typography.Paragraph ellipsis={{ rows: 2, tooltip: row.error }}>
+                                            {row.to ? `${row.to}: ` : ''}
+                                            {row.error}
+                                        </Typography.Paragraph>
+                                    </li>
+                                ))}
+                            </ol>
+                        ) : (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No delivery errors in this period.' />
+                        )}
+                    </Card>
                 </Col>
             </Row>
         </div>

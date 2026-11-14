@@ -18,11 +18,25 @@ import dayjs, { Dayjs } from 'dayjs'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import {
+    countJobsInPeriod,
+    groupJobs,
+    isJobActiveOn,
+    jobsBaselineFor,
+    jobsByApplication,
+    type Job,
+    type JobContractRecord,
+    type JobsBaseline,
+    type JobsPeriodCount
+} from '@/lib/jobs'
+import { asOfMonthEnd } from '@/lib/jobsData'
 
 export type ContractType = 'permanent' | 'temporary' | 'temporal'
 
 export type SmeApplicationRow = {
     id: string
+    /** Starting headcount (src/lib/jobs.ts jobsBaselineFor). */
+    jobsBaseline: JobsBaseline
     participantId?: string
     programId?: string
     smmeNo?: string
@@ -59,6 +73,10 @@ export type JobContract = {
     id: string
     applicationId: string
     participantId?: string
+    jobId?: string | null
+    startDate?: any
+    endedAt?: any
+    endReason?: string | null
 
     programId?: string
 
@@ -102,15 +120,21 @@ export type BreakdownRow = {
     totalJobs: number
     permanentJobs: number
     temporaryJobs: number
+    sustainedJobs: number
+    createdJobs: number
 }
 
 export type SmeJobDrilldown = {
     sme: SmeApplicationRow
     contracts: JobContract[]
+    /** The latest document of each job active in the month. */
     effectiveContracts: JobContract[]
     totalJobs: number
     permanentJobs: number
     temporaryJobs: number
+    sustainedJobs: number
+    createdJobs: number
+    createdInMonth: number
 }
 
 type SmeJobsContextValue = {
@@ -129,9 +153,18 @@ type SmeJobsContextValue = {
 
     metrics: {
         totalSmes: number
+        /** Jobs active at month end (today for the current month). */
         totalJobs: number
         permanentJobs: number
         temporaryJobs: number
+        /** min(starting headcount, active), summed per SME. */
+        sustainedJobs: number
+        /** Active jobs above the starting headcount, summed per SME. */
+        createdJobs: number
+        /** Net new jobs created during the month, summed per SME. */
+        createdInMonth: number
+        /** Sum of the SMEs' starting headcounts. */
+        startingHeadcount: number
         smesWithJobs: number
         smesWithoutJobs: number
         averageJobsPerSme: number
@@ -183,30 +216,9 @@ const pickFirst = (...values: any[]) => {
     return ''
 }
 
-const toDayjs = (value: any): Dayjs | null => {
-    if (!value) return null
-    if (dayjs.isDayjs(value)) return value
-
-    if (typeof value?.toDate === 'function') {
-        const parsed = dayjs(value.toDate())
-        return parsed.isValid() ? parsed : null
-    }
-
-    const parsed = dayjs(value)
-    return parsed.isValid() ? parsed : null
-}
-
 const toNumber = (value: any) => {
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : 0
-}
-
-const normalizeContractType = (value: any): 'permanent' | 'temporary' => {
-    const normalized = safeLower(value)
-
-    if (normalized === 'permanent') return 'permanent'
-
-    return 'temporary'
 }
 
 const getParticipantSector = (participant: ParticipantRow | undefined) =>
@@ -217,76 +229,42 @@ const getParticipantSector = (participant: ParticipantRow | undefined) =>
         participant?.sectorName
     ) || 'Unspecified'
 
-const getContractMonthStart = (contract: Partial<JobContract>) => {
-    return (
-        toDayjs(contract.uploadMonthDate)?.startOf('month') ||
-        (contract.uploadMonth ? dayjs(`${contract.uploadMonth}-01`).startOf('month') : null) ||
-        toDayjs(contract.createdAt)?.startOf('month') ||
-        toDayjs(contract.updatedAt)?.startOf('month') ||
-        null
-    )
+/** The latest document of each job active in the month (src/lib/jobs.ts). */
+const effectiveContractsOf = (jobs: Job[], month: Dayjs) => {
+    const asOf = asOfMonthEnd(month)
+    return jobs
+        .filter((job) => isJobActiveOn(job, asOf))
+        .map((job) => job.latest as unknown as JobContract)
 }
 
-const getContractEffectiveTime = (contract: Partial<JobContract>) => {
-    return (
-        getContractMonthStart(contract)?.valueOf() ||
-        toDayjs(contract.updatedAt)?.valueOf() ||
-        toDayjs(contract.createdAt)?.valueOf() ||
-        0
-    )
-}
-
-const buildEmployeeKey = (contract: Partial<JobContract>) =>
-    [
-        contract.applicationId || '',
-        safeLower(contract.employeeName),
-        safeLower(contract.position)
-    ].join('::')
-
-const isContractActiveInMonth = (contract: JobContract, month: Dayjs) => {
-    const monthStart = month.startOf('month')
-    const monthEnd = month.endOf('month')
-    const uploadedMonth = getContractMonthStart(contract)
-
-    if (!uploadedMonth) return false
-    if (uploadedMonth.isAfter(monthEnd)) return false
-
-    if (normalizeContractType(contract.contractType) === 'permanent') {
-        return true
-    }
-
-    const end = toDayjs(contract.contractEndDate)
-
-    if (!end) return true
-
-    return !end.endOf('day').isBefore(monthStart)
-}
-
-const getEffectiveContractsForMonth = (contracts: JobContract[], month: Dayjs) => {
-    const map = new Map<string, JobContract>()
-    const monthEnd = month.endOf('month')
-
-    contracts.forEach((contract) => {
-        const employeeKey = buildEmployeeKey(contract)
-        const uploadedMonth = getContractMonthStart(contract)
-
-        if (!uploadedMonth || uploadedMonth.isAfter(monthEnd)) return
-        if (!isContractActiveInMonth(contract, month)) return
-
-        const current = map.get(employeeKey)
-
-        if (!current) {
-            map.set(employeeKey, contract)
-            return
-        }
-
-        if (getContractEffectiveTime(contract) >= getContractEffectiveTime(current)) {
-            map.set(employeeKey, contract)
-        }
+/** Each SME's own count for the month, against its own starting headcount. */
+const countsForMonth = (
+    smes: SmeApplicationRow[],
+    jobsByApp: Map<string, Job[]>,
+    month: Dayjs
+) => {
+    const start = month.startOf('month')
+    const asOf = asOfMonthEnd(month)
+    const map = new Map<string, JobsPeriodCount>()
+    smes.forEach((sme) => {
+        map.set(
+            sme.id,
+            countJobsInPeriod(jobsByApp.get(sme.id) || [], sme.jobsBaseline.total, start, asOf)
+        )
     })
-
-    return Array.from(map.values())
+    return map
 }
+
+const emptyCount = (): JobsPeriodCount => ({
+    active: 0,
+    permanent: 0,
+    temporary: 0,
+    sustained: 0,
+    created: 0,
+    createdInPeriod: 0,
+    started: 0,
+    lost: 0
+})
 
 const buildParticipantIndex = (rows: ParticipantRow[]) => {
     const map = new Map<string, ParticipantRow>()
@@ -360,6 +338,7 @@ const buildApplicationsFromDocs = (
 
         return {
             id: snap.id,
+            jobsBaseline: jobsBaselineFor(data, participant || null),
             participantId,
             programId: data.programId || undefined,
             smmeNo: appSmmeNo || undefined,
@@ -420,56 +399,63 @@ const buildApplicationsFromDocs = (
         }
     })
 
+// Programme figures are the sum of each SME's own count, never pooled.
 const calculateMetrics = (
     smes: SmeApplicationRow[],
-    effectiveContracts: JobContract[]
+    counts: Map<string, JobsPeriodCount>
 ): SmeJobsContextValue['metrics'] => {
-    const applicationIdsWithJobs = new Set(
-        effectiveContracts.map((contract) => contract.applicationId).filter(Boolean)
-    )
+    let totalJobs = 0
+    let permanentJobs = 0
+    let temporaryJobs = 0
+    let sustainedJobs = 0
+    let createdJobs = 0
+    let createdInMonth = 0
+    let startingHeadcount = 0
+    let smesWithJobs = 0
 
-    const permanentJobs = effectiveContracts.filter(
-        (contract) => normalizeContractType(contract.contractType) === 'permanent'
-    ).length
-
-    const temporaryJobs = effectiveContracts.filter(
-        (contract) => normalizeContractType(contract.contractType) === 'temporary'
-    ).length
+    smes.forEach((sme) => {
+        const count = counts.get(sme.id) || emptyCount()
+        totalJobs += count.active
+        permanentJobs += count.permanent
+        temporaryJobs += count.temporary
+        sustainedJobs += count.sustained
+        createdJobs += count.created
+        createdInMonth += count.createdInPeriod
+        startingHeadcount += sme.jobsBaseline.total
+        if (count.active > 0) smesWithJobs += 1
+    })
 
     return {
         totalSmes: smes.length,
-        totalJobs: effectiveContracts.length,
+        totalJobs,
         permanentJobs,
         temporaryJobs,
-        smesWithJobs: smes.filter((sme) => applicationIdsWithJobs.has(sme.id)).length,
-        smesWithoutJobs: smes.filter((sme) => !applicationIdsWithJobs.has(sme.id)).length,
+        sustainedJobs,
+        createdJobs,
+        createdInMonth,
+        startingHeadcount,
+        smesWithJobs,
+        smesWithoutJobs: smes.length - smesWithJobs,
         averageJobsPerSme:
             smes.length > 0
-                ? Math.round((effectiveContracts.length / smes.length) * 10) / 10
+                ? Math.round((totalJobs / smes.length) * 10) / 10
                 : 0
     }
 }
 
 const buildBreakdown = (
     smes: SmeApplicationRow[],
-    effectiveContracts: JobContract[],
+    counts: Map<string, JobsPeriodCount>,
     key: keyof Pick<
         SmeApplicationRow,
         'sector' | 'gender' | 'group' | 'bbeeeLevel' | 'ownershipCategory'
     >
 ): BreakdownRow[] => {
-    const contractsByApplication = new Map<string, JobContract[]>()
-
-    effectiveContracts.forEach((contract) => {
-        const existing = contractsByApplication.get(contract.applicationId) || []
-        contractsByApplication.set(contract.applicationId, [...existing, contract])
-    })
-
     const map = new Map<string, BreakdownRow>()
 
     smes.forEach((sme) => {
         const label = String(sme[key] || 'Unspecified')
-        const smeContracts = contractsByApplication.get(sme.id) || []
+        const count = counts.get(sme.id) || emptyCount()
 
         const current =
             map.get(label) || {
@@ -478,17 +464,17 @@ const buildBreakdown = (
                 smeCount: 0,
                 totalJobs: 0,
                 permanentJobs: 0,
-                temporaryJobs: 0
+                temporaryJobs: 0,
+                sustainedJobs: 0,
+                createdJobs: 0
             }
 
         current.smeCount += 1
-        current.totalJobs += smeContracts.length
-        current.permanentJobs += smeContracts.filter(
-            (contract) => normalizeContractType(contract.contractType) === 'permanent'
-        ).length
-        current.temporaryJobs += smeContracts.filter(
-            (contract) => normalizeContractType(contract.contractType) === 'temporary'
-        ).length
+        current.totalJobs += count.active
+        current.permanentJobs += count.permanent
+        current.temporaryJobs += count.temporary
+        current.sustainedJobs += count.sustained
+        current.createdJobs += count.created
 
         map.set(label, current)
     })
@@ -498,13 +484,13 @@ const buildBreakdown = (
 
 const buildBreakdowns = (
     smes: SmeApplicationRow[],
-    effectiveContracts: JobContract[]
+    counts: Map<string, JobsPeriodCount>
 ): SmeJobsContextValue['breakdowns'] => ({
-    sector: buildBreakdown(smes, effectiveContracts, 'sector'),
-    gender: buildBreakdown(smes, effectiveContracts, 'gender'),
-    group: buildBreakdown(smes, effectiveContracts, 'group'),
-    bbeeeLevel: buildBreakdown(smes, effectiveContracts, 'bbeeeLevel'),
-    ownershipCategory: buildBreakdown(smes, effectiveContracts, 'ownershipCategory')
+    sector: buildBreakdown(smes, counts, 'sector'),
+    gender: buildBreakdown(smes, counts, 'gender'),
+    group: buildBreakdown(smes, counts, 'group'),
+    bbeeeLevel: buildBreakdown(smes, counts, 'bbeeeLevel'),
+    ownershipCategory: buildBreakdown(smes, counts, 'ownershipCategory')
 })
 
 const filterSmes = (smes: SmeApplicationRow[], filters?: SmeJobFilters) => {
@@ -692,9 +678,17 @@ export const SmeJobsProvider: React.FC<{
         }
     }, [actor?.uid, activeProgramId, identityLoading, isAllPrograms])
 
+    // One job per person per position, renewals and re-uploads included (src/lib/jobs.ts).
+    const jobs = useMemo(
+        () => groupJobs(contracts as unknown as JobContractRecord[]),
+        [contracts]
+    )
+
+    const jobsByApp = useMemo(() => jobsByApplication(jobs), [jobs])
+
     const effectiveContracts = useMemo(
-        () => getEffectiveContractsForMonth(contracts, month),
-        [contracts, month]
+        () => effectiveContractsOf(jobs, month),
+        [jobs, month]
     )
 
     const filteredSmes = smes
@@ -712,14 +706,19 @@ export const SmeJobsProvider: React.FC<{
         [effectiveContracts, visibleApplicationIds]
     )
 
+    const monthCounts = useMemo(
+        () => countsForMonth(filteredSmes, jobsByApp, month),
+        [filteredSmes, jobsByApp, month]
+    )
+
     const metrics = useMemo(
-        () => calculateMetrics(filteredSmes, filteredEffectiveContracts),
-        [filteredSmes, filteredEffectiveContracts]
+        () => calculateMetrics(filteredSmes, monthCounts),
+        [filteredSmes, monthCounts]
     )
 
     const breakdowns = useMemo(
-        () => buildBreakdowns(filteredSmes, filteredEffectiveContracts),
-        [filteredSmes, filteredEffectiveContracts]
+        () => buildBreakdowns(filteredSmes, monthCounts),
+        [filteredSmes, monthCounts]
     )
 
     const options = useMemo(
@@ -742,29 +741,28 @@ export const SmeJobsProvider: React.FC<{
                 (contract) => contract.applicationId === applicationId
             )
 
-            const effectiveSmeContracts = getEffectiveContractsForMonth(
-                allSmeContracts,
-                (selectedMonth || month).startOf('month')
+            const smeJobs = jobsByApp.get(applicationId) || []
+            const drillMonth = (selectedMonth || month).startOf('month')
+            const count = countJobsInPeriod(
+                smeJobs,
+                sme.jobsBaseline.total,
+                drillMonth,
+                asOfMonthEnd(drillMonth)
             )
-
-            const permanentJobs = effectiveSmeContracts.filter(
-                (contract) => normalizeContractType(contract.contractType) === 'permanent'
-            ).length
-
-            const temporaryJobs = effectiveSmeContracts.filter(
-                (contract) => normalizeContractType(contract.contractType) === 'temporary'
-            ).length
 
             return {
                 sme,
                 contracts: allSmeContracts,
-                effectiveContracts: effectiveSmeContracts,
-                totalJobs: effectiveSmeContracts.length,
-                permanentJobs,
-                temporaryJobs
+                effectiveContracts: effectiveContractsOf(smeJobs, drillMonth),
+                totalJobs: count.active,
+                permanentJobs: count.permanent,
+                temporaryJobs: count.temporary,
+                sustainedJobs: count.sustained,
+                createdJobs: count.created,
+                createdInMonth: count.createdInPeriod
             }
         },
-        [contracts, month, smes]
+        [contracts, jobsByApp, month, smes]
     )
 
     const getSmesByMetric = useCallback(
@@ -793,19 +791,18 @@ export const SmeJobsProvider: React.FC<{
             const nextSmes = filterSmes(smes, filters)
             const nextIds = new Set(nextSmes.map((sme) => sme.id))
 
-            const nextEffectiveContracts = getEffectiveContractsForMonth(
-                contracts,
-                selectedMonth
-            ).filter((contract) => nextIds.has(contract.applicationId))
+            const nextEffectiveContracts = effectiveContractsOf(jobs, selectedMonth)
+                .filter((contract) => nextIds.has(contract.applicationId))
+            const counts = countsForMonth(nextSmes, jobsByApp, selectedMonth)
 
             return {
                 smes: nextSmes,
                 contracts: nextEffectiveContracts,
-                metrics: calculateMetrics(nextSmes, nextEffectiveContracts),
-                breakdowns: buildBreakdowns(nextSmes, nextEffectiveContracts)
+                metrics: calculateMetrics(nextSmes, counts),
+                breakdowns: buildBreakdowns(nextSmes, counts)
             }
         },
-        [contracts, month, smes]
+        [jobs, jobsByApp, month, smes]
     )
 
     const value: SmeJobsContextValue = {

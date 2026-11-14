@@ -112,7 +112,7 @@ const CenterCoordinatorFollowUps: React.FC = () => {
       setFollowUps(data)
       setFilteredFollowUps(data)
 
-      // Get statistics (exclude receptionist-assigned follow-ups for center coordinator)
+      // Statistics for everything at the centre, reception's follow-ups included
       const branchStats =
         await followUpService.getCenterCoordinatorFollowUpStats(
           user.assignedBranch

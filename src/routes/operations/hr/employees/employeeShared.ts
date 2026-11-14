@@ -94,8 +94,8 @@ function titleCase(value: string) {
         .join(' ')
 }
 
-const BRANCH_ROLES = ['employee', 'auxiliary', 'projectadmin', 'coordinator', 'consultant']
-const DEPARTMENT_ROLES = ['operations', 'coordinator', 'consultant']
+const BRANCH_ROLES = ['employee', 'projectadmin', 'coordinator']
+const DEPARTMENT_ROLES = ['operations', 'coordinator']
 
 export const roleNeedsBranch = (role?: string) => BRANCH_ROLES.includes(String(role || '').toLowerCase())
 export const roleNeedsDepartment = (role?: string) =>

@@ -1,16 +1,10 @@
 import {
     complianceDocumentKey,
     complianceEffectiveExpiry,
+    complianceTitleKey as titleKey,
     resolveComplianceDocumentStatus,
     type ComplianceRequirement
 } from '@/services/complianceResolver'
-
-// Loose title comparison, kept consistent with the incubatee compliance page.
-const titleKey = (value: unknown) => String(value ?? '').toLowerCase()
-    .replace(/\(signed\)/g, '')
-    .replace(/\b(docs|documents)\b/g, 'document')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
 
 export function buildDashboardComplianceRows(
     requirements: ComplianceRequirement[], embedded: any[], uploads: any[], now = new Date()

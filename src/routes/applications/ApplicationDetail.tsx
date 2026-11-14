@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Alert, Button, Empty, Segmented, Skeleton, Tag } from 'antd'
+import { Alert, Button, Empty, Segmented, Skeleton, Tag, Timeline } from 'antd'
 import {
+    ClockCircleOutlined,
     DownloadOutlined,
+    HistoryOutlined,
     EnvironmentOutlined,
     FileTextOutlined,
     GlobalOutlined,
@@ -18,20 +20,124 @@ import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { ApplicantAvatar } from './ApplicantAvatar'
 import { ContactList, ContactRow, OwnershipCards, contactActions } from '@/components/workspace'
 import {
+    STALLED_ESCALATED_DAYS,
+    STALLED_REMINDER_DAYS,
     STATUS_META,
     displayName,
     extractProfileQA,
+    loadApplicationHistory,
     loadParticipant,
     mergeParticipant,
+    pendingDays,
     recommendationColor,
     scoreTone,
+    toDayjs,
     type Application,
+    type HistoryEntry,
     type ParticipantDetails,
     type ProgramQuestionMap
 } from './applicationData'
 import { DecisionActions, DecisionNote } from './DecisionBar'
 
-type DetailTab = 'applicant' | 'answers' | 'documents'
+type DetailTab = 'applicant' | 'answers' | 'documents' | 'history'
+
+/** "Waiting 9 days" on a pending application, amber once it is chased and red once escalated. */
+export const WaitingTag: React.FC<{ app: Application }> = ({ app }) => {
+    const days = pendingDays(app)
+    if (days === null || days < 1) return null
+    const color = days >= STALLED_ESCALATED_DAYS ? 'error' : days >= STALLED_REMINDER_DAYS ? 'warning' : 'default'
+    return (
+        <Tag color={color} icon={<ClockCircleOutlined />} bordered={false}>
+            Waiting {days} day{days === 1 ? '' : 's'}
+        </Tag>
+    )
+}
+
+const historyLabel = (entry: HistoryEntry) => {
+    if (entry.fromStatus === null) return `Submitted as ${STATUS_META[entry.toStatus].label.toLowerCase()}`
+    if (entry.reopenedFrom) return `Reopened (was ${entry.reopenedFrom})`
+    return STATUS_META[entry.toStatus].label
+}
+
+const historyColor = (entry: HistoryEntry) =>
+    entry.toStatus === 'accepted' ? 'green' : entry.toStatus === 'rejected' ? 'red' : 'gray'
+
+const HistoryTab: React.FC<{ app: Application }> = ({ app }) => {
+    const [state, setState] = useState<{ id: string; entries: HistoryEntry[] | null; failed: boolean }>({
+        id: '',
+        entries: null,
+        failed: false
+    })
+    useEffect(() => {
+        let cancelled = false
+        loadApplicationHistory(app.id)
+            .then(entries => !cancelled && setState({ id: app.id, entries, failed: false }))
+            .catch(e => {
+                console.error('[applications] history lookup failed:', e)
+                if (!cancelled) setState({ id: app.id, entries: [], failed: true })
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [app.id, app.applicationStatus])
+
+    if (state.id !== app.id || !state.entries) return <Skeleton active title={false} paragraph={{ rows: 3 }} />
+    if (state.failed) return <Alert type='error' showIcon message="The decision history couldn't be loaded." />
+
+    // Applications decided before tracking began only have their latest decision.
+    const legacyDecision = !state.entries.length && app.decision?.status ? app.decision : null
+    if (!state.entries.length && !legacyDecision) return <Empty description='No status changes recorded yet' />
+
+    return (
+        <div className='ws-detail-body'>
+            {legacyDecision && (
+                <Alert
+                    type='info'
+                    showIcon
+                    message='Recorded before decision history was tracked'
+                    description='Only the latest decision is known for this application.'
+                />
+            )}
+            <Timeline
+                style={{ marginTop: 12 }}
+                items={
+                    legacyDecision
+                        ? [{
+                            color: legacyDecision.status === 'accepted' ? 'green' : legacyDecision.status === 'rejected' ? 'red' : 'gray',
+                            children: (
+                                <>
+                                    <strong>{STATUS_META[legacyDecision.status!]?.label || legacyDecision.status}</strong>
+                                    <div className='ws-muted'>
+                                        {[toDayjs(legacyDecision.decidedAt)?.format('D MMM YYYY, HH:mm'), legacyDecision.decidedBy?.email]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                    </div>
+                                    {legacyDecision.reason && <div>Reason: {legacyDecision.reason}</div>}
+                                </>
+                            )
+                        }]
+                        : state.entries.map(entry => ({
+                            color: historyColor(entry),
+                            children: (
+                                <>
+                                    <strong>{historyLabel(entry)}</strong>
+                                    <div className='ws-muted'>
+                                        {[
+                                            entry.at?.format('D MMM YYYY, HH:mm'),
+                                            entry.decidedByEmail || (entry.source === 'system' ? 'Changed by the system' : null)
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                    </div>
+                                    {entry.reason && <div>Reason: {entry.reason}</div>}
+                                </>
+                            )
+                        }))
+                }
+            />
+        </div>
+    )
+}
 
 type Props = {
     app: Application
@@ -287,6 +393,7 @@ export const ApplicationDetail: React.FC<Props> = ({ app, questionMap, onChanged
                                 {STATUS_META[app.applicationStatus].label}
                             </Tag>
                             <DecisionNote app={app} />
+                            <WaitingTag app={app} />
                             {app.hub && <Tag>{app.hub}</Tag>}
                         </div>
                     </div>
@@ -346,7 +453,8 @@ export const ApplicationDetail: React.FC<Props> = ({ app, questionMap, onChanged
                                 value: 'documents',
                                 label: `Documents${documents ? ` (${documents})` : ''}`,
                                 icon: <FileTextOutlined />
-                            }
+                            },
+                            { value: 'history', label: 'History', icon: <HistoryOutlined /> }
                         ]}
                     />
                     <div className='ws-detail-pane'>
@@ -354,6 +462,7 @@ export const ApplicationDetail: React.FC<Props> = ({ app, questionMap, onChanged
                             {tab === 'applicant' && <ApplicantTab app={app} />}
                             {tab === 'answers' && <AnswersTab app={app} questionMap={questionMap} />}
                             {tab === 'documents' && <DocumentsTab app={app} />}
+                            {tab === 'history' && <HistoryTab app={app} />}
                         </motion.div>
                     </div>
                 </div>

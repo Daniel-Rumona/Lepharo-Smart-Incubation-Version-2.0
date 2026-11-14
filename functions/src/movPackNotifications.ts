@@ -1,16 +1,17 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { getCCRecipients, getMERecipients } from "./emailShared";
+import { APP_BASE_URL, getCCRecipients, getMERecipients, sendStatusChangeNotification } from "./emailShared";
 import { notifyInApp } from "./inAppNotifications";
 import { getProgramProjectAdmins, resolvePackProgramId, uidsForEmails } from "./movRecipients";
 import { suppressRecordNotifications } from "./syntheticData";
 
 // Monthly MOV pack hand-offs, as they happen (the daily stage reminders still
 // chase anything left waiting):
-//   - HOD submits a pack            -> the programme's Center Coordinator is told
+//   - HOD submits a pack            -> the programme's Center Coordinator is told (in-app + email)
 //   - HOD updates a pack awaiting CC -> the programme's Center Coordinator is told what changed
 //   - CC confirms the pack           -> M&E is told it's ready to validate
-// In-app (and push) only; the types aren't in NOTIFICATION_REGISTRY, so no extra email.
+// In-app (and push) for all three; the submission email is sent here directly. The types
+// aren't in NOTIFICATION_REGISTRY, so the in-app write never triggers a second email.
 
 const REGION = "us-central1";
 const clean = (value: unknown) => String(value ?? "").trim();
@@ -36,6 +37,27 @@ const millis = (value: any): number => {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// Same look as buildPackReminderEmail, without the "Reminder:" framing.
+function buildPackSubmittedEmail(subject: string, message: string, actionUrl: string) {
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;line-height:1.6;">
+      <p>Hi there,</p>
+      <p>${escapeHtml(message)}</p>
+      <p><a href="${actionUrl}" style="display:inline-block;padding:10px 16px;background:#0ea5e9;color:#ffffff;text-decoration:none;border-radius:6px;">Review the MOV pack</a></p>
+      <p>Regards,<br/>Lepharo Smart Incubation System</p>
+    </div>`;
+  const text = `${message}
+
+Review it here: ${actionUrl}
+
+Regards,
+Lepharo Smart Incubation System`;
+  return { subject, html, text };
+}
+
 export const onMovPackChanged = onDocumentWritten(
   { document: "consolidatedMOVs/{packId}", region: REGION },
   async (event) => {
@@ -53,22 +75,33 @@ export const onMovPackChanged = onDocumentWritten(
 
     // The project admins of the branch that runs this pack's programme; all of them
     // only when the programme has no one linked, so the pack is never left unseen.
-    const notifyCc = async (type: string, message: string) => {
+    const notifyCc = async (type: string, message: string, email?: { subject: string }) => {
       const programId = resolvePackProgramId(after);
       const own = await getProgramProjectAdmins(programId);
       let recipientIds = own.uids;
+      let emails = own.emails;
       if (!recipientIds.length) {
         logger.warn("onMovPackChanged.noProgramCc", { packId: event.params.packId, programId });
-        recipientIds = await uidsForEmails(await getCCRecipients());
+        emails = await getCCRecipients();
+        recipientIds = await uidsForEmails(emails);
       }
       await notifyInApp({ ...base, type, message, link: "/projectadmin/movs", recipientIds });
+      if (!email) return;
+      // The email is best-effort: the in-app notification above already went out.
+      try {
+        const content = buildPackSubmittedEmail(email.subject, message, `${APP_BASE_URL.replace(/\/$/, "")}/projectadmin/movs`);
+        await sendStatusChangeNotification(emails, content.subject, content.html, content.text);
+      } catch (error) {
+        logger.error("onMovPackChanged.emailFailed", { packId: event.params.packId, type, error: String(error) });
+      }
     };
 
-    // Submitted.
+    // Submitted: in-app and email, so the CC hears of it before the 2-day reminder.
     if (!before) {
       await notifyCc(
         "mov_pack_submitted",
-        `${department} submitted its ${month} MOV pack (${plural(itemCount(after), "MOV")}) for your confirmation.`
+        `${department} submitted its ${month} MOV pack (${plural(itemCount(after), "MOV")}) for your confirmation.`,
+        { subject: `MOV pack ready for your confirmation: ${department}, ${month}` }
       );
       return;
     }

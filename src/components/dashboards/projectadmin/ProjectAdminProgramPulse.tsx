@@ -15,7 +15,7 @@ import {
     RiseOutlined,
     TeamOutlined
 } from '@ant-design/icons'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import axios from 'axios'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
@@ -23,6 +23,8 @@ import dayjs, { Dayjs } from 'dayjs'
 
 import { db } from '@/firebase'
 import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
+import { activeJobsOn, groupJobs, type JobContractRecord } from '@/lib/jobs'
+import { activeInMonths, asOfMonthEnd, loadJobContracts } from '@/lib/jobsData'
 
 const { Text } = Typography
 
@@ -74,23 +76,10 @@ export type MonthlyRevenueRow = {
 
 export type FinanceCompanySeries = {
     months: MonthlyRevenueRow[]
+    /** Company name from the finance system, for lists that name SMEs. */
+    name?: string
 }
 
-
-export type JobContract = {
-    id: string
-    applicationId: string
-    participantId?: string
-    programId?: string
-    employeeName: string
-    position: string
-    contractType: 'permanent' | 'temporal'
-    contractEndDate?: any
-    uploadMonth?: string
-    uploadMonthDate?: any
-    createdAt?: any
-    updatedAt?: any
-}
 
 export const moneyCompact = (value: number) =>
     `R ${Intl.NumberFormat('en-ZA', {
@@ -360,9 +349,6 @@ const isCompanyOutsideProgram = (
 }
 
 
-const safeLower = (value: any) =>
-    String(value || '').trim().toLowerCase()
-
 export const toDayjs = (value: any): Dayjs | null => {
     if (!value) return null
     if (dayjs.isDayjs(value)) return value
@@ -381,109 +367,6 @@ export const toDayjs = (value: any): Dayjs | null => {
     return parsed.isValid() ? parsed : null
 }
 
-export const buildEmployeeKey = (contract: Partial<JobContract>) =>
-    [
-        contract.applicationId || '',
-        safeLower(contract.employeeName),
-        safeLower(contract.position)
-    ].join('::')
-
-export const getContractMonthStart = (contract: Partial<JobContract>) =>
-(
-    toDayjs(contract.uploadMonthDate)?.startOf('month') ||
-    (contract.uploadMonth
-        ? dayjs(`${contract.uploadMonth}-01`).startOf('month')
-        : null) ||
-    toDayjs(contract.createdAt)?.startOf('month') ||
-    toDayjs(contract.updatedAt)?.startOf('month') ||
-    null
-)
-
-const getContractEffectiveTime = (contract: Partial<JobContract>) =>
-(
-    getContractMonthStart(contract)?.valueOf() ||
-    toDayjs(contract.updatedAt)?.valueOf() ||
-    toDayjs(contract.createdAt)?.valueOf() ||
-    0
-)
-
-const isContractActiveInMonth = (
-    contract: JobContract,
-    month: Dayjs
-) => {
-    const monthStart = month.startOf('month')
-    const monthEnd = month.endOf('month')
-    const uploadedMonth = getContractMonthStart(contract)
-
-    if (!uploadedMonth) return false
-    if (uploadedMonth.isAfter(monthEnd)) return false
-
-    if (contract.contractType === 'permanent') return true
-
-    const end = toDayjs(contract.contractEndDate)
-    if (!end) return true
-
-    return !end.endOf('day').isBefore(monthStart)
-}
-
-export const getEffectiveContractsForMonth = (
-    contracts: JobContract[],
-    month: Dayjs
-) => {
-    const map = new Map<string, JobContract>()
-    const monthEnd = month.endOf('month')
-
-    contracts.forEach(contract => {
-        const employeeKey = buildEmployeeKey(contract)
-        const uploadedMonth = getContractMonthStart(contract)
-
-        if (!uploadedMonth || uploadedMonth.isAfter(monthEnd)) return
-        if (!isContractActiveInMonth(contract, month)) return
-
-        const current = map.get(employeeKey)
-
-        if (!current) {
-            map.set(employeeKey, contract)
-            return
-        }
-
-        if (
-            getContractEffectiveTime(contract) >=
-            getContractEffectiveTime(current)
-        ) {
-            map.set(employeeKey, contract)
-        }
-    })
-
-    return Array.from(map.values())
-}
-
-export const getUniqueJobsForPeriod = (
-    contracts: JobContract[],
-    months: Dayjs[]
-) => {
-    const unique = new Map<string, JobContract>()
-
-    months.forEach(month => {
-        getEffectiveContractsForMonth(contracts, month).forEach(contract => {
-            const key = buildEmployeeKey(contract)
-            const current = unique.get(key)
-
-            // A job counts once across the whole reporting period.
-            // If its contract was updated during the period, classify it
-            // using the latest effective contract seen in that period.
-            if (
-                !current ||
-                getContractEffectiveTime(contract) >=
-                getContractEffectiveTime(current)
-            ) {
-                unique.set(key, contract)
-            }
-        })
-    })
-
-    return Array.from(unique.values())
-}
 
 const fetchMonthlyRevenue = async (email: string, months: number) => {
     const response = await axios.get(
@@ -631,13 +514,14 @@ export const loadProgramFinanceSeries = async (
 
             if (!email) {
                 return {
-                    months: [] as MonthlyRevenueRow[]
+                    months: [] as MonthlyRevenueRow[],
+                    name: getCompanyName(company)
                 }
             }
 
             const months = await fetchCompanyMonthlyRevenue(email)
 
-            return { months }
+            return { months, name: getCompanyName(company) }
         })
     )
 
@@ -718,7 +602,7 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
 
     const [jobsLoading, setJobsLoading] = useState(true)
     const [jobsError, setJobsError] = useState('')
-    const [jobContracts, setJobContracts] = useState<JobContract[]>([])
+    const [jobContracts, setJobContracts] = useState<JobContractRecord[]>([])
 
     useEffect(() => {
         let cancelled = false
@@ -733,21 +617,11 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                     return
                 }
 
-                const jobsQuery = query(
-                    collection(db, 'hseJobContracts'),
-                    where('programId', '==', programId)
-                )
-
-                const snap = await getDocs(jobsQuery)
+                const contracts = await loadJobContracts(programId)
 
                 if (cancelled) return
 
-                setJobContracts(
-                    snap.docs.map(docSnap => ({
-                        id: docSnap.id,
-                        ...(docSnap.data() as any)
-                    })) as JobContract[]
-                )
+                setJobContracts(contracts)
             } catch (error) {
                 console.error(
                     '[ProjectAdminProgramPulse] jobs summary failed',
@@ -774,58 +648,49 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
         }
     }, [programId])
 
+    // One job per person per position, renewals and re-uploads included (src/lib/jobs.ts).
+    const groupedJobs = useMemo(() => groupJobs(jobContracts), [jobContracts])
+
     const selectedPeriodJobs = useMemo(
         () =>
             hasMonthlyReportingPeriod
-                ? getUniqueJobsForPeriod(jobContracts, reportingMonths)
+                ? activeInMonths(groupedJobs, reportingMonths)
                 : [],
         [
-            jobContracts,
+            groupedJobs,
             hasMonthlyReportingPeriod,
             reportingMonths
         ]
     )
 
     const previousPeriodJobs = useMemo(
-        () =>
-            previousReportingMonths.length
-                ? getUniqueJobsForPeriod(
-                    jobContracts,
-                    previousReportingMonths
-                )
-                : [],
-        [jobContracts, previousReportingMonths]
+        () => activeInMonths(groupedJobs, previousReportingMonths),
+        [groupedJobs, previousReportingMonths]
     )
 
     const periodEndJobs = useMemo(
         () =>
             selectedEndMonth
-                ? getEffectiveContractsForMonth(
-                    jobContracts,
-                    selectedEndMonth
-                )
+                ? activeJobsOn(groupedJobs, asOfMonthEnd(selectedEndMonth))
                 : [],
-        [jobContracts, selectedEndMonth?.format('YYYY-MM')]
+        [groupedJobs, selectedEndMonth?.format('YYYY-MM')]
     )
 
     const previousPeriodEndJobs = useMemo(
         () =>
             previousEndMonth
-                ? getEffectiveContractsForMonth(
-                    jobContracts,
-                    previousEndMonth
-                )
+                ? activeJobsOn(groupedJobs, asOfMonthEnd(previousEndMonth))
                 : [],
-        [jobContracts, previousEndMonth?.format('YYYY-MM')]
+        [groupedJobs, previousEndMonth?.format('YYYY-MM')]
     )
 
     const jobs = useMemo(() => {
         const permanentJobs = selectedPeriodJobs.filter(
-            contract => contract.contractType === 'permanent'
+            job => job.contractType === 'permanent'
         ).length
 
         const temporaryJobs = selectedPeriodJobs.filter(
-            contract => contract.contractType === 'temporal'
+            job => job.contractType === 'temporary'
         ).length
 
         return {

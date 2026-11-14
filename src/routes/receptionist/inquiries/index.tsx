@@ -1,967 +1,798 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-    Table,
-    Space,
-    Button,
-    Tag,
-    Input,
-    Select,
-    DatePicker,
-    Row,
-    Col,
-    Typography,
+    Avatar,
     Badge,
-    Tooltip,
-    message,
-    Statistic,
+    Button,
+    Card,
+    Col,
+    DatePicker,
+    Drawer,
+    Dropdown,
     Empty,
+    Input,
     Modal,
-    Progress
+    Popover,
+    Progress,
+    Row,
+    Segmented,
+    Select,
+    Skeleton,
+    Typography,
+    message,
+    theme
 } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import {
-    PlusOutlined,
-    SearchOutlined,
-    EyeOutlined,
-    EditOutlined,
-    UserOutlined,
-    ReloadOutlined,
-    MessageOutlined,
-    CheckCircleOutlined,
-    ClockCircleOutlined,
-    ExclamationCircleOutlined,
     BarChartOutlined,
-    FilterOutlined
+    ClockCircleOutlined,
+    EditOutlined,
+    EllipsisOutlined,
+    ExportOutlined,
+    EyeOutlined,
+    FilterOutlined,
+    InboxOutlined,
+    PlusOutlined,
+    RiseOutlined,
+    SearchOutlined,
+    StarOutlined
 } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
-import { format } from 'date-fns'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import {
-    Inquiry,
-    InquiryPriority,
-    InquiryStatus,
-} from '@/types/inquiry'
+import { Helmet } from 'react-helmet'
+import { Inquiry, InquiryPriority, PRIORITY_COLORS, STATUS_COLORS } from '@/types/inquiry'
 import { inquiryService } from '@/services/inquiryService'
+import { followUpService, type FollowUp } from '@/services/followUpService'
 import {
     ALL_CHANNELS,
-    AUDIENCE_LABEL,
     channelLabel,
     resolveInquiryAudience,
     resolveInquiryChannel,
-    type InquiryAudience,
     type InquiryChannel
 } from '@/utils/inquirySource'
+import {
+    CONTACT_TYPE_LABEL,
+    INQUIRY_CONTACT_TYPES,
+    inquiryContactType,
+    isVisitPurpose,
+    VISIT_PURPOSE_LABEL,
+    type InquiryContactType,
+    type VisitPurpose
+} from '@/lib/inquiryContactTypes'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
 import { useAuth } from '@/hooks/useAuth'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import { useDataColor } from '@/lib/chartColors'
+import { followUpStateByInquiry, inquiryInTab, OPEN_STATUSES, type InquiryTab } from '@/lib/inquiryList'
+import { AdminKpiTile, AdminMiniBars, AdminShareRing, type AdminKpiTrend } from '@/components/admin/AdminKpiTile'
 import InquiryForm from '@/components/receptionist/InquiryForm'
 import InquiryEditModal from '@/components/receptionist/InquiryEditModal'
 import InquiryDetail from '@/components/receptionist/InquiryDetail'
-import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import '@/styles/admin-overview.css'
+import '@/styles/receptionist-dashboard.css'
 
-const { Search } = Input
-const { Option } = Select
+/*
+ * The branch's inquiries for reception: tiles, one toolbar (tabs, search,
+ * filters, new inquiry) and a compact list. Each row says where its follow-up
+ * stands, so this list and the follow-ups worklist tell the same story.
+ */
+
 const { RangePicker } = DatePicker
-const { Title, Text } = Typography
+const { Text } = Typography
 
 type RangeValue = [Dayjs | null, Dayjs | null] | null
 
-const statusOrder: InquiryStatus[] = [
-    'New',
-    'In Progress',
-    'Follow-up Required',
-    'Contacted',
-    'Resolved',
-    'Converted',
-    'Closed'
-]
+const PAGE = 20
+const PRIORITIES: InquiryPriority[] = ['Urgent', 'High', 'Medium', 'Low']
 
-type StatusFilter = InquiryStatus | 'all' | 'group:progress' | 'group:resolved'
+const TAB_LABEL: Record<InquiryTab, string> = { open: 'Open', new: 'New', closed: 'Closed', all: 'All' }
+const TABS: InquiryTab[] = ['open', 'new', 'closed', 'all']
 
-// The metric cards count these groups, so clicking a card filters to the same set.
-const STATUS_GROUPS: Record<'group:progress' | 'group:resolved', string[]> = {
-    'group:progress': ['In Progress', 'Follow-up Required'],
-    'group:resolved': ['Resolved', 'Converted', 'Closed']
+/** SME, potential incubatee, funder, stakeholder or visitor; 'unknown' for older inquiries that never recorded it. */
+const contactTypeOf = (inquiry: Inquiry): InquiryContactType | 'unknown' =>
+    inquiryContactType(inquiry as any, resolveInquiryAudience(inquiry) === 'Incubatee') || 'unknown'
+const contactTypeLabel = (type: InquiryContactType | 'unknown') => (type === 'unknown' ? 'Not recorded' : CONTACT_TYPE_LABEL[type])
+
+const departmentOf = (inquiry: Inquiry) => String(inquiry.inquiryDetails?.department || '').trim()
+
+const initials = (inquiry: Inquiry) =>
+    `${inquiry.contactInfo?.firstName?.charAt(0) || ''}${inquiry.contactInfo?.lastName?.charAt(0) || ''}`.toUpperCase() || '?'
+
+const toDate = (value: any): Date | null => {
+    if (!value) return null
+    if (value instanceof Date) return value
+    if (typeof value?.toDate === 'function') return value.toDate()
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-const matchesStatusFilter = (status: string, filter: StatusFilter) =>
-    filter === 'all' ||
-    (filter in STATUS_GROUPS ? STATUS_GROUPS[filter as keyof typeof STATUS_GROUPS].includes(status) : status === filter)
+/** Monday-based weeks, as the rest of the receptionist pages use. */
+const monday = (day: Dayjs) => day.subtract((day.day() + 6) % 7, 'day').startOf('day')
+
+const trendOf = (current: number, previous: number, label: string): AdminKpiTrend | undefined => {
+    const change = current - previous
+    if (change === 0) return undefined
+    const percent = previous ? Math.round((Math.abs(change) / previous) * 100) : undefined
+    return {
+        amount: percent !== undefined ? `${percent}%` : String(Math.abs(change)),
+        direction: change > 0 ? 'up' : 'down',
+        tone: change > 0 ? 'good' : 'bad',
+        text: `${change > 0 ? '+' : ''}${change} vs ${label}`
+    }
+}
 
 const InquiriesList: React.FC = () => {
-    const [inquiries, setInquiries] = useState<Inquiry[]>([])
-    const [loading, setLoading] = useState(true)
-
-    const [searchText, setSearchText] = useState('')
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-    const [page, setPage] = useState(1)
-    const [priorityFilter, setPriorityFilter] = useState<InquiryPriority | 'all'>(
-        'all'
-    )
-    const [sourceFilter, setSourceFilter] = useState<InquiryChannel | 'all'>('all')
-    const [audienceFilter, setAudienceFilter] = useState<InquiryAudience | 'all'>('all')
-    const [dateRange, setDateRange] = useState<RangeValue>(null)
-    const [filtersOpen, setFiltersOpen] = useState(false)
-    const [analyticsOpen, setAnalyticsOpen] = useState(false)
-    const [draftStatus, setDraftStatus] = useState<StatusFilter>('all')
-    const [draftAudience, setDraftAudience] = useState<InquiryAudience | 'all'>('all')
-    const [draftRange, setDraftRange] = useState<RangeValue>(null)
-    const [newInquiryOpen, setNewInquiryOpen] = useState(false)
-    const [viewInquiryId, setViewInquiryId] = useState<string | null>(null)
-    const [editInquiryId, setEditInquiryId] = useState<string | null>(null)
-
     const { user, loading: userLoading } = useAuth()
     const { activeProgramId } = useActiveProgramId()
+    const branchId = String(user?.assignedBranch || '')
 
-    const loadInquiries = useCallback(async () => {
-        if (!user?.assignedBranch) {
-            setLoading(false)
-            return
-        }
+    const [inquiries, setInquiries] = useState<Inquiry[]>([])
+    const [followUps, setFollowUps] = useState<FollowUp[]>([])
+    const [loading, setLoading] = useState(true)
 
+    const [tab, setTab] = useState<InquiryTab>('open')
+    const [search, setSearch] = useState('')
+    const [priority, setPriority] = useState<InquiryPriority | 'all'>('all')
+    const [source, setSource] = useState<InquiryChannel | 'all'>('all')
+    const [audience, setAudience] = useState<InquiryContactType | 'unknown' | 'all'>('all')
+    const [department, setDepartment] = useState<string>('all')
+    const [range, setRange] = useState<RangeValue>(null)
+    const [shown, setShown] = useState(PAGE)
+
+    const [newOpen, setNewOpen] = useState(false)
+    const [newFooter, setNewFooter] = useState<HTMLDivElement | null>(null)
+    const [analyticsOpen, setAnalyticsOpen] = useState(false)
+    const [viewId, setViewId] = useState<string | null>(null)
+    const [editId, setEditId] = useState<string | null>(null)
+
+    const load = useCallback(async () => {
+        if (!branchId) return setLoading(false)
+        setLoading(true)
         try {
-            setLoading(true)
-            const data = await inquiryService.getInquiriesByBranch(user.assignedBranch)
-            const rows = Array.isArray(data) ? data : []
-            setInquiries(
-                activeProgramId
-                    ? rows.filter(
-                        inquiry =>
-                            !inquiry.programId || inquiry.programId === activeProgramId
-                    )
-                    : rows
-            )
+            const [rows, fus] = await Promise.all([
+                inquiryService.getInquiriesByBranch(branchId),
+                followUpService.getFollowUpsByBranch(branchId).catch(() => [] as FollowUp[])
+            ])
+            // General (non-incubatee) inquiries have no programme and show under every programme.
+            setInquiries(activeProgramId ? rows.filter(i => !i.programId || i.programId === activeProgramId) : rows)
+            setFollowUps(fus)
         } catch (error) {
             console.error('Error loading inquiries:', error)
-            message.error('Failed to load inquiries')
+            message.error('Could not load inquiries.')
         } finally {
             setLoading(false)
         }
-    }, [user?.assignedBranch, activeProgramId])
+    }, [branchId, activeProgramId])
 
     useEffect(() => {
-        if (user && user.assignedBranch) {
-            loadInquiries()
-        } else if (user && !user.assignedBranch) {
-            setLoading(false)
-        } else if (!user && !userLoading) {
-            setLoading(false)
-        }
-    }, [user, userLoading, loadInquiries])
+        if (!userLoading) load()
+    }, [load, userLoading])
 
-    const getStatusColor = (status: InquiryStatus): string => {
-        const colors: Record<string, string> = {
-            New: 'blue',
-            'In Progress': 'orange',
-            'Follow-up Required': 'gold',
-            Resolved: 'green',
-            Closed: 'default',
-            Contacted: 'purple',
-            Converted: 'green'
-        }
-        return colors[status] || 'default'
-    }
+    const now = new Date()
+    const followUpState = useMemo(() => followUpStateByInquiry(followUps, now), [followUps]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    const getPriorityColor = (priority: InquiryPriority): string => {
-        const colors: Record<string, string> = {
-            Low: 'default',
-            Medium: 'blue',
-            High: 'orange',
-            Urgent: 'red'
-        }
-        return colors[priority] || 'default'
-    }
-
-    const openEditInquiry = (inquiryId: string) => setEditInquiryId(inquiryId)
-
-    const normalizeDate = (value: any): Date | null => {
-        if (!value) return null
-
-        if (value instanceof Date) return value
-
-        if (typeof value?.toDate === 'function') {
-            return value.toDate()
-        }
-
-        const parsed = new Date(value)
-        return Number.isNaN(parsed.getTime()) ? null : parsed
-    }
-
-    const baseFilteredInquiries = useMemo(() => {
-        return inquiries.filter(inquiry => {
-            const firstName = inquiry.contactInfo?.firstName?.toLowerCase?.() || ''
-            const lastName = inquiry.contactInfo?.lastName?.toLowerCase?.() || ''
-            const email = inquiry.contactInfo?.email?.toLowerCase?.() || ''
-            const phone = inquiry.contactInfo?.phone || ''
-            const company = inquiry.contactInfo?.company?.toLowerCase?.() || ''
-            const description =
-                inquiry.inquiryDetails?.description?.toLowerCase?.() || ''
-            const inquiryType =
-                inquiry.inquiryDetails?.inquiryType?.toLowerCase?.() || ''
-
-            const search = searchText.trim().toLowerCase()
-
-            const matchesSearch =
-                !search ||
-                firstName.includes(search) ||
-                lastName.includes(search) ||
-                email.includes(search) ||
-                phone.includes(searchText.trim()) ||
-                company.includes(search) ||
-                description.includes(search) ||
-                inquiryType.includes(search)
-
-            const matchesPriority =
-                priorityFilter === 'all' || inquiry.priority === priorityFilter
-
-            const matchesSource =
-                (sourceFilter === 'all' || resolveInquiryChannel(inquiry.source) === sourceFilter) &&
-                (audienceFilter === 'all' || resolveInquiryAudience(inquiry) === audienceFilter)
-
-            const submittedDate = normalizeDate(inquiry.submittedAt)
-
-            const matchesDateRange =
-                !dateRange ||
-                !dateRange[0] ||
-                !dateRange[1] ||
-                (!!submittedDate &&
-                    submittedDate >= dateRange[0].startOf('day').toDate() &&
-                    submittedDate <= dateRange[1].endOf('day').toDate())
-
-            return (
-                matchesSearch &&
-                matchesPriority &&
-                matchesSource &&
-                matchesDateRange
-            )
-        })
-    }, [inquiries, searchText, priorityFilter, sourceFilter, audienceFilter, dateRange])
-
-    const filteredInquiries = useMemo(
-        () => baseFilteredInquiries.filter(inquiry => matchesStatusFilter(inquiry.status, statusFilter)),
-        [baseFilteredInquiries, statusFilter]
+    const departments = useMemo(
+        () => [...new Set(inquiries.map(departmentOf).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+        [inquiries]
     )
 
-    // Back to the first page whenever the visible set changes.
+    // Everything but the tab: the tabs' counts and the analytics use this set.
+    const filtered = useMemo(() => {
+        const needle = search.trim().toLowerCase()
+        const from = range?.[0]?.startOf('day').toDate()
+        const to = range?.[1]?.endOf('day').toDate()
+        return inquiries.filter(i => {
+            if (priority !== 'all' && i.priority !== priority) return false
+            if (source !== 'all' && resolveInquiryChannel(i.source) !== source) return false
+            if (audience !== 'all' && contactTypeOf(i) !== audience) return false
+            if (department !== 'all' && departmentOf(i) !== department) return false
+            const at = toDate(i.submittedAt)
+            if (from && to && (!at || at < from || at > to)) return false
+            if (!needle) return true
+            return [
+                // The full name too, so "Thabo Mokoena" finds Thabo Mokoena.
+                `${i.contactInfo?.firstName || ''} ${i.contactInfo?.lastName || ''}`,
+                i.contactInfo?.email,
+                i.contactInfo?.phone,
+                i.contactInfo?.company,
+                i.inquiryDetails?.description,
+                i.inquiryDetails?.inquiryType,
+                departmentOf(i)
+            ].some(value => String(value || '').toLowerCase().includes(needle))
+        })
+    }, [inquiries, search, priority, source, audience, department, range])
+
+    const tabCounts = useMemo(
+        () => Object.fromEntries(TABS.map(t => [t, filtered.filter(i => inquiryInTab(i.status, t)).length])) as Record<InquiryTab, number>,
+        [filtered]
+    )
+    const visible = useMemo(() => filtered.filter(i => inquiryInTab(i.status, tab)), [filtered, tab])
+
+    // Open on Open; if nothing is open, on All rather than an empty list. Once a tab is picked, it stays.
+    const [tabChosen, setTabChosen] = useState(false)
     useEffect(() => {
-        setPage(1)
-    }, [statusFilter, searchText, priorityFilter, sourceFilter, audienceFilter, dateRange])
+        if (!tabChosen && !loading) setTab(tabCounts.open ? 'open' : 'all')
+    }, [tabChosen, loading, tabCounts.open])
 
-    const metrics = useMemo(() => {
-        const total = baseFilteredInquiries.length
-        const newCount = baseFilteredInquiries.filter(item => item.status === 'New').length
-        const inProgressCount = baseFilteredInquiries.filter(item =>
-            matchesStatusFilter(item.status, 'group:progress')
-        ).length
-        const resolvedCount = baseFilteredInquiries.filter(item =>
-            matchesStatusFilter(item.status, 'group:resolved')
-        ).length
+    useEffect(() => setShown(PAGE), [tab, search, priority, source, audience, department, range])
 
-        return { total, newCount, inProgressCount, resolvedCount }
-    }, [baseFilteredInquiries])
-
-    const metricProps = (filter: StatusFilter) => {
-        const active = statusFilter === filter
+    // ---- Tiles: the branch's inquiries in this programme, before any filter ----
+    const figures = useMemo(() => {
+        const today = dayjs().startOf('day')
+        const tomorrow = today.add(1, 'day')
+        const monthStart = today.startOf('month')
+        const lastMonthStart = monthStart.subtract(1, 'month')
+        const elapsed = tomorrow.diff(monthStart, 'day')
+        const lastMonthSameDays = lastMonthStart.add(Math.min(elapsed, lastMonthStart.daysInMonth()), 'day')
+        const between = (from: Dayjs, to: Dayjs) =>
+            inquiries.filter(i => {
+                const at = dayjs(toDate(i.submittedAt))
+                return !at.isBefore(from) && at.isBefore(to)
+            }).length
+        const monthBars = Array.from({ length: 6 }, (_, k) => {
+            const start = monthStart.subtract(5 - k, 'month')
+            return { key: start.valueOf(), label: start.format('MMM'), value: between(start, k === 5 ? tomorrow : start.add(1, 'month')) }
+        })
+        const open = inquiries.filter(i => inquiryInTab(i.status, 'open')).length
         return {
-            clickable: true,
-            onClick: () => setStatusFilter(active ? 'all' : filter),
-            wrapperStyle: active
-                ? { border: '1px solid #1677ff', boxShadow: '0 0 0 2px rgba(22,119,255,0.18)' }
-                : undefined
+            total: inquiries.length,
+            newCount: inquiries.filter(i => i.status === 'New').length,
+            open,
+            month: between(monthStart, tomorrow),
+            lastMonth: between(lastMonthStart, lastMonthSameDays),
+            monthBars,
+            converted: inquiries.filter(i => i.status === 'Converted').length
         }
+    }, [inquiries])
+
+    // ---- Filters ----
+    const activeFilters =
+        (priority !== 'all' ? 1 : 0) +
+        (source !== 'all' ? 1 : 0) +
+        (audience !== 'all' ? 1 : 0) +
+        (department !== 'all' ? 1 : 0) +
+        (range?.[0] && range?.[1] ? 1 : 0)
+
+    const clearFilters = () => {
+        setPriority('all')
+        setSource('all')
+        setAudience('all')
+        setDepartment('all')
+        setRange(null)
     }
 
-    const inquiryTypeFrequency = useMemo(() => {
-        const map = new Map<string, number>()
-
-        filteredInquiries.forEach(item => {
-            const type = item.inquiryDetails?.inquiryType?.trim() || 'Unspecified'
-            map.set(type, (map.get(type) || 0) + 1)
-        })
-
-        return Array.from(map.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 12)
-    }, [filteredInquiries])
-
-    const inquiryTypeChartOptions: Highcharts.Options = useMemo(() => {
-        return {
-            chart: {
-                type: 'bar',
-                height: Math.max(360, inquiryTypeFrequency.length * 48)
-            },
-            title: {
-                text: undefined
-            },
-            credits: {
-                enabled: false
-            },
-            legend: {
-                enabled: false
-            },
-            xAxis: {
-                categories: inquiryTypeFrequency.map(([type]) => type),
-                title: {
-                    text: undefined
-                }
-            },
-            yAxis: {
-                min: 0,
-                allowDecimals: false,
-                title: {
-                    text: 'Frequency'
-                }
-            },
-            tooltip: {
-                pointFormat: '<b>{point.y}</b> inquiries'
-            },
-            plotOptions: {
-                series: {
-                    borderRadius: 6,
-                    dataLabels: {
-                        enabled: true
-                    }
-                }
-            },
-            series: [
-                {
-                    type: 'bar',
-                    name: 'Inquiries',
-                    data: inquiryTypeFrequency.map(([, count]) => count)
-                }
-            ]
-        }
-    }, [inquiryTypeFrequency])
-
-    const columns: ColumnsType<Inquiry> = [
-        {
-            title: 'Contact',
-            key: 'contact',
-            width: 240,
-            render: (_, record) => (
-                <div>
-                    <Space size={6} wrap>
-                        <Text strong>
-                            {record.contactInfo?.firstName} {record.contactInfo?.lastName}
-                        </Text>
-                        {record.isRepresentative ? <Tag color="purple">Representative</Tag> : null}
-                        {resolveInquiryAudience(record) === 'Incubatee' ? (
-                            <Badge
-                                count={<UserOutlined style={{ color: '#1677ff' }} />}
-                                size="small"
-                            />
-                        ) : null}
-                    </Space>
-
-                    <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12, marginTop: 4 }}>
-                        {record.contactInfo?.email || record.contactInfo?.phone || '—'}
-                    </div>
-
-                    {record.contactInfo?.company ? (
-                        <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12 }}>
-                            {record.contactInfo.company}
-                        </div>
-                    ) : null}
-                </div>
-            )
-        },
-        {
-            title: 'Inquiry Type',
-            key: 'inquiryType',
-            width: 220,
-            render: (_, record) => (
-                <div>
-                    <Text strong>{record.inquiryDetails?.inquiryType || '—'}</Text>
-                    <div style={{ marginTop: 6 }}>
-                        <Tag color={record.classification === 'Potential' ? 'gold' : 'blue'}>
-                            {record.classification || 'General'}
-                        </Tag>
-                        <Tag>{channelLabel(resolveInquiryChannel(record.source))}</Tag>
-                        <Tag color={resolveInquiryAudience(record) === 'Incubatee' ? 'green' : 'default'}>
-                            {AUDIENCE_LABEL[resolveInquiryAudience(record)]}
-                        </Tag>
-                    </div>
-                    {record.inquiryDetails?.department ? (
-                        <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12, marginTop: 4 }}>
-                            {record.inquiryDetails.department}
-                        </div>
-                    ) : null}
-                </div>
-            )
-        },
-        {
-            title: 'Description',
-            key: 'description',
-            ellipsis: true,
-            width: 320,
-            render: (_, record) => {
-                const description = record.inquiryDetails?.description || '—'
-                const short =
-                    description.length > 90 ? `${description.slice(0, 90)}...` : description
-
-                return (
-                    <Tooltip title={description}>
-                        <span>{short}</span>
-                    </Tooltip>
-                )
-            }
-        },
-        {
-            title: 'Priority',
-            dataIndex: 'priority',
-            key: 'priority',
-            width: 120,
-            render: (priority: InquiryPriority) => (
-                <Tag color={getPriorityColor(priority)}>{priority}</Tag>
-            )
-        },
-        {
-            title: 'Status',
-            dataIndex: 'status',
-            key: 'status',
-            width: 160,
-            render: (status: InquiryStatus) => (
-                <Tag color={getStatusColor(status)}>{status}</Tag>
-            ),
-            filters: statusOrder.map(status => ({ text: status, value: status })),
-            onFilter: (value, record) => record.status === value
-        },
-        {
-            title: 'Submitted',
-            dataIndex: 'submittedAt',
-            key: 'submittedAt',
-            width: 140,
-            render: (value: any) => {
-                const date = normalizeDate(value)
-                return date ? format(date, 'MMM dd, yyyy') : '—'
-            },
-            sorter: (a, b) => {
-                const left = normalizeDate(a.submittedAt)?.getTime() || 0
-                const right = normalizeDate(b.submittedAt)?.getTime() || 0
-                return left - right
-            },
-            defaultSortOrder: 'descend'
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            width: 120,
-            fixed: 'right',
-            render: (_, record) => (
-                <Space size="small">
-                    <Tooltip title="View Details">
-                        <Button
-                            type="default"
-                            shape="round"
-                            icon={<EyeOutlined />}
-                            onClick={() => setViewInquiryId(record.id)}
-                        />
-                    </Tooltip>
-
-                    <Tooltip title="Edit">
-                        <Button
-                            type="default"
-                            shape="round"
-                            icon={<EditOutlined />}
-                            onClick={() => openEditInquiry(record.id)}
-                        />
-                    </Tooltip>
-                </Space>
-            )
-        }
-    ]
-
-    const activeFilterCount =
-        (statusFilter !== 'all' ? 1 : 0) +
-        (audienceFilter !== 'all' ? 1 : 0) +
-        (dateRange?.[0] && dateRange?.[1] ? 1 : 0)
-
-    const openFilters = () => {
-        setDraftStatus(statusFilter)
-        setDraftAudience(audienceFilter)
-        setDraftRange(dateRange)
-        setFiltersOpen(true)
-    }
-
-    const applyFilters = () => {
-        setStatusFilter(draftStatus)
-        setAudienceFilter(draftAudience)
-        setDateRange(draftRange)
-        setFiltersOpen(false)
-    }
-
-    const resetFilters = () => {
-        setDraftStatus('all')
-        setDraftAudience('all')
-        setDraftRange(null)
-    }
-
-    const sourceBreakdown = useMemo(() => {
-        const counts = new Map<InquiryChannel, number>()
-        filteredInquiries.forEach(item => {
-            const channel = resolveInquiryChannel(item.source)
-            counts.set(channel, (counts.get(channel) || 0) + 1)
-        })
-        const total = filteredInquiries.length
-
-        return ALL_CHANNELS
-            .map(option => {
-                const count = counts.get(option.value) || 0
-                return {
-                    channel: option.value,
-                    count,
-                    percent: total ? Math.round((count / total) * 100) : 0
-                }
-            })
-            .filter(row => row.count > 0)
-            .sort((a, b) => b.count - a.count)
-    }, [filteredInquiries])
-
-    const audienceBreakdown = useMemo(() => {
-        const total = filteredInquiries.length
-        const counts: Record<InquiryAudience, number> = { Incubatee: 0, 'Non-Incubatee': 0 }
-        filteredInquiries.forEach(item => {
-            counts[resolveInquiryAudience(item)] += 1
-        })
-
-        return (Object.keys(counts) as InquiryAudience[])
-            .map(audience => ({
-                audience,
-                count: counts[audience],
-                percent: total ? Math.round((counts[audience] / total) * 100) : 0
-            }))
-            .sort((a, b) => b.count - a.count)
-    }, [filteredInquiries])
-
-    const filterBar = (
-        <div
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                width: '100%',
-                overflowX: 'auto',
-                paddingBottom: 2
-            }}
-        >
-            <Search
-                allowClear
-                placeholder="Search name, email, phone, company, type..."
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                prefix={<SearchOutlined />}
-                style={{ minWidth: 260, flex: '1 1 320px' }}
+    const filterPanel = (
+        <div className='usage-filter-popover'>
+            <Select
+                className='usage-filter-select'
+                value={priority}
+                onChange={setPriority}
+                options={[{ value: 'all', label: 'All priorities' }, ...PRIORITIES.map(p => ({ value: p, label: p }))]}
             />
             <Select
-                value={priorityFilter}
-                onChange={setPriorityFilter}
-                style={{ minWidth: 140 }}
+                className='usage-filter-select'
+                value={source}
+                onChange={setSource}
+                options={[{ value: 'all', label: 'All sources' }, ...ALL_CHANNELS.map(o => ({ value: o.value, label: channelLabel(o.value) }))]}
+            />
+            <Select
+                className='usage-filter-select'
+                value={audience}
+                onChange={setAudience}
                 options={[
-                    { value: 'all', label: 'All priorities' },
-                    { value: 'Low', label: 'Low' },
-                    { value: 'Medium', label: 'Medium' },
-                    { value: 'High', label: 'High' },
-                    { value: 'Urgent', label: 'Urgent' }
+                    { value: 'all', label: 'All contact types' },
+                    ...INQUIRY_CONTACT_TYPES.map(type => ({ value: type, label: CONTACT_TYPE_LABEL[type] })),
+                    { value: 'unknown', label: 'Not recorded' }
                 ]}
             />
             <Select
-                value={sourceFilter}
-                onChange={setSourceFilter}
-                style={{ minWidth: 145 }}
-                options={[
-                    { value: 'all', label: 'All sources' },
-                    ...ALL_CHANNELS.map(option => ({
-                        value: option.value,
-                        label: channelLabel(option.value)
-                    }))
+                className='usage-filter-select'
+                value={department}
+                onChange={setDepartment}
+                showSearch
+                optionFilterProp='label'
+                options={[{ value: 'all', label: 'All departments' }, ...departments.map(d => ({ value: d, label: d }))]}
+            />
+            <RangePicker
+                value={range}
+                onChange={value => setRange(value as RangeValue)}
+                style={{ width: '100%' }}
+                placeholder={['Received from', 'to']}
+                presets={[
+                    { label: 'This week', value: [monday(dayjs()), dayjs()] },
+                    { label: 'This month', value: [dayjs().startOf('month'), dayjs()] },
+                    { label: 'Last 30 days', value: [dayjs().subtract(29, 'day'), dayjs()] }
                 ]}
             />
-            <Badge count={activeFilterCount} size="small" offset={[-6, 4]}>
-                <Button shape="round" icon={<FilterOutlined />} onClick={openFilters}>
-                    Filters
+            {activeFilters > 0 && (
+                <Button type='link' onClick={clearFilters}>
+                    Clear filters
                 </Button>
-            </Badge>
-            <Button
-                shape="round"
-                icon={<BarChartOutlined />}
-                onClick={() => setAnalyticsOpen(true)}
-            >
-                Analytics
-            </Button>
-            <Button
-                shape="round"
-                icon={<ReloadOutlined />}
-                onClick={loadInquiries}
-            >
-                Refresh
-            </Button>
-            <Button
-                type="primary"
-                shape="round"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                    if (!activeProgramId) {
-                        message.warning('Select a program before creating an inquiry.')
-                        return
-                    }
-                    setNewInquiryOpen(true)
-                }}
-            >
-                New Inquiry
-            </Button>
+            )}
         </div>
     )
 
-    if (userLoading) {
+    // ---- Analytics: what the current filters show ----
+    const breakdown = (keyOf: (i: Inquiry) => string) => {
+        const counts = new Map<string, number>()
+        filtered.forEach(i => counts.set(keyOf(i), (counts.get(keyOf(i)) || 0) + 1))
+        return [...counts.entries()]
+            .map(([key, count]) => ({ key, count, percent: filtered.length ? Math.round((count / filtered.length) * 100) : 0 }))
+            .sort((a, b) => b.count - a.count)
+    }
+    const byDepartment = useMemo(() => breakdown(i => departmentOf(i) || 'No department'), [filtered]) // eslint-disable-line react-hooks/exhaustive-deps
+    const bySource = useMemo(() => breakdown(i => channelLabel(resolveInquiryChannel(i.source))), [filtered]) // eslint-disable-line react-hooks/exhaustive-deps
+    const byAudience = useMemo(() => breakdown(i => contactTypeLabel(contactTypeOf(i))), [filtered]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Six months of the filtered inquiries, and the share of each contact type.
+    const { token } = theme.useToken()
+    const analytics = useMemo(() => {
+        const start = dayjs().startOf('month').subtract(5, 'month')
+        const months = Array.from({ length: 6 }, (_, k) => start.add(k, 'month'))
+        const perMonth = months.map(m =>
+            filtered.filter(i => {
+                const at = toDate(i.submittedAt)
+                return at && dayjs(at).isSame(m, 'month')
+            }).length
+        )
+        const open = filtered.filter(i => inquiryInTab(i.status, 'open')).length
+        const converted = filtered.filter(i => i.status === 'Converted').length
+        return {
+            months: months.map(m => m.format('MMM')),
+            perMonth,
+            open,
+            converted,
+            convertedShare: filtered.length ? Math.round((converted / filtered.length) * 100) : 0,
+            topDepartment: byDepartment.find(d => d.key !== 'No department')?.key || '—'
+        }
+    }, [filtered, byDepartment])
+
+    // Data colours, not the accent: under a red accent a count must not look like bad news (lib/chartColors).
+    const DATA = useDataColor()
+    const TYPE_COLORS = [DATA, '#0d9488', '#7c3aed', '#d97706', '#0891b2', '#94a3b8']
+
+    // No chart menu (the "hamburger"): these charts are read here, not exported.
+    const trendChart = useMemo<Highcharts.Options>(
+        () => ({
+            chart: { type: 'areaspline', height: 220, spacing: [8, 4, 4, 4], backgroundColor: 'transparent' },
+            title: { text: undefined },
+            credits: { enabled: false },
+            exporting: { enabled: false },
+            legend: { enabled: false },
+            xAxis: { categories: analytics.months, lineWidth: 0, tickLength: 0 },
+            yAxis: { title: { text: undefined }, allowDecimals: false, gridLineDashStyle: 'Dash' },
+            tooltip: { pointFormat: '<b>{point.y}</b> inquiries' },
+            plotOptions: { areaspline: { marker: { radius: 3, symbol: 'circle' }, lineWidth: 2.5 } },
+            series: [
+                {
+                    type: 'areaspline',
+                    name: 'Inquiries',
+                    data: analytics.perMonth,
+                    color: DATA,
+                    fillColor: {
+                        linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                        stops: [
+                            [0, Highcharts.color(DATA).setOpacity(0.3).get('rgba') as string],
+                            [1, Highcharts.color(DATA).setOpacity(0).get('rgba') as string]
+                        ]
+                    }
+                }
+            ]
+        }),
+        [analytics, DATA]
+    )
+
+    const typeChart = useMemo<Highcharts.Options>(
+        () => ({
+            chart: { type: 'pie', height: 200, spacing: [0, 0, 0, 0], backgroundColor: 'transparent' },
+            title: { text: undefined },
+            credits: { enabled: false },
+            exporting: { enabled: false },
+            tooltip: { pointFormat: '<b>{point.y}</b> ({point.percentage:.0f}%)' },
+            plotOptions: { pie: { innerSize: '72%', borderWidth: 3, borderColor: token.colorBgElevated, borderRadius: 6, dataLabels: { enabled: false } } },
+            series: [
+                {
+                    type: 'pie',
+                    name: 'Inquiries',
+                    data: byAudience.map((row, k) => ({ name: row.key, y: row.count, color: TYPE_COLORS[k % TYPE_COLORS.length] }))
+                }
+            ]
+        }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [byAudience, DATA, token.colorBgElevated]
+    )
+
+    // ---- Rendering ----
+
+    if (userLoading) return <Skeleton active style={{ padding: 24 }} />
+
+    if (!branchId) {
         return (
-            <div style={{ padding: 24, minHeight: '100vh' }}>
-                <MotionCard>
-                    <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                        <Title level={4} style={{ marginBottom: 0 }}>
-                            Loading user data...
-                        </Title>
-                    </div>
-                </MotionCard>
+            <div className='admin-overview rcp-dashboard'>
+                <Card className='admin-card' bordered={false}>
+                    <Empty description='You need to be assigned to a branch to see its inquiries.' />
+                </Card>
             </div>
         )
     }
 
-    if (user && !user.assignedBranch) {
+    const renderRow = (inquiry: Inquiry) => {
+        const name = `${inquiry.contactInfo?.firstName || ''} ${inquiry.contactInfo?.lastName || ''}`.trim() || 'Unnamed contact'
+        const received = toDate(inquiry.submittedAt)
+        const followUp = followUpState.get(inquiry.id)
+        const type = contactTypeOf(inquiry)
         return (
-            <div style={{ padding: 24, minHeight: '100vh' }}>
-                <MotionCard style={{ maxWidth: 640, margin: '0 auto' }}>
-                    <div style={{ padding: '28px 16px', textAlign: 'center' }}>
-                        <Title level={3}>Branch Assignment Required</Title>
-                        <Text type="secondary">
-                            You need to be assigned to a branch to access the inquiries system.
-                        </Text>
-                    </div>
-                </MotionCard>
-            </div>
+            <li key={inquiry.id} className='rcp-inq-row'>
+                <button type='button' className='rcp-inquiry-main' onClick={() => setViewId(inquiry.id)} aria-label={`Open the inquiry from ${name}`}>
+                    <Avatar size={38} className='rcp-inquiry-avatar'>
+                        {initials(inquiry)}
+                    </Avatar>
+                    <span className='rcp-inquiry-copy'>
+                        <span className='rcp-inquiry-top'>
+                            <strong>
+                                {name}
+                                {inquiry.isRepresentative && <span className='rcp-inq-rep'>Representative</span>}
+                            </strong>
+                            <time title={received ? dayjs(received).format('D MMM YYYY, HH:mm') : undefined}>
+                                {received ? (dayjs(received).isSame(dayjs(), 'year') ? dayjs(received).format('D MMM') : dayjs(received).format('D MMM YYYY')) : '—'}
+                            </time>
+                        </span>
+                        <span className='rcp-inquiry-detail'>
+                            {[departmentOf(inquiry), inquiry.inquiryDetails?.inquiryType, inquiry.contactInfo?.company].filter(Boolean).join(' · ') || 'Inquiry'}
+                        </span>
+                        {inquiry.inquiryDetails?.description && <span className='rcp-inq-desc'>{inquiry.inquiryDetails.description}</span>}
+                        <span className='rcp-inquiry-meta'>
+                            <span className='rcp-pill' style={{ ['--pill' as any]: STATUS_COLORS[inquiry.status as keyof typeof STATUS_COLORS] || '#8c8c8c' }}>
+                                {inquiry.status}
+                            </span>
+                            <span className='rcp-pill' style={{ ['--pill' as any]: PRIORITY_COLORS[inquiry.priority] || '#8c8c8c' }}>
+                                {inquiry.priority}
+                            </span>
+                            <span className='rcp-inquiry-channel'>
+                                {channelLabel(resolveInquiryChannel(inquiry.source))}
+                                {type !== 'unknown' ? ` · ${CONTACT_TYPE_LABEL[type]}` : ''}
+                                {isVisitPurpose((inquiry as any).visitPurpose) && (inquiry as any).visitPurpose !== 'inquiry'
+                                    ? ` · ${VISIT_PURPOSE_LABEL[(inquiry as any).visitPurpose as VisitPurpose]}`
+                                    : ''}
+                            </span>
+                            {followUp && (
+                                <span className={`rcp-inq-fu is-${followUp.tone}`}>
+                                    {followUp.tone === 'escalated' ? <ExportOutlined /> : <ClockCircleOutlined />} {followUp.label}
+                                </span>
+                            )}
+                        </span>
+                    </span>
+                </button>
+                <Dropdown
+                    trigger={['click']}
+                    menu={{
+                        items: [
+                            { key: 'view', label: 'Open', icon: <EyeOutlined /> },
+                            { key: 'edit', label: 'Edit', icon: <EditOutlined /> }
+                        ],
+                        onClick: ({ key }) => (key === 'edit' ? setEditId(inquiry.id) : setViewId(inquiry.id))
+                    }}
+                >
+                    <Button type='text' size='small' icon={<EllipsisOutlined />} aria-label={`More actions for ${name}`} />
+                </Dropdown>
+            </li>
         )
     }
+
+    const filtersOn = activeFilters > 0 || search.trim()
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                <Col xs={24} sm={12} xl={6}>
-                    <MetricTile
-                        {...metricProps('all')}
-                        icon={<MessageOutlined />}
-                        tone='accent'
-                        title="Total Inquiries"
-                        value={metrics.total}
-                        subtitle="Click to show all"
+        <div className='admin-overview rcp-dashboard' style={{ ['--rcp-data' as any]: DATA }}>
+            <Helmet>
+                <title>Inquiries | Smart Incubation</title>
+            </Helmet>
+
+            <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} lg={6}>
+                    <AdminKpiTile
+                        compact
+                        loading={loading}
+                        icon={<StarOutlined />}
+                        label='New'
+                        value={figures.newCount}
+                        visual={
+                            <span title={`${figures.newCount} of ${figures.open} open inquiries are still waiting for a first reply`}>
+                                <AdminShareRing value={figures.newCount} total={figures.open} color={DATA} />
+                            </span>
+                        }
                     />
                 </Col>
-
-                <Col xs={24} sm={12} xl={6}>
-                    <MetricTile
-                        {...metricProps('New')}
-                        icon={<ExclamationCircleOutlined />}
-                        tone='warning'
-                        title="New"
-                        value={metrics.newCount}
-                        subtitle="Awaiting first action"
+                <Col xs={24} sm={12} lg={6}>
+                    <AdminKpiTile
+                        compact
+                        loading={loading}
+                        icon={<InboxOutlined />}
+                        label='Open'
+                        value={figures.open}
+                        visual={
+                            <span title={`${figures.open} of ${figures.total} inquiries are open (${OPEN_STATUSES.join(', ')})`}>
+                                <AdminShareRing value={figures.open} total={figures.total} color={DATA} />
+                            </span>
+                        }
                     />
                 </Col>
-
-                <Col xs={24} sm={12} xl={6}>
-                    <MetricTile
-                        {...metricProps('group:progress')}
-                        icon={<ClockCircleOutlined />}
-                        tone='info'
-                        title="In Progress"
-                        value={metrics.inProgressCount}
-                        subtitle="Being handled or followed up"
+                <Col xs={24} sm={12} lg={6}>
+                    <AdminKpiTile
+                        compact
+                        loading={loading}
+                        icon={<BarChartOutlined />}
+                        label='This month'
+                        value={figures.month}
+                        trend={trendOf(figures.month, figures.lastMonth, 'the same days last month')}
+                        visual={<AdminMiniBars bars={figures.monthBars} />}
                     />
                 </Col>
-
-                <Col xs={24} sm={12} xl={6}>
-                    <MetricTile
-                        {...metricProps('group:resolved')}
-                        icon={<CheckCircleOutlined />}
-                        tone='success'
-                        title="Resolved / Closed"
-                        value={metrics.resolvedCount}
-                        subtitle="Completed outcomes"
+                <Col xs={24} sm={12} lg={6}>
+                    <AdminKpiTile
+                        compact
+                        loading={loading}
+                        icon={<RiseOutlined />}
+                        label='Converted'
+                        value={figures.converted}
+                        visual={
+                            <span title={`${figures.converted} of ${figures.total} inquiries converted`}>
+                                <AdminShareRing value={figures.converted} total={figures.total} color={DATA} />
+                            </span>
+                        }
                     />
                 </Col>
             </Row>
 
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                <Col xs={24}>
-                    <MotionCard
-                        filterBar={filterBar}
-                        filterBarProps={{
-                            background: '#f8fbff',
-                            borderColor: '#d9e8ff',
-                            borderRadius: 14,
-                            padding: 16,
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)'
-                        }}
-                    >
-                        <Table
-                            rowKey="id"
-                            columns={columns}
-                            dataSource={filteredInquiries}
-                            loading={loading}
-                            scroll={{ x: 1300 }}
-                            locale={{
-                                emptyText: <Empty description="No inquiries found" />
+            {/* One filter bar, as on Contacts: tabs, search, filters and the page's actions. */}
+            <DashboardFilterBar className='admin-toolbar rcp-fu-toolbar rcp-inq-filterbar' borderRadius={16} marginBottom={16}>
+                <Segmented
+                    className='admin-toolbar-tabs'
+                    value={tab}
+                    onChange={value => {
+                        setTab(value as InquiryTab)
+                        setTabChosen(true)
+                    }}
+                    options={TABS.map(key => ({
+                        value: key,
+                        label: (
+                            <span className='admin-toolbar-tab'>
+                                {TAB_LABEL[key]}
+                                <span className='rcp-fu-tab-count'>{tabCounts[key]}</span>
+                            </span>
+                        )
+                    }))}
+                />
+                <Input
+                    allowClear
+                    className='admin-toolbar-search'
+                    prefix={<SearchOutlined />}
+                    placeholder='Search inquiries'
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                />
+                <div className='admin-toolbar-actions'>
+                    <Popover trigger='click' placement='bottomRight' content={filterPanel} title='Filter inquiries'>
+                        <Badge count={activeFilters} size='small' offset={[-4, 4]}>
+                            <Button icon={<FilterOutlined />}>Filters</Button>
+                        </Badge>
+                    </Popover>
+                    <Button icon={<BarChartOutlined />} onClick={() => setAnalyticsOpen(true)}>
+                        Analytics
+                    </Button>
+                    <Button type='primary' icon={<PlusOutlined />} onClick={() => setNewOpen(true)}>
+                        New inquiry
+                    </Button>
+                </div>
+            </DashboardFilterBar>
+
+            <Card className='admin-card rcp-fu-card' bordered={false}>
+                <div className='admin-card-head'>
+                    <div>
+                        <h3>{TAB_LABEL[tab]} inquiries</h3>
+                        <span>
+                            {visible.length.toLocaleString()} {visible.length === 1 ? 'inquiry' : 'inquiries'}
+                            {filtersOn ? ' match your search and filters' : ', newest first'}
+                        </span>
+                    </div>
+                    {filtersOn && (
+                        <Button
+                            type='text'
+                            size='small'
+                            onClick={() => {
+                                clearFilters()
+                                setSearch('')
                             }}
-                            pagination={{
-                                current: page,
-                                onChange: setPage,
-                                total: filteredInquiries.length,
-                                pageSize: 10,
-                                position: ['bottomCenter'],
-                                showSizeChanger: false,
-                                showQuickJumper: false
-                            }}
-                        />
-                    </MotionCard>
-                </Col>
-            </Row>
-
-            <Modal
-                title="Filters"
-                open={filtersOpen}
-                onCancel={() => setFiltersOpen(false)}
-                width={440}
-                centered
-                destroyOnClose
-                styles={{ body: { padding: '20px 24px 4px' } }}
-                footer={
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <Button block size="large" onClick={resetFilters}>
-                            Reset
+                        >
+                            Clear all
                         </Button>
-                        <Button block size="large" type="primary" onClick={applyFilters}>
-                            Apply filters
-                        </Button>
-                    </div>
-                }
-            >
-                <Space direction="vertical" size={18} style={{ width: '100%' }}>
-                    <div>
-                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Status</Text>
-                        <Select
-                            size="large"
-                            value={draftStatus}
-                            onChange={setDraftStatus}
-                            style={{ width: '100%' }}
-                            options={[
-                                { value: 'all', label: 'All statuses' },
-                                { value: 'New', label: 'New' },
-                                { value: 'group:progress', label: 'In progress (incl. follow-up required)' },
-                                { value: 'In Progress', label: 'In Progress only' },
-                                { value: 'Follow-up Required', label: 'Follow-up Required' },
-                                { value: 'Contacted', label: 'Contacted' },
-                                { value: 'group:resolved', label: 'Resolved / closed (incl. converted)' },
-                                { value: 'Resolved', label: 'Resolved' },
-                                { value: 'Converted', label: 'Converted' },
-                                { value: 'Closed', label: 'Closed' }
-                            ]}
-                        />
-                    </div>
+                    )}
+                </div>
 
-                    <div>
-                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Contact type</Text>
-                        <Select
-                            size="large"
-                            value={draftAudience}
-                            onChange={setDraftAudience}
-                            style={{ width: '100%' }}
-                            options={[
-                                { value: 'all', label: 'All contacts' },
-                                { value: 'Incubatee', label: AUDIENCE_LABEL.Incubatee },
-                                { value: 'Non-Incubatee', label: AUDIENCE_LABEL['Non-Incubatee'] }
-                            ]}
-                        />
-                    </div>
+                {loading ? (
+                    <Skeleton active avatar paragraph={{ rows: 4 }} />
+                ) : visible.length ? (
+                    <>
+                        <ul className='rcp-inquiry-list'>{visible.slice(0, shown).map(renderRow)}</ul>
+                        {visible.length > shown && (
+                            <Button block type='text' onClick={() => setShown(n => n + PAGE)} style={{ marginTop: 8 }}>
+                                Show {Math.min(PAGE, visible.length - shown)} more of {(visible.length - shown).toLocaleString()}
+                            </Button>
+                        )}
+                    </>
+                ) : (
+                    <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={filtersOn ? 'No inquiries match your search and filters.' : `No ${TAB_LABEL[tab].toLowerCase()} inquiries.`}
+                    />
+                )}
+            </Card>
 
-                    <div>
-                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Date received</Text>
-                        <RangePicker
-                            size="large"
-                            value={draftRange}
-                            onChange={value => setDraftRange(value as RangeValue)}
-                            style={{ width: '100%' }}
-                            presets={[
-                                { label: 'This week', value: [dayjs().startOf('week'), dayjs().endOf('week')] },
-                                { label: 'This month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
-                                { label: 'Last 30 days', value: [dayjs().subtract(29, 'day'), dayjs()] }
-                            ]}
-                        />
-                    </div>
-                </Space>
-            </Modal>
-
+            {/* Analytics for what the search and filters show. */}
             <Modal
-                title="Inquiry analytics"
                 open={analyticsOpen}
                 onCancel={() => setAnalyticsOpen(false)}
                 footer={null}
-                width={1040}
+                width={960}
+                className='rcp-analytics-modal'
                 style={{ maxWidth: 'calc(100vw - 24px)' }}
                 centered
                 destroyOnClose
-                styles={{ body: { maxHeight: '75vh', overflowY: 'auto', padding: '20px 24px' } }}
+                title={
+                    <div className='rcp-an-title'>
+                        <span className='rcp-an-icon'>
+                            <BarChartOutlined />
+                        </span>
+                        <div>
+                            <h2>Inquiry analytics</h2>
+                            <span>
+                                {filtered.length.toLocaleString()} {filtered.length === 1 ? 'inquiry' : 'inquiries'}
+                                {filtersOn ? ' matching your search and filters' : ' at your branch'}
+                            </span>
+                        </div>
+                    </div>
+                }
+                styles={{ body: { maxHeight: '76vh', overflowY: 'auto', overflowX: 'hidden' } }}
             >
-                <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-                    Based on the {filteredInquiries.length} inquiries matching your current filters.
-                </Text>
-                <Row gutter={[16, 16]}>
-                    <Col xs={24} lg={14}>
-                        <MotionCard
-                            style={{ height: '100%' }}
-                            title="Inquiry Type Frequency"
-                            extra={
-                                <Tag icon={<BarChartOutlined />}>
-                                    {inquiryTypeFrequency.length} types
-                                </Tag>
-                            }
-                        >
-                            {inquiryTypeFrequency.length ? (
-                                <HighchartsReact highcharts={Highcharts} options={inquiryTypeChartOptions} />
-                            ) : (
-                                <Empty description="No inquiry type data available" />
-                            )}
-                        </MotionCard>
-                    </Col>
+                {filtered.length ? (
+                    <div className='rcp-an'>
+                        <dl className='rcp-an-stats'>
+                            <div>
+                                <dt>Inquiries</dt>
+                                <dd>{filtered.length.toLocaleString()}</dd>
+                            </div>
+                            <div>
+                                <dt>Still open</dt>
+                                <dd>{analytics.open.toLocaleString()}</dd>
+                            </div>
+                            <div>
+                                <dt>Converted</dt>
+                                <dd>
+                                    {analytics.converted.toLocaleString()} <small>{analytics.convertedShare}%</small>
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Busiest department</dt>
+                                <dd className='is-text' title={analytics.topDepartment}>
+                                    {analytics.topDepartment}
+                                </dd>
+                            </div>
+                        </dl>
 
-                    <Col xs={24} lg={10}>
-                        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                        <MotionCard
-                            title="Sources"
-                            extra={<Tag>{sourceBreakdown.length} channels</Tag>}
-                        >
-                            {sourceBreakdown.length ? (
-                                <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                                    {sourceBreakdown.map(row => (
-                                        <div key={row.channel}>
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'baseline',
-                                                    gap: 8,
-                                                    marginBottom: 4
-                                                }}
-                                            >
-                                                <Text strong>{channelLabel(row.channel)}</Text>
-                                                <Text type="secondary">
-                                                    {row.count} · {row.percent}%
-                                                </Text>
-                                            </div>
-                                            <Progress
-                                                percent={row.percent}
-                                                showInfo={false}
-                                                size={{ height: 10 }}
-                                                strokeLinecap="round"
-                                            />
-                                        </div>
-                                    ))}
-                                </Space>
-                            ) : (
-                                <Empty description="No source data available" />
-                            )}
-                        </MotionCard>
-                        <MotionCard title="Contact type">
-                            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                                {audienceBreakdown.map(row => (
-                                    <div key={row.audience}>
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'baseline',
-                                                gap: 8,
-                                                marginBottom: 4
-                                            }}
-                                        >
-                                            <Text strong>{AUDIENCE_LABEL[row.audience]}</Text>
-                                            <Text type="secondary">
-                                                {row.count} · {row.percent}%
-                                            </Text>
-                                        </div>
-                                        <Progress
-                                            percent={row.percent}
-                                            showInfo={false}
-                                            size={{ height: 10 }}
-                                            strokeLinecap="round"
-                                            strokeColor={row.audience === 'Incubatee' ? '#52c41a' : undefined}
-                                        />
+                        <div className='rcp-an-grid'>
+                            <section className='rcp-an-card is-wide'>
+                                <h3>Coming in</h3>
+                                <span>Inquiries per month, last six months</span>
+                                <HighchartsReact highcharts={Highcharts} options={trendChart} />
+                            </section>
+
+                            <section className='rcp-an-card'>
+                                <h3>Who they are from</h3>
+                                <span>By contact type</span>
+                                <div className='admin-donut'>
+                                    <HighchartsReact highcharts={Highcharts} options={typeChart} />
+                                    <div className='admin-donut-center'>
+                                        <strong>{filtered.length.toLocaleString()}</strong>
+                                        <span>Inquiries</span>
                                     </div>
-                                ))}
-                            </Space>
-                        </MotionCard>
-                        </Space>
-                    </Col>
-                </Row>
+                                </div>
+                                <ul className='admin-legend rcp-an-legend'>
+                                    {byAudience.map((row, k) => (
+                                        <li key={row.key}>
+                                            <i style={{ background: TYPE_COLORS[k % TYPE_COLORS.length] }} />
+                                            <span>{row.key}</span>
+                                            <b>{row.count}</b>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+
+                            {[
+                                { title: 'By department', hint: 'Which department each inquiry is for', rows: byDepartment, wide: true },
+                                { title: 'How they reached us', hint: 'By source', rows: bySource, wide: false }
+                            ].map(block => (
+                                <section key={block.title} className={block.wide ? 'rcp-an-card is-wide' : 'rcp-an-card'}>
+                                    <h3>{block.title}</h3>
+                                    <span>{block.hint}</span>
+                                    <ol className='usage-rank-list rcp-an-ranks'>
+                                        {block.rows.map((row, k) => (
+                                            <li key={row.key}>
+                                                <span className='usage-rank-index'>{k + 1}</span>
+                                                <div className='usage-rank-copy'>
+                                                    <div className='usage-rank-top'>
+                                                        <strong title={row.key}>{row.key}</strong>
+                                                        <b>
+                                                            {row.count} <small>· {row.percent}%</small>
+                                                        </b>
+                                                    </div>
+                                                    <div className='usage-rank-bar'>
+                                                        <span style={{ width: `${row.percent}%` }} />
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                </section>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No inquiries match your search and filters.' />
+                )}
             </Modal>
 
             <Modal
-                title="New inquiry"
-                open={newInquiryOpen}
-                onCancel={() => setNewInquiryOpen(false)}
-                footer={null}
+                title='New inquiry'
+                open={newOpen}
+                onCancel={() => setNewOpen(false)}
+                // The form puts its Clear / Previous / Next / Save buttons here.
+                footer={<div ref={setNewFooter} />}
                 width={860}
                 centered
                 destroyOnClose
-                styles={{ body: { maxHeight: '75vh', overflowY: 'auto', padding: '24px 36px 0' } }}
+                className='inq-form-modal'
+                styles={{ body: { maxHeight: '70vh', overflowY: 'auto', padding: '8px 4px 8px 0' } }}
             >
-                {activeProgramId && (
-                    <InquiryForm
-                        embedded
-                        stepped
-                        forcedProgramId={activeProgramId}
-                        onSuccess={() => {
-                            setNewInquiryOpen(false)
-                            loadInquiries()
-                        }}
-                    />
-                )}
+                {/* With "All programmes", a non-incubatee inquiry needs no programme; the form
+                    asks for one only when linking an SME. */}
+                <InquiryForm
+                    embedded
+                    stepped
+                    forcedProgramId={activeProgramId}
+                    footerContainer={newFooter}
+                    onSuccess={() => {
+                        setNewOpen(false)
+                        load()
+                    }}
+                />
             </Modal>
 
-            <Modal
-                open={Boolean(viewInquiryId)}
-                onCancel={() => setViewInquiryId(null)}
-                footer={null}
-                width={1240}
-                style={{ maxWidth: 'calc(100vw - 24px)' }}
-                centered
+            <Drawer
+                open={Boolean(viewId)}
+                onClose={() => setViewId(null)}
+                width='min(720px, 100vw)'
+                title={null}
                 destroyOnClose
-                styles={{
-                    body: {
-                        maxHeight: '78vh',
-                        overflowY: 'auto',
-                        overflowX: 'hidden'
-                    }
-                }}
+                styles={{ body: { padding: 24 } }}
             >
-                {viewInquiryId && (
+                {viewId && (
                     <InquiryDetail
-                        inquiryId={viewInquiryId}
+                        inquiryId={viewId}
                         embedded
                         onEdit={() => {
-                            const inquiryId = viewInquiryId
-                            setViewInquiryId(null)
-                            openEditInquiry(inquiryId)
+                            const id = viewId
+                            setViewId(null)
+                            setEditId(id)
                         }}
                     />
                 )}
-            </Modal>
+            </Drawer>
 
             <InquiryEditModal
-                inquiryId={editInquiryId}
-                onClose={() => setEditInquiryId(null)}
+                inquiryId={editId}
+                onClose={() => setEditId(null)}
                 onSaved={() => {
-                    setEditInquiryId(null)
-                    loadInquiries()
+                    setEditId(null)
+                    load()
                 }}
             />
         </div>

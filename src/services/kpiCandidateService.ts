@@ -3,7 +3,7 @@ import type { KpiCandidateChatMessage, KpiCandidateDraft } from '@/types/types'
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 const readFileAsBase64 = (file: File): Promise<string> =>

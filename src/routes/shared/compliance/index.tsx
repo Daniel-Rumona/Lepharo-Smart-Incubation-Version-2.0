@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import {
     Card,
-    Table,
     Button,
     Space,
     Tag,
@@ -15,19 +14,21 @@ import {
     Typography,
     Row,
     Col,
-    Progress,
     Tooltip,
     Empty,
     InputNumber,
-    Grid,
     Alert,
     Result,
     theme,
-    Radio
+    Radio,
+    Drawer,
+    Dropdown
 } from 'antd'
 import {
-    SearchOutlined,
     UploadOutlined,
+    TeamOutlined,
+    FileSearchOutlined,
+    FieldTimeOutlined,
     EyeOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
@@ -43,11 +44,11 @@ import {
     RobotOutlined,
     DownloadOutlined,
     EditOutlined,
-    DeleteOutlined
+    DeleteOutlined,
+    MoreOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { UploadProps } from 'antd'
-import type { ColumnType } from 'antd/es/table'
 import { Helmet } from 'react-helmet'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged, getAuth } from 'firebase/auth'
@@ -72,9 +73,11 @@ import { httpsCallable } from 'firebase/functions'
 import EmailTemplateModal from '@/components/modals/EmailTemplate'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
-import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
-import { MetricTile, IconChip } from '@/components/dashboards/metrics/MetricTile'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile, IconChip, type MetricTone } from '@/components/dashboards/metrics/MetricTile'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import TrainingComplianceView, { useTrainingIds } from '@/components/trainings/TrainingComplianceView'
 import {
     guideTarget,
     usePageGuides,
@@ -89,20 +92,36 @@ import { exportGapDocx } from '@/utils/gapDocx'
 import {
     complianceStatusCountsAsCovered,
     complianceStatusLabel,
+    complianceTitleKey,
+    loadDefaultProgramRequirements,
     resolveComplianceDocumentStatus,
     resolveComplianceRequirements
 } from '@/services/complianceResolver'
 import {
     verifyComplianceDocument,
     verifyComplianceDocumentsBatch,
-    type BatchVerifyTarget
+    type BatchVerifyTarget,
+    type ComplianceAiReview
 } from '@/services/complianceVerificationService'
 import { functionsBaseUrl } from '@/firebaseConfig'
 import { SignatureStage, useSignaturePlayback } from '@/components/shared/SignatureAnimation'
+import { ComplianceFilters } from './ComplianceFilters'
+import { ComplianceList } from './ComplianceList'
+import { ComplianceDetail } from './ComplianceDetail'
+import {
+    DEFAULT_COMPLIANCE_FILTERS,
+    bucketOfState,
+    currentAiReview,
+    complianceSorters,
+    distinctValues,
+    matchesSegment,
+    type ComplianceFilterState,
+    type ComplianceView,
+    type RequirementEntry
+} from './complianceWorkspace'
 
 const { Text } = Typography
 const { TextArea } = Input
-const { useBreakpoint } = Grid
 
 type ProgramRequirement = {
     id?: string
@@ -126,6 +145,8 @@ type RequiredDoc = {
     expiryMonths?: number | null
     presetId?: string
     agreementId?: string
+    /** Needed when the SME applies, before they can be considered for onboarding. */
+    requiredAtApplication?: boolean
 }
 
 type ComplianceStatus = 'valid' | 'expiring-soon' | 'expired' | 'missing' | 'pending' | 'invalid' | 'queried' | string
@@ -177,7 +198,13 @@ type ComplianceDocument = {
     participantSignedAt?: any
     participantSignatureURL?: string
     gapAnalysisId?: string
+    // Set when the document was matched to its requirement by title: the key
+    // it is stored under (see docsForPart).
+    storedKey?: string
+    aiReview?: ComplianceAiReview
 }
+
+type ComplianceEntry = RequirementEntry<RequiredDoc, ComplianceDocument>
 
 type BranchDoc = { id: string; name?: string; branchName?: string }
 
@@ -194,6 +221,15 @@ type ApplicationDoc = {
     manuallyCreated?: boolean
     manualApplication?: boolean
     signedAgreements?: Record<string, any>
+    // Applicant details used to fill agreement downloads.
+    registrationNumber?: string
+    beneficiaryName?: string
+    participantName?: string
+    applicantName?: string
+    idNumber?: string
+    businessAddress?: string
+    phone?: string
+    directorPosition?: string
 }
 
 const normalize = (s?: string) => (s || '').toString().trim().toLowerCase()
@@ -256,6 +292,10 @@ const requirementStatusLabel = (
     }
     return complianceStatusLabel(status)
 }
+
+// Items a reminder can ask the SME to act on. Pending means waiting on staff
+// (verification, or the ROM signature on an agreement), so it is left out.
+const smeCanAct = (status: string) => !complianceStatusCountsAsCovered(status) && status !== 'pending'
 
 const statusColor = (s: string) =>
     s === 'valid'
@@ -369,6 +409,7 @@ const mapProgramReqToRequiredDoc = (pr: ProgramRequirement | any): RequiredDoc =
             : pr.title || pr.key || pr.preset || 'Untitled',
         type: isAgreement ? 'agreement' : 'upload',
         isOnboarding: isAgreement || pr.isOnboarding === true,
+        requiredAtApplication: pr.requiredAtApplication === true,
         hasExpiry,
         expiryMonths: hasExpiry ? pr.expiryMonths ?? pr.expiryRule?.months ?? null : null
     }
@@ -399,6 +440,7 @@ async function fetchProgramRequiredFromProgramDoc(programId: string): Promise<Re
                 title: t.title || d.id,
                 type: isAgreement ? 'agreement' : 'upload',
                 isOnboarding: isAgreement || t.isOnboarding === true,
+                requiredAtApplication: t.mandatory === true,
                 hasExpiry: !!t.expiryRule,
                 expiryMonths: t.expiryRule?.months ?? null,
                 presetId: isAgreement ? undefined : d.id,
@@ -407,7 +449,9 @@ async function fetchProgramRequiredFromProgramDoc(programId: string): Promise<Re
         })
     }
 
-    return []
+    // No list of its own: the shared default, as the resolver does.
+    const defaults: ProgramRequirement[] = await loadDefaultProgramRequirements()
+    return defaults.map(mapProgramReqToRequiredDoc)
 }
 
 // FIX: unified ROM signed detection (matches participants logic better)
@@ -434,13 +478,17 @@ const toISO = (value: any) => asDayjs(value)?.toISOString() || ''
 const ComplianceTrackingPage: React.FC = () => {
     const navigate = useNavigate()
     const [currentUser, setCurrentUser] = useState<any>(null)
+    // The user and department docs have been read, so department scoping is settled.
+    const [identityLoaded, setIdentityLoaded] = useState(false)
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
+    // A training picked in the programme selector shows its SMEs' uploaded
+    // documents instead of programme compliance.
+    const trainingIds = useTrainingIds()
+    const activeTrainingId = activeProgramId && trainingIds.has(activeProgramId) ? activeProgramId : null
     const [programName, setProgramName] = useState<string>('—')
     const [departmentInfo, setDepartmentInfo] = useState<any>(null)
-    const { hasRole: hasDepartmentRole } = useDepartmentRoles()
-    const screens = useBreakpoint()
+    const { hasRole: hasDepartmentRole, loading: departmentRolesLoading } = useDepartmentRoles()
     const { token } = theme.useToken()
-    const metricPalette = useMetricPalette()
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -458,7 +506,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             element: guideTarget('compliance-metrics'),
                             popover: {
                                 title: 'Compliance overview',
-                                description: 'These metrics reflect only the documents that are relevant to your department. Departments with no applicable requirements correctly show zero.',
+                                description: 'SMEs grouped by who acts next: the SME, your staff, or nobody yet because a document expires soon. Counts reflect only the documents relevant to your department. Click a tile to filter the list.',
                                 side: 'bottom',
                                 align: 'start'
                             }
@@ -467,7 +515,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             element: guideTarget('compliance-filters'),
                             popover: {
                                 title: 'Search and actions',
-                                description: 'Search participants and use the available reminder, AI verification and document-setup actions.',
+                                description: 'Search SMEs, switch between who acts next, filter by branch, group or outstanding document, and use the reminder, AI verification and document-setup actions.',
                                 side: 'bottom',
                                 align: 'start'
                             }
@@ -475,8 +523,8 @@ const ComplianceTrackingPage: React.FC = () => {
                         {
                             element: guideTarget('compliance-table'),
                             popover: {
-                                title: 'Participant compliance',
-                                description: 'Review document coverage and status for each participant, then use Manage to inspect or action individual requirements.',
+                                title: 'SME compliance',
+                                description: 'Each SME shows its most urgent item and how many documents are in order. Select one to review its documents alongside the list.',
                                 side: 'top',
                                 align: 'start'
                             }
@@ -494,21 +542,11 @@ const ComplianceTrackingPage: React.FC = () => {
                             element: '[data-guide="manage-compliance-action"]',
                             advanceOnClick: true,
                             popover: {
-                                title: 'Manage participant',
-                                description: 'Open Manage for the participant whose documents you want to review.',
-                                side: 'left',
+                                title: 'Select an SME',
+                                description: 'Select the SME whose documents you want to review.',
+                                side: 'right',
                                 align: 'center',
                                 showButtons: ['close']
-                            }
-                        },
-                        {
-                            element: '.guide-manage-compliance-modal',
-                            waitForElement: 5000,
-                            popover: {
-                                title: 'Document workspace',
-                                description: 'Only requirements visible to your department are shown here. Onboarding-only items and agreements are restricted to onboarding or monitoring departments.',
-                                side: 'left',
-                                align: 'start'
                             }
                         },
                         {
@@ -516,7 +554,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             waitForElement: 5000,
                             popover: {
                                 title: 'Review document status',
-                                description: 'View existing files, upload missing or invalid documents, verify them, run AI checks, or raise and resolve document issues.',
+                                description: 'Documents are grouped by who acts next. Only requirements visible to your department are shown; agreements and onboarding-only items are limited to onboarding or monitoring departments. View files, upload missing or invalid documents, verify them, run AI checks, or raise and resolve document issues.',
                                 side: 'top',
                                 align: 'start'
                             }
@@ -585,7 +623,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             advanceOnClick: true,
                             popover: {
                                 title: 'Choose the SME',
-                                description: 'Open Upload / Replace for the SME whose document you need to manage.',
+                                description: 'With the SME selected, use Upload in their panel to add or replace one of their documents.',
                                 side: 'left',
                                 align: 'center',
                                 showButtons: ['close']
@@ -613,17 +651,8 @@ const ComplianceTrackingPage: React.FC = () => {
                         {
                             element: guideTarget('email-compliance-reminders'),
                             popover: {
-                                title: 'Use an email template',
-                                description: 'Build a recipient list from SMEs with outstanding requirements, then review and send a compliance reminder template.',
-                                side: 'bottom',
-                                align: 'end'
-                            }
-                        },
-                        {
-                            element: guideTarget('quick-compliance-reminders'),
-                            popover: {
-                                title: 'Send quick reminders',
-                                description: 'Send each affected SME a direct reminder listing the exact documents that need attention.',
+                                title: 'Remind SMEs',
+                                description: 'Quick reminders email each SME the exact documents they need to upload, sign or correct, after a confirmation. Or pick an email template for the same recipients. To remind one SME, use Remind in their panel.',
                                 side: 'bottom',
                                 align: 'end'
                             }
@@ -632,7 +661,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             element: guideTarget('bulk-ai-compliance'),
                             popover: {
                                 title: 'Verify visible documents with AI',
-                                description: 'Runs AI checks on uploaded documents for the SMEs in the current programme scope. A confirmation is shown before it starts.',
+                                description: 'Runs AI checks on uploaded documents awaiting verification for the SMEs shown. A confirmation is shown before it starts.',
                                 side: 'bottom',
                                 align: 'end'
                             }
@@ -720,18 +749,20 @@ const ComplianceTrackingPage: React.FC = () => {
 
     usePageGuides(guideRegistration)
 
-    const canSeeOnboardingDocuments = useMemo(
-        () => departmentInfo?.isOnboarding === true || departmentInfo?.isMonitoring === true,
-        [departmentInfo?.isOnboarding, departmentInfo?.isMonitoring]
-    )
+    // M&E oversees every department, so it tracks the programme's full
+    // document list rather than a department selection of it.
+    const tracksWholeProgramme = hasDepartmentRole(currentUser?.departmentId, 'monitoring')
 
+    // Agreements (pre-incubation, MOA, GAP) belong to ROM, and M&E sees
+    // everything. Both come from the department roles, never department flags.
+    const canSeeOnboardingDocuments =
+        tracksWholeProgramme || hasDepartmentRole(currentUser?.departmentId, 'rom')
+
+    // Every department may track any programme upload. The programme rows'
+    // isOnboarding flag is not used: /programs sets it on every row.
     const isRequirementVisibleToDepartment = useCallback(
-        (requirement: RequiredDoc) => {
-            const onboardingOnly =
-                requirement.isOnboarding === true ||
-                (requirement.type ?? 'upload') === 'agreement'
-            return !onboardingOnly || canSeeOnboardingDocuments
-        },
+        (requirement: RequiredDoc) =>
+            (requirement.type ?? 'upload') !== 'agreement' || canSeeOnboardingDocuments,
         [canSeeOnboardingDocuments]
     )
 
@@ -745,7 +776,6 @@ const ComplianceTrackingPage: React.FC = () => {
 
     const [participants, setParticipants] = useState<any[]>([])
     const [apps, setApps] = useState<ApplicationDoc[]>([])
-    const [searchText, setSearchText] = useState('')
 
     const [romSignOpen, setRomSignOpen] = useState(false)
     const [romSignForm] = Form.useForm()
@@ -762,7 +792,6 @@ const ComplianceTrackingPage: React.FC = () => {
     const [editingRequirementIndex, setEditingRequirementIndex] = useState<number | null>(null)
     const [requirementsLoading, setRequirementsLoading] = useState(false)
 
-    const [manageOpen, setManageOpen] = useState(false)
     const [manageTarget, setManageTarget] = useState<any | null>(null)
     const [uploadOpen, setUploadOpen] = useState(false)
     const [lockedUploadRequirementId, setLockedUploadRequirementId] = useState<string | null>(null)
@@ -838,20 +867,20 @@ const ComplianceTrackingPage: React.FC = () => {
     useEffect(() => {
         const unsub = onAuthStateChanged(getAuth(), async u => {
             if (!u) return
-            const usersSnap = await getDocs(collection(db, 'users'))
-            const userDoc = usersSnap.docs.find(d => d.id === u.uid)
-            const ud = userDoc?.data()
-            setCurrentUser(ud || null)
+            const userSnap = await getDoc(doc(db, 'users', u.uid))
+            const ud = userSnap.exists() ? userSnap.data() : undefined
             if (ud?.departmentId) {
-                const deptsSnap = await getDocs(collection(db, 'departments'))
-                const deptDoc = deptsSnap.docs.find(d => d.id === ud.departmentId)
-                setDepartmentInfo(deptDoc?.data() || null)
+                const deptSnap = await getDoc(doc(db, 'departments', ud.departmentId))
+                setDepartmentInfo(deptSnap.exists() ? deptSnap.data() : null)
             }
+            setCurrentUser(ud || null)
+            setIdentityLoaded(true)
         })
         return () => unsub()
     }, [])
 
     useEffect(() => {
+        let cancelled = false
         ; (async () => {
             if (!activeProgramId) {
                 setProgramTemplates([])
@@ -860,12 +889,12 @@ const ComplianceTrackingPage: React.FC = () => {
                 return
             }
             const raw = await fetchProgramRequiredFromProgramDoc(activeProgramId)
-            const templates = sanitizeTemplates(raw)
-            setProgramTemplates(templates)
+            if (cancelled) return
+            setProgramTemplates(sanitizeTemplates(raw))
 
             try {
                 const snap = await getDoc(doc(db, 'programs', activeProgramId))
-                if (snap.exists()) {
+                if (!cancelled && snap.exists()) {
                     const data = snap.data() as any
                     setProgramName(data.name || '—')
                 }
@@ -873,10 +902,14 @@ const ComplianceTrackingPage: React.FC = () => {
                 console.error('Failed to load program name', e)
             }
         })()
+        return () => {
+            cancelled = true
+        }
     }, [activeProgramId, isAllPrograms])
 
     const fetchDeptRequirements = useCallback(async () => {
-        if (!activeProgramId || !currentUser?.departmentId) {
+        // null = no department selection, so the programme list applies.
+        if (!activeProgramId || !currentUser?.departmentId || tracksWholeProgramme) {
             setDeptRequired(null)
             return
         }
@@ -914,7 +947,7 @@ const ComplianceTrackingPage: React.FC = () => {
         } finally {
             setRequirementsLoading(false)
         }
-    }, [activeProgramId, currentUser?.departmentId, isRequirementVisibleToDepartment])
+    }, [activeProgramId, currentUser?.departmentId, isRequirementVisibleToDepartment, tracksWholeProgramme])
 
     useEffect(() => {
         if (activeProgramId && currentUser?.departmentId) fetchDeptRequirements()
@@ -959,7 +992,7 @@ const ComplianceTrackingPage: React.FC = () => {
     const requirementsForPart = useCallback((participantId: string): RequiredDoc[] => {
         const application = appByParticipant[participantId]
         const scopedRequirements = isAllPrograms
-            ? requirementsByProgram[application?.programId || ''] || []
+            ? (requirementsByProgram[application?.programId || ''] || []).filter(isRequirementVisibleToDepartment)
             : effectiveRequired
         const isManualApplication = application?.manuallyCreated === true || application?.manualApplication === true
         if (!isManualApplication) return scopedRequirements
@@ -976,51 +1009,88 @@ const ComplianceTrackingPage: React.FC = () => {
                 isOnboarding: false
             }
         })
-    }, [appByParticipant, effectiveRequired, isAllPrograms, requirementsByProgram])
+    }, [appByParticipant, effectiveRequired, isAllPrograms, isRequirementVisibleToDepartment, requirementsByProgram])
 
     const docsForPart = useCallback(
         (participantId: string) => {
             const a = appByParticipant[participantId]
             if (!a) return []
-            const docs = ((a.complianceDocuments || []) as ComplianceDocument[]).filter(document => {
-                const onboardingOnly =
-                    document.isOnboarding === true ||
-                    (document.kind ?? 'upload') === 'agreement'
-                return !onboardingOnly || canSeeOnboardingDocuments
-            })
+            const docs = ((a.complianceDocuments || []) as ComplianceDocument[]).filter(document =>
+                (document.kind ?? 'upload') !== 'agreement' || canSeeOnboardingDocuments
+            )
             const inProgram = activeProgramId
                 ? docs.filter(d => {
                     if ((d.kind ?? 'upload') === 'agreement') return true
                     return d.programId === activeProgramId
                 })
                 : docs
+
+            // An upload whose key matches no requirement but whose title does
+            // (older uploads saved with only a title) is filed under that
+            // requirement, as the SME dashboard and the expiry reminders do.
+            // storedKey keeps the key it is stored under, for writes.
+            const requirements = requirementsForPart(participantId)
+            const requirementKeys = new Set(requirements.map(keyForReq))
+            const requirementByTitle = new Map(
+                requirements
+                    .filter(requirement => (requirement.type ?? 'upload') === 'upload')
+                    .map(requirement => [complianceTitleKey(requirement.title), requirement])
+            )
+            const keyed: ComplianceDocument[] = []
+            const titled: ComplianceDocument[] = []
+            inProgram.forEach(document => {
+                const storedKey = keyForDoc(document)
+                const requirement = (document.kind ?? 'upload') === 'upload' && !requirementKeys.has(storedKey)
+                    ? requirementByTitle.get(complianceTitleKey(document.documentName))
+                    : undefined
+                if (!requirement) {
+                    keyed.push(document)
+                    return
+                }
+                titled.push({ ...document, slug: requirement.presetId || requirement.id, storedKey })
+            })
+
+            // A key match wins over a title match for the same requirement.
             const canonical = new Map<string, ComplianceDocument>()
-            inProgram.forEach(document => canonical.set(keyForDoc(document), document))
+            ;[...titled, ...keyed].forEach(document => canonical.set(keyForDoc(document), document))
             return Array.from(canonical.values())
         },
-        [appByParticipant, activeProgramId, canSeeOnboardingDocuments]
+        [appByParticipant, activeProgramId, canSeeOnboardingDocuments, requirementsForPart]
     )
 
-    const coverageForPart = useCallback(
-        (participantId: string) => {
-            const participantRequirements = requirementsForPart(participantId)
-            const reqKeys = new Set(participantRequirements.map(keyForReq))
+    // Each requirement this SME is held to in this scope, with its document and state.
+    const entriesForPart = useCallback(
+        (participantId: string): ComplianceEntry[] => {
             const docs = docsForPart(participantId)
-            let have = 0
-            const states: string[] = []
-            reqKeys.forEach(k => {
-                const req = participantRequirements.find(item => keyForReq(item) === k)
-                const item = docs.find(document => keyForDoc(document) === k)
-                const state = item ? deriveStatus(item, req) : 'missing'
-                states.push(state)
-                if (complianceStatusCountsAsCovered(state)) have += 1
+            const seen = new Set<string>()
+            return requirementsForPart(participantId).flatMap(requirement => {
+                const key = keyForReq(requirement)
+                if (seen.has(key)) return []
+                seen.add(key)
+                const document = docs.find(item => keyForDoc(item) === key)
+                const computedExpiry = document ? computeExpiryDate(document, requirement) : null
+                const state = document ? deriveStatus(document, requirement) : 'missing'
+                const expiresAt = computedExpiry?.toDate() || asDayjs(document?.expiryDate)?.toDate() || null
+                return [{
+                    key,
+                    title: requirement.title,
+                    kind: (requirement.type ?? 'upload') === 'agreement' ? 'agreement' as const : 'upload' as const,
+                    state,
+                    bucket: bucketOfState(state),
+                    label: requirementStatusLabel(requirement, state, document),
+                    color: statusColor(state),
+                    expiryText: !requirement.hasExpiry
+                        ? '—'
+                        : computedExpiry
+                            ? computedExpiry.format('DD MMM YYYY')
+                            : expiryDisplay(document, requirement, null),
+                    expiresAt: requirement.hasExpiry ? expiresAt : null,
+                    requirement,
+                    document
+                }]
             })
-            const priority = ['expired', 'queried', 'invalid', 'missing', 'pending']
-            const blocking = priority.find(state => states.includes(state))
-            const status = blocking ||
-                (states.includes('expiring-soon') ? 'expiring-soon' : states.length ? 'valid' : 'not-configured')
-            return { have, need: reqKeys.size, status }
         },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         [docsForPart, requirementsForPart]
     )
 
@@ -1041,7 +1111,7 @@ const ComplianceTrackingPage: React.FC = () => {
                 const k = keyForReq(r)
                 const item = docs.find(document => keyForDoc(document) === k)
                 const status = item ? deriveStatus(item, r) : 'missing'
-                if (!complianceStatusCountsAsCovered(status)) {
+                if (smeCanAct(status)) {
                     issues.push(`${r.title} (${complianceStatusLabel(status)})`)
                 }
             })
@@ -1058,11 +1128,18 @@ const ComplianceTrackingPage: React.FC = () => {
     }, [participants, appByParticipant, docsForPart, requirementsForPart])
 
     useEffect(() => {
+        // A newer run (programme switch) supersedes this one.
+        let cancelled = false
         const run = async () => {
-            if (!activeProgramId && !isAllPrograms) return
+            // Wait for the department scope, so the load runs once.
+            if (!identityLoaded || departmentRolesLoading) return
+            if (!activeProgramId && !isAllPrograms) {
+                setLoading(false)
+                return
+            }
             setLoading(true)
             try {
-                const [appsSnap, partSnap, branchesSnap, gapAnalysisSnap] = await Promise.all([
+                const [appsSnap, partSnap, branchesSnap, gapAnalysisSnap, loadedProgramTemplates] = await Promise.all([
                     getDocs(
                         query(
                             collection(db, 'applications'),
@@ -1075,7 +1152,12 @@ const ComplianceTrackingPage: React.FC = () => {
                     getDocs(collection(db, 'gapAnalysis')).catch(error => {
                         console.warn('GAP lifecycle records could not be loaded.', error)
                         return null
-                    })
+                    }),
+                    // Read here rather than from state, so the load doesn't wait
+                    // for (and re-run after) the requirements effect.
+                    isAllPrograms || !activeProgramId
+                        ? Promise.resolve([] as RequiredDoc[])
+                        : fetchProgramRequiredFromProgramDoc(activeProgramId).then(sanitizeTemplates)
                 ])
 
                 const partMap: Record<string, any> = Object.fromEntries(
@@ -1108,24 +1190,22 @@ const ComplianceTrackingPage: React.FC = () => {
                         const [resolved, programSnapshot] = await Promise.all([
                             resolveComplianceRequirements(
                                 programId,
-                                currentUser?.departmentId
+                                currentUser?.departmentId && !tracksWholeProgramme
                                     ? { departmentId: currentUser.departmentId }
                                     : {}
                             ),
                             getDoc(doc(db, 'programs', programId))
                         ])
 
+                        // Department visibility is applied in requirementsForPart.
                         resolvedRequirementsByProgram[programId] = sanitizeTemplates(
                             resolved.requirements as RequiredDoc[]
-                        ).filter(isRequirementVisibleToDepartment)
+                        )
                         if (programSnapshot.exists()) {
                             const program = programSnapshot.data() as any
                             programNamesById[programId] = program.name || program.title || programId
                         }
                     }))
-                    setRequirementsByProgram(resolvedRequirementsByProgram)
-                } else {
-                    setRequirementsByProgram({})
                 }
 
                 const rowsData: ApplicationDoc[] = await Promise.all(
@@ -1168,7 +1248,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             ''
                         const templatesForApplication = isAllPrograms
                             ? resolvedRequirementsByProgram[ad.programId] || []
-                            : programTemplates
+                            : loadedProgramTemplates
 
                         const uploadsSnap = await getDocs(collection(db, 'applications', appId, 'complianceDocuments'))
                         const uploads: ComplianceDocument[] = uploadsSnap.docs.map(s => {
@@ -1202,7 +1282,8 @@ const ComplianceTrackingPage: React.FC = () => {
                                 departmentId: v.departmentId || ad.departmentId || '',
                                 departmentName: v.departmentName || '',
                                 presetId: v.presetId || v.preset || v.slug || undefined,
-                                createdBy: v.createdBy || ''
+                                createdBy: v.createdBy || '',
+                                aiReview: v.aiReview && typeof v.aiReview === 'object' ? v.aiReview : undefined
                             }
                         })
 
@@ -1451,106 +1532,154 @@ const ComplianceTrackingPage: React.FC = () => {
                             manuallyCreated,
                             manualApplication: manuallyCreated,
                             signedAgreements: signedMap,
-                            complianceDocuments: combinedDocs
+                            complianceDocuments: combinedDocs,
+                            registrationNumber: ad.registrationNumber,
+                            beneficiaryName: ad.beneficiaryName,
+                            participantName: ad.participantName,
+                            applicantName: ad.applicantName,
+                            idNumber: ad.idNumber,
+                            businessAddress: ad.businessAddress,
+                            phone: ad.phone,
+                            directorPosition: ad.directorPosition
                         }
                     })
                 )
 
+                if (cancelled) return
+                setRequirementsByProgram(resolvedRequirementsByProgram)
                 setParticipants(Object.values(partMap) as any[])
                 setApps(rowsData)
             } finally {
-                setLoading(false)
+                if (!cancelled) setLoading(false)
             }
         }
         run()
-    }, [activeProgramId, isAllPrograms, programTemplates, currentUser?.departmentId, isRequirementVisibleToDepartment])
-
-    const metrics = useMemo(() => {
-        const participantsInScope = participants.filter(p => {
-            const a = appByParticipant[p.id]
-            return a && (!activeProgramId || a.programId === activeProgramId)
-        })
-
-        let totalNeed = 0
-        let uploaded = 0
-        let valid = 0
-        let pending = 0
-        let expired = 0
-        let queried = 0
-
-        participantsInScope.forEach(p => {
-            const participantRequirements = requirementsForPart(p.id)
-            const reqKeys = new Set(participantRequirements.map(keyForReq))
-            totalNeed += reqKeys.size
-            const docs = docsForPart(p.id)
-            const relevant = docs.filter(d => reqKeys.has(keyForDoc(d)))
-
-            uploaded += new Set(relevant.map(keyForDoc)).size
-
-            relevant.forEach(d => {
-                const req = participantRequirements.find(r => keyForReq(r) === keyForDoc(d))
-                const s = deriveStatus(d, req)
-                if (complianceStatusCountsAsCovered(s)) valid += 1
-                else if (s === 'pending') pending += 1
-                else if (s === 'expired') expired += 1
-                else if (s === 'invalid' || s === 'rejected' || s === 'queried') queried += 1
-            })
-        })
-
-        return {
-            totalNeed,
-            needPer: participantsInScope.length
-                ? Math.round((totalNeed / participantsInScope.length) * 10) / 10
-                : 0,
-            uploaded,
-            missing: Math.max(totalNeed - uploaded, 0),
-            valid,
-            pending,
-            expired,
-            queried,
-            participants: participantsInScope.length
+        return () => {
+            cancelled = true
         }
-    }, [participants, appByParticipant, activeProgramId, docsForPart, requirementsForPart])
+    }, [activeProgramId, isAllPrograms, currentUser?.departmentId, tracksWholeProgramme, identityLoaded, departmentRolesLoading])
 
-    const rows = useMemo(() => {
-        const base = participants
-            .filter(p => appByParticipant[p.id])
-            .map(p => {
-                const app = appByParticipant[p.id]
-                const cov = coverageForPart(p.id)
-                const moaDocument = docsForPart(p.id).find(document =>
-                    (document.kind ?? 'upload') === 'agreement' &&
-                    normalize(document.agreementId || document.id) === 'moa'
-                )
-                const moaMeta = app?.signedAgreements?.moa || {}
-                const moaSigned = Boolean(
-                    moaDocument?.participantSignatureURL ||
-                    moaDocument?.participantSignedAt ||
-                    moaDocument?.uploadedAt ||
-                    moaMeta.participantSignatureURL ||
-                    moaMeta.participantSignatureUrl ||
-                    moaMeta.participantSigned === true ||
-                    moaMeta.acceptedAt ||
-                    moaMeta.signedAt
-                )
+    // One view per SME with an application in scope: the list rows, the tiles and the detail.
+    const views: ComplianceView[] = useMemo(
+        () =>
+            participants
+                .filter(p => appByParticipant[p.id])
+                .map(p => {
+                    const app = appByParticipant[p.id]
+                    const entries = entriesForPart(p.id)
+                    const counts = { action: 0, review: 0, expiring: 0, valid: 0, expired: 0 }
+                    let nextExpiry: Date | null = null
+                    let lastUpload: Date | null = null
+                    for (const entry of entries) {
+                        counts[entry.bucket] += 1
+                        if (entry.state === 'expired') counts.expired += 1
+                        if (
+                            entry.expiresAt &&
+                            (entry.bucket === 'valid' || entry.bucket === 'expiring') &&
+                            (!nextExpiry || entry.expiresAt < nextExpiry)
+                        ) {
+                            nextExpiry = entry.expiresAt
+                        }
+                        const uploaded = asDayjs(entry.document?.uploadedAt)?.toDate() || null
+                        if (uploaded && (!lastUpload || uploaded > lastUpload)) lastUpload = uploaded
+                    }
 
-                return {
-                    key: p.id,
-                    participantId: p.id,
-                    participantName: p.beneficiaryName || p.name || p.email || 'Unknown',
-                    branchName: app?.branchName ?? '—',
-                    programName: app?.programName ?? '—',
-                    gapGroup: app?.gapGroup ?? '—',
-                    coverage: cov.have,
-                    required: cov.need,
-                    status: cov.status,
-                    moaSigned
-                }
-            })
-            .filter(r => !searchText || (r.participantName || '').toLowerCase().includes(searchText.toLowerCase()))
+                    const moaDocument = docsForPart(p.id).find(document =>
+                        (document.kind ?? 'upload') === 'agreement' &&
+                        normalize(document.agreementId || document.id) === 'moa'
+                    )
+                    const moaMeta = app?.signedAgreements?.moa || {}
+                    const moaSigned = Boolean(
+                        moaDocument?.participantSignatureURL ||
+                        moaDocument?.participantSignedAt ||
+                        moaDocument?.uploadedAt ||
+                        moaMeta.participantSignatureURL ||
+                        moaMeta.participantSignatureUrl ||
+                        moaMeta.participantSigned === true ||
+                        moaMeta.acceptedAt ||
+                        moaMeta.signedAt
+                    )
 
-        return base.sort((a, b) => a.coverage / (a.required || 1) - b.coverage / (b.required || 1))
-    }, [participants, appByParticipant, coverageForPart, docsForPart, searchText])
+                    return {
+                        participantId: p.id,
+                        name: p.beneficiaryName || p.name || p.email || 'Unknown',
+                        email: p.email || app?.email || '',
+                        programId: app?.programId || '',
+                        programName: app?.programName || '—',
+                        branchName: app?.branchName || '—',
+                        gapGroup: app?.gapGroup || '—',
+                        covered: counts.valid + counts.expiring,
+                        required: entries.length,
+                        counts,
+                        nextExpiry,
+                        lastUpload,
+                        moaSigned,
+                        outstanding: entries
+                            .filter(entry => entry.bucket === 'action' || entry.bucket === 'review')
+                            .map(entry => entry.title)
+                    }
+                }),
+        [participants, appByParticipant, entriesForPart, docsForPart]
+    )
+
+    const [filters, setFilters] = useState<ComplianceFilterState>(DEFAULT_COMPLIANCE_FILTERS)
+    const patchFilters = (patch: Partial<ComplianceFilterState>) => setFilters(previous => ({ ...previous, ...patch }))
+    const [selectedId, setSelectedId] = useState<string>()
+    const [drawerOpen, setDrawerOpen] = useState(false)
+    const isMobile = useIsMobile()
+
+    const programmeOptions = useMemo(() => distinctValues(views.map(view => view.programName)), [views])
+    const branchOptions = useMemo(() => distinctValues(views.map(view => view.branchName)), [views])
+    const groupOptions = useMemo(() => distinctValues(views.map(view => view.gapGroup)), [views])
+    const documentOptions = useMemo(() => distinctValues(views.flatMap(view => view.outstanding)), [views])
+
+    // Everything except the segment: drives the tile counts, so they don't all
+    // collapse to the active segment.
+    const beforeSegment = useMemo(() => {
+        const term = filters.search.trim().toLowerCase()
+        return views.filter(view =>
+            (!term || view.name.toLowerCase().includes(term) || view.email.toLowerCase().includes(term)) &&
+            (filters.programme === 'all' || view.programName === filters.programme) &&
+            (filters.branch === 'all' || view.branchName === filters.branch) &&
+            (filters.group === 'all' || view.gapGroup === filters.group) &&
+            (filters.document === 'all' || view.outstanding.includes(filters.document))
+        )
+    }, [views, filters.search, filters.programme, filters.branch, filters.group, filters.document])
+
+    const visibleViews = useMemo(
+        () => beforeSegment
+            .filter(view => matchesSegment(view, filters.segment))
+            .sort(complianceSorters[filters.sort]),
+        [beforeSegment, filters.segment, filters.sort]
+    )
+
+    const tileCounts = useMemo(() => {
+        const smes = (segment: ComplianceFilterState['segment']) =>
+            beforeSegment.filter(view => matchesSegment(view, segment)).length
+        const documents = (bucket: 'action' | 'review' | 'expiring' | 'expired') =>
+            beforeSegment.reduce((total, view) => total + view.counts[bucket], 0)
+        return {
+            all: beforeSegment.length,
+            action: smes('action'),
+            review: smes('review'),
+            expiring: smes('expiring'),
+            compliant: smes('compliant'),
+            actionDocuments: documents('action'),
+            expiredDocuments: documents('expired'),
+            reviewDocuments: documents('review'),
+            expiringDocuments: documents('expiring')
+        }
+    }, [beforeSegment])
+
+    // Desktop always shows a detail: keep the selection while it's visible, otherwise take the first row.
+    useEffect(() => {
+        if (isMobile) return
+        if (!visibleViews.some(view => view.participantId === selectedId)) {
+            setSelectedId(visibleViews[0]?.participantId)
+        }
+    }, [visibleViews, selectedId, isMobile])
+
+    const selectedView = views.find(view => view.participantId === selectedId)
 
     // Persists one review decision. app.complianceDocuments is the merged view
     // built at load (subcollection uploads, agreements, synthetic GAP rows), so
@@ -1567,6 +1696,8 @@ const ComplianceTrackingPage: React.FC = () => {
     ) => {
         const app = appByParticipant[participantId]
         if (!app) return
+        // A document matched by title is stored under its own key.
+        const storedKey = docsForPart(participantId).find(document => keyForDoc(document) === docKey)?.storedKey || docKey
         const entry = stripUndefinedDeep(historyEntry) as StatusHistoryItem
         const verified = options.verifiedBy
             ? { lastVerifiedBy: options.verifiedBy, lastVerifiedAt: entry.atISO }
@@ -1603,7 +1734,7 @@ const ComplianceTrackingPage: React.FC = () => {
 
                 let changed = false
                 const next = stored.map((item, idx) => {
-                    if (embeddedComplianceDocKey(item, idx, app.manuallyCreated) !== docKey) return item
+                    if (embeddedComplianceDocKey(item, idx, app.manuallyCreated) !== storedKey) return item
                     changed = true
                     return {
                         ...item,
@@ -1621,7 +1752,7 @@ const ComplianceTrackingPage: React.FC = () => {
         setApps(prev => prev.map(a => a.id !== app.id ? a : {
             ...a,
             complianceDocuments: (a.complianceDocuments || []).map(x =>
-                keyForDoc(x) === docKey && (!activeProgramId || x.programId === activeProgramId)
+                keyForDoc(x) === storedKey && (!activeProgramId || x.programId === activeProgramId)
                     ? { ...x, ...fields, ...verified, statusHistory: pushHistory(x, entry) }
                     : x
             )
@@ -1654,24 +1785,88 @@ const ComplianceTrackingPage: React.FC = () => {
         message.success('Document verified.')
     }
 
-    // Only patches local + the embedded `complianceDocuments` array — the AI
-    // backend has already written the canonical subcollection doc itself.
+    // Shows an AI result on the page. The AI backend has already written it to
+    // the subcollection doc, which every compliance view reads ahead of the
+    // embedded copy, so nothing else is stored.
     const applyAiVerificationResult = (
-        participantId: string,
-        docKey: string,
-        result: { status: string; note: string }
-    ) =>
-        recordReview(
-            participantId,
-            docKey,
-            { status: result.status },
-            {
-                status: result.status as StatusHistoryItem['status'],
-                by: 'AI Compliance Check',
+        applicationId: string,
+        documentId: string,
+        result: { status: string; note: string; aiReview?: ComplianceAiReview }
+    ) => {
+        const entry: StatusHistoryItem = {
+            status: result.status as StatusHistoryItem['status'],
+            by: 'AI Compliance Check',
+            atISO: new Date().toISOString(),
+            note: result.note
+        }
+        setApps(prev => prev.map(application => application.id !== applicationId ? application : {
+            ...application,
+            complianceDocuments: (application.complianceDocuments || []).map(document =>
+                document.id === documentId
+                    ? {
+                        ...document,
+                        status: result.status,
+                        statusHistory: pushHistory(document, entry),
+                        ...(result.aiReview ? { aiReview: result.aiReview } : {})
+                    }
+                    : document
+            )
+        }))
+    }
+
+    // Documents uploaded with the application live in an embedded array, which
+    // the AI backend can't address. Verifying one first copies it into the
+    // application's complianceDocuments subcollection, where SME and WhatsApp
+    // uploads already go and which every compliance view reads ahead of the
+    // embedded copy. Returns the subcollection doc id.
+    const promoteEmbeddedDocument = async (participantId: string, docKey: string): Promise<string> => {
+        const app = appByParticipant[participantId]
+        const requirement = requirementsForPart(participantId).find(item => keyForReq(item) === docKey)
+        const document = docsForPart(participantId).find(item => keyForDoc(item) === docKey)
+        if (!app || !requirement || !document) throw new Error('This document could not be found.')
+        if (!document.id.startsWith('flat_')) return document.id
+
+        const url = await resolveDocUrl(document)
+        if (!url) throw new Error('This document has no file to verify.')
+
+        const presetId = requirement.presetId || requirement.id
+        const record: Omit<ComplianceDocument, 'id' | 'participantId'> & Record<string, any> = {
+            programId: app.programId || activeProgramId || '',
+            isOnboarding: requirement.isOnboarding === true,
+            slug: presetId,
+            presetId,
+            documentName: requirement.title,
+            status: document.status || 'pending',
+            issueDate: document.issueDate || '',
+            expiryDate: document.expiryDate || '',
+            url,
+            uploadedBy: document.uploadedBy || '',
+            uploadedAt: document.uploadedAt || '',
+            queryOpen: document.queryOpen === true,
+            queryReason: document.queryReason || '',
+            statusHistory: pushHistory(document, {
+                status: (document.status || 'pending') as StatusHistoryItem['status'],
+                by: currentUser?.name || currentUser?.email || 'Staff',
                 atISO: new Date().toISOString(),
-                note: result.note
-            }
+                note: 'Copied from the documents uploaded with the application, for verification.'
+            }),
+            // Where the copy came from: the key it is stored under in the embedded array.
+            copiedFromEmbeddedKey: document.storedKey || docKey
+        }
+        const created = await addDoc(
+            collection(db, 'applications', app.id, 'complianceDocuments'),
+            stripUndefinedDeep(record)
         )
+
+        setApps(prev => prev.map(application => application.id !== app.id ? application : {
+            ...application,
+            complianceDocuments: [
+                ...(application.complianceDocuments || []),
+                { ...document, ...record, id: created.id, kind: 'upload' as const, storedKey: undefined }
+            ]
+        }))
+        return created.id
+    }
 
     const runAiVerification = async (participantId: string, docKey: string, subDocId: string) => {
         const app = appByParticipant[participantId]
@@ -1679,11 +1874,14 @@ const ComplianceTrackingPage: React.FC = () => {
 
         setAiVerifyingDocIds(prev => ({ ...prev, [subDocId]: true }))
         try {
-            const result = await verifyComplianceDocument(app.id, subDocId)
-            await applyAiVerificationResult(participantId, docKey, result)
-            message.success(
-                `AI verification: ${complianceStatusLabel(result.status)}${result.note ? ` — ${result.note}` : ''}`
-            )
+            // Only an embedded id needs copying; a subcollection id (including a
+            // doc just uploaded on behalf of the SME) is verified as it is.
+            const documentId = subDocId.startsWith('flat_')
+                ? await promoteEmbeddedDocument(participantId, docKey)
+                : subDocId
+            const result = await verifyComplianceDocument(app.id, documentId)
+            applyAiVerificationResult(app.id, documentId, result)
+            message.info(result.note || `AI verification: ${complianceStatusLabel(result.status)}`)
         } catch (error: any) {
             message.error(error?.message || 'AI verification failed.')
         } finally {
@@ -1708,10 +1906,13 @@ const ComplianceTrackingPage: React.FC = () => {
                 .forEach(req => {
                     const k = keyForReq(req)
                     const d = docs.find(document => keyForDoc(document) === k)
-                    // "flat_"-prefixed ids only exist in the embedded array, not
-                    // as a real subcollection doc — the AI backend can't look
-                    // those up, so skip them.
-                    if (!d || !d.url || d.id.startsWith('flat_')) return
+                    if (!d || !hasOpenableFile(d)) return
+                    // Only documents awaiting verification: the AI result is
+                    // written as the status, so it must not overwrite a staff
+                    // decision (valid, invalid) or close an open query.
+                    if (deriveStatus(d, req) !== 'pending') return
+                    // This file already has an AI suggestion waiting for staff.
+                    if (currentAiReview(d)) return
                     jobs.push({
                         applicationId: app.id,
                         documentId: d.id,
@@ -1725,34 +1926,48 @@ const ComplianceTrackingPage: React.FC = () => {
     }
 
     const runBatchVerification = async (participantIds: string[], scopeLabel: string) => {
-        const jobs = collectVerifiableDocs(participantIds)
-        if (!jobs.length) {
-            message.info('No uploaded documents to verify.')
+        const collected = collectVerifiableDocs(participantIds)
+        if (!collected.length) {
+            message.info('No uploaded documents are awaiting verification.')
             return
         }
 
         setAiBatchRunning(true)
-        setAiBatchProgress({ done: 0, total: jobs.length })
+        setAiBatchProgress({ done: 0, total: collected.length })
 
         try {
-            const outcomes = await verifyComplianceDocumentsBatch(jobs, {
-                concurrency: 2,
-                onProgress: (done, total) => setAiBatchProgress({ done, total })
-            })
-
-            for (let i = 0; i < outcomes.length; i++) {
-                const outcome = outcomes[i]
-                const job = jobs[i]
-                if (outcome.ok && outcome.status) {
-                    await applyAiVerificationResult(job.participantId, job.docKey, {
-                        status: outcome.status,
-                        note: outcome.note || ''
-                    })
+            // Embedded documents are copied into the subcollection first (see
+            // promoteEmbeddedDocument); one that can't be is counted as failed.
+            const jobs: LocalVerifyJob[] = []
+            let notPrepared = 0
+            for (const job of collected) {
+                try {
+                    jobs.push(job.documentId.startsWith('flat_')
+                        ? { ...job, documentId: await promoteEmbeddedDocument(job.participantId, job.docKey) }
+                        : job)
+                } catch (error) {
+                    console.error('Could not prepare a document for AI verification', job, error)
+                    notPrepared += 1
                 }
             }
 
+            const outcomes = await verifyComplianceDocumentsBatch(jobs, {
+                concurrency: 2,
+                onProgress: done => setAiBatchProgress({ done: done + notPrepared, total: collected.length })
+            })
+
+            outcomes.forEach(outcome => {
+                if (outcome.ok && outcome.status) {
+                    applyAiVerificationResult(outcome.applicationId, outcome.documentId, {
+                        status: outcome.status,
+                        note: outcome.note || '',
+                        aiReview: outcome.aiReview
+                    })
+                }
+            })
+
             const succeeded = outcomes.filter(o => o.ok).length
-            const failed = outcomes.length - succeeded
+            const failed = collected.length - succeeded
             message.success(
                 `AI verification complete for ${scopeLabel}: ${succeeded} checked${failed ? `, ${failed} failed` : ''}.`
             )
@@ -1761,6 +1976,54 @@ const ComplianceTrackingPage: React.FC = () => {
         } finally {
             setAiBatchRunning(false)
             setAiBatchProgress(null)
+        }
+    }
+
+    // The dates to record from the AI's reading of the file: its issue date (the
+    // expiry then follows the requirement's validity period), or, when the
+    // requirement has no period, the expiry date printed on it. Null when the
+    // reading adds nothing to what is recorded.
+    const aiDateFields = (entry: ComplianceEntry): Record<string, string> | null => {
+        const review = currentAiReview(entry.document)
+        if (!review || !entry.document) return null
+        const months = entry.requirement.hasExpiry ? entry.requirement.expiryMonths || 0 : 0
+        const recordedIssue = String(entry.document.issueDate || '').slice(0, 10)
+        const recordedExpiry = String(entry.document.expiryDate || '').slice(0, 10)
+        const fields: Record<string, string> = {}
+        if (review.extracted.issueDate && review.extracted.issueDate !== recordedIssue) {
+            fields.issueDate = review.extracted.issueDate
+            if (months) {
+                fields.expiryDate = dayjs(review.extracted.issueDate).add(months, 'month').format('YYYY-MM-DD')
+            }
+        }
+        if (!months && review.extracted.expiryDate && review.extracted.expiryDate !== recordedExpiry) {
+            fields.expiryDate = review.extracted.expiryDate
+        }
+        return Object.keys(fields).length ? fields : null
+    }
+
+    const applyAiDates = async (participantId: string, entry: ComplianceEntry) => {
+        const fields = aiDateFields(entry)
+        const document = entry.document
+        if (!fields || !document) return
+        try {
+            await recordReview(
+                participantId,
+                entry.key,
+                fields,
+                {
+                    status: (document.status || 'pending') as StatusHistoryItem['status'],
+                    by: currentUser?.name || currentUser?.email || 'Verifier',
+                    atISO: new Date().toISOString(),
+                    note: `Dates taken from the AI reading of the file: ${Object.entries(fields)
+                        .map(([field, value]) => `${field === 'issueDate' ? 'issued' : 'expires'} ${value}`)
+                        .join(', ')}.`
+                },
+                { subDocId: document.id }
+            )
+            message.success('Dates recorded from the document.')
+        } catch (error: any) {
+            message.error(error?.message || 'The dates could not be saved.')
         }
     }
 
@@ -2125,7 +2388,6 @@ const ComplianceTrackingPage: React.FC = () => {
     const openUploadFor = (participant: any, requiredId?: string) => {
         setManageTarget(participant)
         setUploadOpen(true)
-        setManageOpen(false)
         setLockedUploadRequirementId(requiredId || null)
         formUpload.resetFields()
         if (requiredId) formUpload.setFieldsValue({ requiredId })
@@ -2417,7 +2679,7 @@ const ComplianceTrackingPage: React.FC = () => {
                 const k = keyForReq(r)
                 const document = docs.find(item => keyForDoc(item) === k)
                 const status = document ? deriveStatus(document, r) : 'missing'
-                if (!complianceStatusCountsAsCovered(status)) {
+                if (smeCanAct(status)) {
                     const email = p.email || app?.email
                     if (!email) return
                     const reminderProgramId = app?.programId || activeProgramId || ''
@@ -2441,454 +2703,268 @@ const ComplianceTrackingPage: React.FC = () => {
 
         const entries = Object.entries(remindersByEmail)
         if (entries.length === 0) {
-            message.info('All good — no reminders needed for this program.')
+            message.info('No SME has anything to upload, sign or correct.')
             return
         }
 
         const sendReminder = httpsCallable(functions, 'sendComplianceReminderEmail')
+        const itemCount = entries.reduce((total, [, entry]) => total + entry.issues.length, 0)
 
-        await Promise.all(
-            entries.map(async ([, { email, name, issues, participantId, programId, programName: reminderProgramName }]) => {
-                try {
-                    await sendReminder({
-                        email,
-                        name,
-                        issues,
-                        programName: reminderProgramName,
-                        participantId,
-                        programId
-                    })
-                    message.success(`Reminder sent to ${name}`)
-                } catch (e) {
-                    console.error(e)
-                    message.error(`Failed to send to ${name}`)
-                }
-            })
-        )
+        Modal.confirm({
+            centered: true,
+            title: `Send compliance reminders to ${entries.length} SME(s)?`,
+            content: `Each SME is emailed the ${itemCount} item(s) they need to upload, sign or correct. Documents awaiting staff verification or a ROM signature are not included.`,
+            okText: 'Send reminders',
+            onOk: () => Promise.all(
+                entries.map(async ([, { email, name, issues, participantId, programId, programName: reminderProgramName }]) => {
+                    try {
+                        await sendReminder({
+                            email,
+                            name,
+                            issues,
+                            programName: reminderProgramName,
+                            participantId,
+                            programId
+                        })
+                        message.success(`Reminder sent to ${name}`)
+                    } catch (e) {
+                        console.error(e)
+                        message.error(`Failed to send to ${name}`)
+                    }
+                })
+            )
+        })
     }
 
-    const renderManageList = () => {
-        if (!manageTarget) return null
-        const pId = manageTarget.participantId
-        const docs = docsForPart(pId)
-        const docMap = new Map<string, ComplianceDocument>()
-        docs.forEach(d => {
-            const key = keyForDoc(d)
-            const existing = docMap.get(key)
-            docMap.set(key, existing ? {
-                ...existing,
-                ...d,
-                url: d.url || existing.url,
-                pdfPath: d.pdfPath || existing.pdfPath,
-                storagePath: d.storagePath || existing.storagePath,
-                issueDate: d.issueDate || existing.issueDate,
-                uploadedAt: d.uploadedAt || existing.uploadedAt,
-                romSignedAt: d.romSignedAt || existing.romSignedAt,
-                fullyConfirmedAt: d.fullyConfirmedAt || existing.fullyConfirmedAt
-            } : d)
-        })
+    // The review buttons for one requirement in the detail panel. The status
+    // itself is the card's tag, so only actions are rendered here.
+    const renderRequirementActions = (participantId: string, entry: ComplianceEntry) => {
+        const requirement = entry.requirement
+        const d = entry.document
+        const isAgreement = entry.kind === 'agreement'
+        const isGapAgreement = normalize(requirement.agreementId || requirement.id) === 'gap-analysis'
+        const isQueried = (d?.status || '').toLowerCase() === 'queried'
+        const application = appByParticipant[participantId]
+        const isManualApp = application?.manuallyCreated === true || application?.manualApplication === true
+        const uploadTarget = { participantId, participantName: selectedView?.name || '' }
+        const aiReview = currentAiReview(d)
+        const aiDates = aiDateFields(entry)
 
-        const app = appByParticipant[pId]
-        const isManualApp = app?.manuallyCreated === true || app?.manualApplication === true
-
-        const data = requirementsForPart(pId).map(req => {
-            const k = keyForReq(req)
-            const d = docMap.get(k)
-            const computedExpiry = d ? computeExpiryDate(d, req) : null
-            const state = d ? deriveStatus(d, req) : 'missing'
-            return { req, d, k, computedExpiry, state }
-        })
-
-        if (screens.md) {
-            const columnsLocal: ColumnType<any>[] = [
-                { title: 'Document', key: 'doc', render: (_, r) => r.req.title },
-                {
-                    title: 'Expiry',
-                    key: 'exp',
-                    render: (_, r) => expiryDisplay(r.d, r.req, r.computedExpiry)
-                },
-                {
-                    title: 'Actions',
-                    key: 'actions',
-                    width: 520,
-                    render: (_, r) => {
-                        const d = r.d as ComplianceDocument | undefined
-                        const isAgreement = (r.req.type ?? 'upload') === 'agreement'
-                        const isGapAgreement = normalize(r.req.agreementId || r.req.id) === 'gap-analysis'
-                        const isQueried = (d?.status || '').toLowerCase() === 'queried'
-                        const isInvalid = r.state === 'invalid'
-                        const romSigned = isRomSigned(d || null)
-
-                        return (
-                            <Space style={{ whiteSpace: 'nowrap' }}>
-                                {(hasOpenableFile(d) || (d && isAgreement && isPreIncubation(r.req, d))) && (
-                                    <Button
-                                        shape='round'
-                                        onClick={async () => {
-                                            const u = await resolveDocUrl(d)
-                                            if (u) {
-                                                window.open(u, '_blank', 'noopener,noreferrer')
-                                                return
-                                            }
-                                            if (isPreIncubation(r.req, d)) {
-                                                setPreIncViewer({ participantId: pId, meta: d })
-                                                return
-                                            }
-                                            message.warning('No document available.')
-                                        }}
-                                        icon={<EyeOutlined />}
-                                    >
-                                        View
-                                    </Button>
-                                )}
-
-                                {d && (hasOpenableFile(d) || isAgreement) && (
-                                    <Button
-                                        shape='round'
-                                        data-guide='download-document-action'
-                                        icon={<DownloadOutlined />}
-                                        onClick={() => isAgreement
-                                            ? downloadAgreement(pId, r.req, d)
-                                            : downloadDocument(d, r.req.title)}
-                                    >
-                                        Download
-                                    </Button>
-                                )}
-
-                                {(r.req.type ?? 'upload') === 'upload' && (
-                                    <Button
-                                        shape='round'
-                                        data-guide='upload-document-action'
-                                        type={d ? 'default' : 'primary'}
-                                        icon={<UploadOutlined />}
-                                        onClick={() => chooseRowFile(manageTarget, r.req.id)}
-                                    >
-                                        {d ? 'Replace' : 'Upload'}
-                                    </Button>
-                                )}
-
-                                {isAgreement && !d && (
-                                    <Tag color='orange'>
-                                        {isGapAgreement ? 'Awaiting SME completion' : 'Awaiting SME signature'}
-                                    </Tag>
-                                )}
-
-                                {d && (r.req.type ?? 'upload') === 'upload' && (
-                                    <>
-                                        <Tooltip
-                                            title={
-                                                isQueried
-                                                    ? 'Resolve the query before you can validate.'
-                                                    : isInvalid
-                                                        ? 'Replace the invalid document before you can validate it.'
-                                                        : undefined
-                                            }
-                                        >
-                                            <Button
-                                                shape='round'
-                                                data-guide='verify-document-action'
-                                                icon={<CheckCircleOutlined />}
-                                                disabled={isQueried || isInvalid}
-                                                onClick={() => verifyDoc(pId, r.k, d.id)}
-                                            >
-                                                Verify
-                                            </Button>
-                                        </Tooltip>
-
-                                        <Tooltip
-                                            title={
-                                                d.id.startsWith('flat_')
-                                                    ? 'Re-save this document before AI verification is available.'
-                                                    : 'Have AI check legibility, document type, and expiry.'
-                                            }
-                                        >
-                                            <Button
-                                                shape='round'
-                                                data-guide='verify-document-action'
-                                                icon={<RobotOutlined />}
-                                                disabled={d.id.startsWith('flat_') || !!aiVerifyingDocIds[d.id]}
-                                                loading={!!aiVerifyingDocIds[d.id]}
-                                                onClick={() => runAiVerification(pId, r.k, d.id)}
-                                            >
-                                                AI Verify
-                                            </Button>
-                                        </Tooltip>
-
-                                        {isQueried ? (
-                                            <>
-                                                <Button
-                                                    shape='round'
-                                                    icon={<InfoCircleOutlined />}
-                                                    onClick={() => {
-                                                        setViewReason({
-                                                            title: d.documentName,
-                                                            queryReason: d.queryReason || 'No reason recorded.'
-                                                        })
-                                                        setViewReasonOpen(true)
-                                                    }}
-                                                >
-                                                    Reason
-                                                </Button>
-                                                <Button onClick={() => resolveQuery(pId, r.k, d.id)}>Resolve</Button>
-                                            </>
-                                        ) : (
-                                            <Button
-                                                shape='round'
-                                                data-guide='invalidate-document-action'
-                                                danger
-                                                icon={<CloseCircleOutlined />}
-                                                onClick={() => {
-                                                    setReasonContext({ participantId: pId, docKey: r.k, subDocId: d?.id })
-                                                    setReasonStatus('invalid')
-                                                    reasonForm.resetFields()
-                                                    setReasonOpen(true)
-                                                }}
-                                            >
-                                                Invalidate
-                                            </Button>
-                                        )}
-                                    </>
-                                )}
-
-                                {isAgreement && r.d && !isManualApp && (
-                                    <>
-                                        {romSigned ? (
-                                            <Tag icon={<SafetyCertificateOutlined />} color='green'>
-                                                {isGapAgreement ? 'Operations Confirmed' : 'ROM Signed'}
-                                            </Tag>
-                                        ) : (
-                                            <Tag color='orange'>
-                                                {isGapAgreement ? 'Awaiting ROM confirmation' : 'Awaiting ROM signature'}
-                                            </Tag>
-                                        )}
-
-                                        {!romSigned && (
-                                            isGapAgreement ? (
-                                                canSeeOnboardingDocuments && d.gapAnalysisId && (
-                                                    <Button
-                                                        type='primary'
-                                                        onClick={() => navigate(`/operations/gap/${d.gapAnalysisId}`)}
-                                                    >
-                                                        Review GAP
-                                                    </Button>
-                                                )
-                                            ) : isROMDept ? (
-                                                <Button
-                                                    data-guide='rom-sign-agreement-action'
-                                                    type='primary'
-                                                    icon={<FileProtectOutlined />}
-                                                    onClick={() => {
-                                                        setRomSignTarget({
-                                                            participantId: pId,
-                                                            agreementId: r.req.agreementId || r.req.id
-                                                        })
-                                                        romSignForm.resetFields()
-                                                        romSignForm.setFieldsValue({ romSignedBy: currentUser?.name || '' })
-                                                        setRomSignOpen(true)
-                                                    }}
-                                                >
-                                                    ROM Sign
-                                                </Button>
-                                            ) : null
-                                        )}
-                                    </>
-                                )}
-                            </Space>
-                        )
-                    }
-                }
-            ]
-
-            return <Table rowKey={(r: any) => r.k} dataSource={data} columns={columnsLocal} pagination={false} scroll={{ x: 1050 }} />
+        type DocAction = {
+            key: string
+            label: string
+            icon?: React.ReactNode
+            onClick: () => void
+            danger?: boolean
+            disabled?: boolean
+            /** Why the action is disabled, or what it does. */
+            hint?: string
+            guide?: string
         }
 
+        const openFile = async () => {
+            const url = await resolveDocUrl(d)
+            if (url) {
+                window.open(url, '_blank', 'noopener,noreferrer')
+                return
+            }
+            if (d && isPreIncubation(requirement, d)) {
+                setPreIncViewer({ participantId, meta: d })
+                return
+            }
+            message.warning('No document available.')
+        }
+
+        const canView = hasOpenableFile(d) || (d && isAgreement && isPreIncubation(requirement, d))
+        const actions: Record<string, DocAction | null> = {
+            upload: !isAgreement ? {
+                key: 'upload',
+                label: d ? 'Replace file' : 'Upload',
+                icon: <UploadOutlined />,
+                guide: 'upload-document-action',
+                onClick: () => chooseRowFile(uploadTarget, requirement.id)
+            } : null,
+            download: d && (hasOpenableFile(d) || isAgreement) ? {
+                key: 'download',
+                label: 'Download',
+                icon: <DownloadOutlined />,
+                guide: 'download-document-action',
+                onClick: () => isAgreement
+                    ? downloadAgreement(participantId, requirement, d)
+                    : downloadDocument(d, requirement.title)
+            } : null,
+            accept: d && !isAgreement && aiReview?.recommendation === 'valid' && entry.state === 'pending' ? {
+                key: 'accept',
+                label: 'Accept: valid',
+                icon: <CheckCircleOutlined />,
+                onClick: () => verifyDoc(participantId, entry.key, d.id)
+            } : null,
+            dates: d && !isAgreement && aiDates ? {
+                key: 'dates',
+                label: 'Use dates from file',
+                icon: <FieldTimeOutlined />,
+                hint: `Records ${Object.entries(aiDates)
+                    .map(([field, value]) => `${field === 'issueDate' ? 'issue date' : 'expiry date'} ${dayjs(value).format('D MMM YYYY')}`)
+                    .join(' and ')}, as read from the file.`,
+                onClick: () => applyAiDates(participantId, entry)
+            } : null,
+            // Only a document awaiting verification can be verified; a valid one
+            // already is, and a queried or invalid one needs the SME first.
+            verify: d && !isAgreement && entry.state === 'pending' ? {
+                key: 'verify',
+                label: 'Verify',
+                icon: <CheckCircleOutlined />,
+                guide: 'verify-document-action',
+                onClick: () => verifyDoc(participantId, entry.key, d.id)
+            } : null,
+            ai: d && !isAgreement ? {
+                key: 'ai',
+                label: aiVerifyingDocIds[d.id] ? 'AI checking…' : aiReview ? 'AI check again' : 'AI check',
+                icon: <RobotOutlined />,
+                disabled: !hasOpenableFile(d) || isQueried || !!aiVerifyingDocIds[d.id],
+                hint: isQueried
+                    ? 'Resolve the query before running an AI check.'
+                    : 'AI reads the file and suggests whether it is valid, with its dates.',
+                onClick: () => { void runAiVerification(participantId, entry.key, d.id) }
+            } : null,
+            reason: d && !isAgreement && isQueried ? {
+                key: 'reason',
+                label: 'Query reason',
+                icon: <InfoCircleOutlined />,
+                onClick: () => {
+                    setViewReason({
+                        title: d.documentName,
+                        queryReason: d.queryReason || 'No reason recorded.'
+                    })
+                    setViewReasonOpen(true)
+                }
+            } : null,
+            resolve: d && !isAgreement && isQueried ? {
+                key: 'resolve',
+                label: 'Resolve query',
+                icon: <CheckCircleOutlined />,
+                onClick: () => resolveQuery(participantId, entry.key, d.id)
+            } : null,
+            invalidate: d && !isAgreement && !isQueried ? {
+                key: 'invalidate',
+                label: 'Invalidate',
+                icon: <CloseCircleOutlined />,
+                danger: true,
+                guide: 'invalidate-document-action',
+                onClick: () => {
+                    setReasonContext({ participantId, docKey: entry.key, subDocId: d.id })
+                    setReasonStatus('invalid')
+                    reasonForm.resetFields()
+                    // Start from the AI's reason when it found a problem; staff can edit it.
+                    if (aiReview && (aiReview.recommendation === 'invalid' || aiReview.recommendation === 'expired')) {
+                        reasonForm.setFieldsValue({ reason: aiReview.reason })
+                    }
+                    setReasonOpen(true)
+                }
+            } : null,
+            gap: isAgreement && d && !isManualApp && !isRomSigned(d) && isGapAgreement &&
+                canSeeOnboardingDocuments && d.gapAnalysisId ? {
+                key: 'gap',
+                label: 'Review GAP',
+                onClick: () => navigate(`/gap/${d.gapAnalysisId}`)
+            } : null,
+            romSign: isAgreement && d && !isManualApp && !isRomSigned(d) && !isGapAgreement && isROMDept ? {
+                key: 'romSign',
+                label: 'ROM Sign',
+                icon: <FileProtectOutlined />,
+                guide: 'rom-sign-agreement-action',
+                onClick: () => {
+                    setRomSignTarget({
+                        participantId,
+                        agreementId: requirement.agreementId || requirement.id
+                    })
+                    romSignForm.resetFields()
+                    romSignForm.setFieldsValue({ romSignedBy: currentUser?.name || '' })
+                    setRomSignOpen(true)
+                }
+            } : null
+        }
+
+        // One main button for the next step on this document; everything else
+        // goes in the menu so the card stays readable.
+        const primaryKey = !d
+            ? 'upload'
+            : isQueried
+                ? 'resolve'
+                : actions.accept
+                    ? 'accept'
+                    : actions.gap
+                        ? 'gap'
+                        : actions.romSign
+                            ? 'romSign'
+                            : ['invalid', 'expired', 'rejected'].includes(entry.state)
+                                ? 'upload'
+                                : entry.state === 'pending'
+                                    ? 'verify'
+                                    : null
+        const primary = primaryKey ? actions[primaryKey] : null
+        const menuOrder = [
+            'accept', 'verify', 'dates', 'ai', 'reason', 'resolve', 'download', 'upload', 'invalidate'
+        ]
+        const menuActions = menuOrder
+            .map(key => actions[key])
+            .filter((action): action is DocAction => !!action && action.key !== primaryKey)
+
         return (
-            <Space direction='vertical' style={{ width: '100%' }}>
-                {data.map(r => {
-                    const d = r.d as ComplianceDocument | undefined
-                    const isQueried = (d?.status || '').toLowerCase() === 'queried'
-                    const isInvalid = r.state === 'invalid'
-                    const isAgreement = (r.req.type ?? 'upload') === 'agreement'
-                    const isGapAgreement = normalize(r.req.agreementId || r.req.id) === 'gap-analysis'
-                    const romSigned = isRomSigned(d || null)
+            <>
+                {/* Only the next step is filled; View and More stay quiet. */}
+                {canView && (
+                    <Button size='small' type='text' icon={<EyeOutlined />} onClick={() => { void openFile() }}>
+                        View
+                    </Button>
+                )}
 
-                    return (
-                        <Card key={r.k} size='small'>
-                            <Space direction='vertical' style={{ width: '100%' }}>
-                                <Space align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
-                                    <Text strong>{r.req.title}</Text>
-                                    <Tag color={statusColor(r.state)}>{requirementStatusLabel(r.req, r.state, r.d)}</Tag>
-                                </Space>
+                {primary && (
+                    <Tooltip title={primary.hint}>
+                        <Button
+                            size='small'
+                            type='primary'
+                            data-guide={primary.guide}
+                            icon={primary.icon}
+                            disabled={primary.disabled}
+                            onClick={primary.onClick}
+                        >
+                            {primary.label}
+                        </Button>
+                    </Tooltip>
+                )}
 
-                                <Text type='secondary'>
-                                    {r.req.hasExpiry
-                                        ? `Expiry: ${expiryDisplay(r.d, r.req, r.computedExpiry)}`
-                                        : 'No expiry'}
-                                </Text>
-
-                                <Space wrap>
-                                    {(hasOpenableFile(d) || (d && isAgreement && isPreIncubation(r.req, d))) && (
-                                        <Button size='small' icon={<EyeOutlined />} onClick={async () => {
-                                            const u = await resolveDocUrl(d)
-                                            if (u) {
-                                                window.open(u, '_blank', 'noopener,noreferrer')
-                                                return
-                                            }
-                                            if (isPreIncubation(r.req, d)) {
-                                                setPreIncViewer({ participantId: manageTarget.participantId, meta: d })
-                                                return
-                                            }
-                                            message.warning('No document available.')
-                                        }}>
-                                            View
-                                        </Button>
-                                    )}
-
-                                    {d && (hasOpenableFile(d) || isAgreement) && (
-                                        <Button
-                                            data-guide='download-document-action'
-                                            size='small'
-                                            icon={<DownloadOutlined />}
-                                            onClick={() => isAgreement
-                                                ? downloadAgreement(manageTarget.participantId, r.req, d)
-                                                : downloadDocument(d, r.req.title)}
-                                        >
-                                            Download
-                                        </Button>
-                                    )}
-
-                                    {d && (r.req.type ?? 'upload') === 'upload' && (
-                                        <>
-                                            <Button
-                                                data-guide='verify-document-action'
-                                                size='small'
-                                                icon={<CheckCircleOutlined />}
-                                                disabled={isQueried || isInvalid}
-                                                onClick={() => verifyDoc(manageTarget.participantId, r.k, d!.id)}
-                                            >
-                                                Verify
-                                            </Button>
-
-                                            <Button
-                                                data-guide='verify-document-action'
-                                                size='small'
-                                                icon={<RobotOutlined />}
-                                                disabled={d!.id.startsWith('flat_') || !!aiVerifyingDocIds[d!.id]}
-                                                loading={!!aiVerifyingDocIds[d!.id]}
-                                                onClick={() => runAiVerification(manageTarget.participantId, r.k, d!.id)}
-                                            >
-                                                AI Verify
-                                            </Button>
-
-                                            {isQueried ? (
-                                                <>
-                                                    <Button
-                                                        size='small'
-                                                        icon={<InfoCircleOutlined />}
-                                                        onClick={() => {
-                                                            setViewReason({
-                                                                title: d!.documentName,
-                                                                queryReason: d!.queryReason || 'No reason recorded.'
-                                                            })
-                                                            setViewReasonOpen(true)
-                                                        }}
-                                                    >
-                                                        Reason
-                                                    </Button>
-                                                    <Button size='small' onClick={() => resolveQuery(manageTarget.participantId, r.k, d!.id)}>
-                                                        Resolve
-                                                    </Button>
-                                                </>
-                                            ) : (
-                                                <Button
-                                                    data-guide='invalidate-document-action'
-                                                    size='small'
-                                                    danger
-                                                    icon={<CloseCircleOutlined />}
-                                                    onClick={() => {
-                                                        setReasonContext({
-                                                            participantId: manageTarget.participantId,
-                                                            docKey: r.k,
-                                                            subDocId: d!.id
-                                                        })
-                                                        setReasonStatus('invalid')
-                                                        reasonForm.resetFields()
-                                                        setReasonOpen(true)
-                                                    }}
-                                                >
-                                                    Invalidate
-                                                </Button>
-                                            )}
-                                        </>
-                                    )}
-
-                                    {(r.req.type ?? 'upload') === 'upload' && (
-                                        <Button
-                                            data-guide='upload-document-action'
-                                            size='small'
-                                            type={d ? 'default' : 'primary'}
-                                            icon={<UploadOutlined />}
-                                            onClick={() => chooseRowFile(manageTarget, r.req.id)}
-                                        >
-                                            {d ? 'Replace' : 'Upload'}
-                                        </Button>
-                                    )}
-
-                                    {isAgreement && !d && (
-                                        <Tag color='orange'>
-                                            {isGapAgreement ? 'Awaiting SME completion' : 'Awaiting SME signature'}
-                                        </Tag>
-                                    )}
-
-                                    {isAgreement && !isManualApp && d && (
-                                        <>
-                                            {romSigned ? (
-                                                <Tag icon={<SafetyCertificateOutlined />} color='green'>
-                                                    {isGapAgreement ? 'Operations Confirmed' : 'ROM Signed'}
-                                                </Tag>
-                                            ) : (
-                                                <>
-                                                    <Tag color='orange'>
-                                                        {isGapAgreement ? 'Awaiting ROM confirmation' : 'Awaiting ROM signature'}
-                                                    </Tag>
-                                                    {(isGapAgreement ? canSeeOnboardingDocuments : isROMDept) && (
-                                                        isGapAgreement ? (
-                                                            d.gapAnalysisId && (
-                                                                <Button
-                                                                    size='small'
-                                                                    type='primary'
-                                                                    onClick={() => navigate(`/operations/gap/${d.gapAnalysisId}`)}
-                                                                >
-                                                                    Review GAP
-                                                                </Button>
-                                                            )
-                                                        ) : (
-                                                            <Button
-                                                                data-guide='rom-sign-agreement-action'
-                                                                size='small'
-                                                                type='primary'
-                                                                icon={<FileProtectOutlined />}
-                                                                onClick={() => {
-                                                                    setRomSignTarget({ participantId: manageTarget.participantId, agreementId: r.req.agreementId || r.req.id })
-                                                                    romSignForm.resetFields()
-                                                                    romSignForm.setFieldsValue({ romSignedBy: currentUser?.name || '' })
-                                                                    setRomSignOpen(true)
-                                                                }}
-                                                            >
-                                                                ROM Sign
-                                                            </Button>
-                                                        )
-                                                    )}
-                                                </>
-                                            )}
-                                        </>
-                                    )}
-                                </Space>
-                            </Space>
-                        </Card>
-                    )
-                })}
-            </Space>
+                {menuActions.length > 0 && (
+                    <Dropdown
+                        trigger={['click']}
+                        placement='bottomRight'
+                        menu={{
+                            items: menuActions.flatMap(action => [
+                                ...(action.key === 'invalidate' ? [{ type: 'divider' as const }] : []),
+                                {
+                                    key: action.key,
+                                    icon: action.icon,
+                                    danger: action.danger,
+                                    disabled: action.disabled,
+                                    label: action.hint
+                                        ? <Tooltip title={action.hint} placement='left'><span>{action.label}</span></Tooltip>
+                                        : action.label,
+                                    onClick: action.onClick
+                                }
+                            ])
+                        }}
+                    >
+                        <Tooltip title='More actions'>
+                            <Button
+                                size='small'
+                                type='text'
+                                icon={<MoreOutlined />}
+                                aria-label={`More actions for ${entry.title}`}
+                            />
+                        </Tooltip>
+                    </Dropdown>
+                )}
+            </>
         )
     }
 
@@ -2928,74 +3004,6 @@ const ComplianceTrackingPage: React.FC = () => {
             setSavingReqs(false)
         }
     }
-
-    const columns: ColumnType<any>[] = [
-        {
-            title: 'Participant',
-            dataIndex: 'participantName',
-            key: 'participantName',
-            sorter: (a, b) => a.participantName.localeCompare(b.participantName)
-        },
-        ...(isAllPrograms
-            ? [{ title: 'Program', dataIndex: 'programName', key: 'programName' } as ColumnType<any>]
-            : []),
-        { title: 'Group', dataIndex: 'gapGroup', key: 'gapGroup' },
-        { title: 'Branch', dataIndex: 'branchName', key: 'branchName' },
-        ...(isROMDept
-            ? [{
-                title: 'MOA',
-                key: 'moa',
-                render: (_: unknown, record: { moaSigned?: boolean }) => (
-                    <Tag color={record.moaSigned ? 'green' : 'orange'}>
-                        {record.moaSigned ? 'Signed' : 'Unsigned'}
-                    </Tag>
-                )
-            } as ColumnType<any>]
-            : []),
-        {
-            title: 'Coverage',
-            key: 'coverage',
-            render: (_, r) => {
-                const pct = r.required ? Math.round((r.coverage / r.required) * 100) : 0
-                return (
-                    <div style={{ minWidth: 160 }}>
-                        <Text>
-                            {r.coverage}/{r.required}
-                        </Text>
-                        <Progress percent={pct} size='small' />
-                    </div>
-                )
-            }
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            render: (_, r) => {
-                return (
-                    <Space style={{ whiteSpace: 'nowrap' }}>
-                        <Button
-                            data-guide='manage-compliance-action'
-                            icon={<FileProtectOutlined />}
-                            onClick={() => {
-                                setManageTarget(r)
-                                setManageOpen(true)
-                            }}
-                        >
-                            Manage
-                        </Button>
-
-                        <Button
-                            data-guide='upload-compliance-action'
-                            icon={<UploadOutlined />}
-                            onClick={() => openUploadFor(r)}
-                        >
-                            Upload / Replace
-                        </Button>
-                    </Space>
-                )
-            }
-        }
-    ]
 
     const manageTargetRequirements = manageTarget
         ? requirementsForPart(manageTarget.participantId)
@@ -3043,34 +3051,253 @@ const ComplianceTrackingPage: React.FC = () => {
         )
     }, [editorTemplateOptions, editingRequirement])
 
-
     const pageLoading = loading || (!!activeProgramId && requirementsLoading)
+
+    const selectView = (view: ComplianceView) => {
+        setSelectedId(view.participantId)
+        if (isMobile) setDrawerOpen(true)
+    }
+
+    const openEmailTemplate = () => {
+        const targets = buildEmailTargets()
+        if (!targets.length) {
+            message.info('No SME has anything to upload, sign or correct.')
+            return
+        }
+        setEmailTargets(targets)
+        setEmailTemplatesOpen(true)
+    }
+
+    const confirmBatchVerification = () => {
+        const smes = visibleViews.map(view => view.participantId)
+        Modal.confirm({
+            centered: true,
+            title: 'Run AI verification for the SMEs shown?',
+            content: `This checks the uploaded documents awaiting verification across ${smes.length} SME(s) shown here. Each check may use an AI request, so this can take a while and consume shared AI quota.`,
+            okText: 'Run AI verification',
+            onOk: () => runBatchVerification(smes, 'the SMEs shown')
+        })
+    }
+
+    // A reminder to one SME, listing only what they can act on.
+    const remindParticipant = (view: ComplianceView) => {
+        const issues = entriesForPart(view.participantId)
+            .filter(entry => smeCanAct(entry.state))
+            .map(entry => `${entry.title} (${complianceStatusLabel(entry.state)})`)
+        if (!issues.length) {
+            message.info(`${view.name} has nothing to upload, sign or correct.`)
+            return
+        }
+        if (!view.email) {
+            message.warning(`${view.name} has no email address on record.`)
+            return
+        }
+        Modal.confirm({
+            centered: true,
+            title: `Send ${view.name} a compliance reminder?`,
+            content: (
+                <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                    {issues.map(issue => <li key={issue}>{issue}</li>)}
+                </ul>
+            ),
+            okText: 'Send reminder',
+            onOk: async () => {
+                try {
+                    await httpsCallable(functions, 'sendComplianceReminderEmail')({
+                        email: view.email,
+                        name: view.name,
+                        issues,
+                        programName: view.programName !== '—' ? view.programName : programName,
+                        participantId: view.participantId,
+                        programId: view.programId || activeProgramId || ''
+                    })
+                    message.success(`Reminder sent to ${view.name}`)
+                } catch (error) {
+                    console.error(error)
+                    message.error(`Failed to send to ${view.name}`)
+                }
+            }
+        })
+    }
+
+    // Files of the selected SME awaiting verification that have no AI suggestion yet.
+    const selectedAiPending = selectedView ? collectVerifiableDocs([selectedView.participantId]).length : 0
+    const confirmSmeVerification = (view: ComplianceView) => {
+        Modal.confirm({
+            centered: true,
+            title: `Run an AI check on ${view.name}'s documents?`,
+            content: `AI reads the ${selectedAiPending} file(s) awaiting verification and suggests whether each is valid. Nothing changes until you accept a suggestion.`,
+            okText: 'Run AI check',
+            onOk: () => runBatchVerification([view.participantId], view.name)
+        })
+    }
+
+    const complianceTiles: {
+        segment: ComplianceFilterState['segment']
+        title: string
+        mobileTitle: string
+        tone: MetricTone
+        icon: React.ReactNode
+        value: number
+    }[] = [
+        {
+            segment: 'all',
+            title: 'SMEs in scope',
+            mobileTitle: 'SMEs',
+            tone: 'accent',
+            icon: <TeamOutlined />,
+            value: tileCounts.all,
+        },
+        {
+            segment: 'action',
+            title: 'Need SME action',
+            mobileTitle: 'SME action',
+            tone: 'danger',
+            icon: <WarningOutlined />,
+            value: tileCounts.action,
+        },
+        {
+            segment: 'review',
+            title: 'Awaiting staff review',
+            mobileTitle: 'To review',
+            tone: 'info',
+            icon: <FileSearchOutlined />,
+            value: tileCounts.review,
+        },
+        {
+            segment: 'expiring',
+            title: 'Expiring within 30 days',
+            mobileTitle: 'Expiring',
+            tone: 'warning',
+            icon: <FieldTimeOutlined />,
+            value: tileCounts.expiring,
+        },
+        {
+            segment: 'compliant',
+            title: 'Fully compliant',
+            mobileTitle: 'Compliant',
+            tone: 'success',
+            icon: <SafetyCertificateOutlined />,
+            value: tileCounts.compliant,
+        }
+    ]
+
+    const toolbarActions = (
+        <>
+            <Dropdown
+                trigger={['click']}
+                menu={{
+                    items: [
+                        {
+                            key: 'quick',
+                            icon: <MailOutlined />,
+                            label: 'Quick reminders',
+                            onClick: () => { void handleSendReminders() }
+                        },
+                        {
+                            key: 'template',
+                            icon: <FileTextOutlined />,
+                            label: 'Email from a template…',
+                            onClick: openEmailTemplate
+                        }
+                    ]
+                }}
+            >
+                <Button className='ws-toolbar-button' data-guide='email-compliance-reminders' icon={<MailOutlined />}>
+                    Remind SMEs
+                </Button>
+            </Dropdown>
+
+            <Button
+                className='ws-toolbar-button'
+                data-guide='bulk-ai-compliance'
+                icon={<RobotOutlined />}
+                loading={aiBatchRunning}
+                disabled={aiBatchRunning || visibleViews.length === 0}
+                onClick={confirmBatchVerification}
+            >
+                {aiBatchRunning && aiBatchProgress
+                    ? `Verifying ${aiBatchProgress.done}/${aiBatchProgress.total}…`
+                    : 'AI verify'}
+            </Button>
+
+            {/* M&E tracks the programme list, so it has no department setup. */}
+            {!tracksWholeProgramme && (
+                <Button
+                    className='ws-toolbar-button'
+                    data-guide='setup-compliance-documents'
+                    icon={<SettingOutlined />}
+                    disabled={!activeProgramId || isAllPrograms}
+                    title={
+                        !activeProgramId || isAllPrograms
+                            ? 'Select one active program to configure its documents.'
+                            : undefined
+                    }
+                    onClick={openRequirementsManager}
+                >
+                    Setup
+                </Button>
+            )}
+        </>
+    )
+
+    const detailPanel = selectedView ? (
+        <ComplianceDetail
+            view={selectedView}
+            entries={entriesForPart(selectedView.participantId)}
+            renderActions={entry => renderRequirementActions(selectedView.participantId, entry as ComplianceEntry)}
+            extraTags={isROMDept ? (
+                <Tag color={selectedView.moaSigned ? 'green' : 'orange'}>
+                    {selectedView.moaSigned ? 'MOA signed' : 'MOA unsigned'}
+                </Tag>
+            ) : null}
+            headerActions={
+                <>
+                    <Button
+                        data-guide='upload-compliance-action'
+                        icon={<UploadOutlined />}
+                        onClick={() => openUploadFor({
+                            participantId: selectedView.participantId,
+                            participantName: selectedView.name
+                        })}
+                    >
+                        Upload
+                    </Button>
+                    <Button icon={<MailOutlined />} onClick={() => remindParticipant(selectedView)}>
+                        Remind
+                    </Button>
+                    <Tooltip
+                        title={selectedAiPending
+                            ? undefined
+                            : 'Every uploaded file awaiting verification already has an AI suggestion.'}
+                    >
+                        <Button
+                            icon={<RobotOutlined />}
+                            loading={aiBatchRunning}
+                            disabled={aiBatchRunning || !selectedAiPending}
+                            onClick={() => confirmSmeVerification(selectedView)}
+                        >
+                            {selectedAiPending ? `AI check (${selectedAiPending})` : 'AI check'}
+                        </Button>
+                    </Tooltip>
+                </>
+            }
+        />
+    ) : null
+
+    if (activeTrainingId) {
+        return (
+            <div style={{ minHeight: '100vh', background: token.colorBgLayout, color: token.colorText, padding: 24 }}>
+                <TrainingComplianceView key={activeTrainingId} trainingId={activeTrainingId} />
+            </div>
+        )
+    }
 
     return (
         <div
-            className='compliance-tracking-page'
-            style={{ minHeight: '100vh', background: token.colorBgLayout, color: token.colorText, padding: 24 }}
+            className='ws-page'
+            style={{ minHeight: '100vh', background: token.colorBgLayout, color: token.colorText }}
         >
-            <style>{`
-                .compliance-tracking-page .ant-table-wrapper,
-                .compliance-tracking-page .ant-table,
-                .compliance-tracking-page .ant-table-container,
-                .compliance-tracking-page .ant-table-thead > tr > th,
-                .compliance-tracking-page .ant-table-tbody > tr > td {
-                    background: ${token.colorBgContainer};
-                    color: ${token.colorText};
-                    border-color: ${token.colorBorderSecondary};
-                }
-                .compliance-tracking-page .ant-table-thead > tr > th {
-                    background: ${token.colorFillAlter};
-                }
-                .compliance-tracking-page .ant-table-tbody > tr:hover > td {
-                    background: ${token.colorFillQuaternary} !important;
-                }
-                .compliance-tracking-page .ant-table .ant-btn {
-                    border-radius: 999px;
-                }
-            `}</style>
             <Helmet>
                 <title>Compliance Management | Smart Incubation</title>
             </Helmet>
@@ -3099,164 +3326,77 @@ const ComplianceTrackingPage: React.FC = () => {
                         </MotionCard>
                     ) : (
                         <>
-                            <Row data-guide='compliance-metrics' gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                                {[
-                                    { title: 'Required / Participant', value: metrics.needPer, icon: <FileTextOutlined />, tone: 'accent' as const },
-                                    { title: 'Uploaded', value: metrics.uploaded, icon: <SafetyCertificateOutlined />, tone: 'success' as const },
-                                    { title: 'Missing', value: metrics.missing, icon: <WarningOutlined />, tone: 'warning' as const },
-                                    { title: 'Pending', value: metrics.pending, icon: <FileProtectOutlined />, tone: 'info' as const },
-                                    { title: 'Expired/Invalid', value: metrics.expired + metrics.queried, icon: <CloseCircleOutlined />, tone: 'danger' as const }
-                                ].map(m => (
-                                    <Col
-                                        xs={24}
-                                        sm={12}
-                                        md={8}
-                                        lg={{ flex: '1 1 0' }}
-                                        style={{ minWidth: 0 }}
-                                        key={m.title}
-                                    >
+                            <Row data-guide='compliance-metrics' gutter={[12, 12]} style={{ marginBottom: 12 }}>
+                                {complianceTiles.map(tile => (
+                                    <Col key={tile.segment} xs={12} md={8} lg={{ flex: '1 1 0' }} style={{ minWidth: 0 }}>
                                         <MetricTile
-                                            icon={m.icon}
-                                            tone={m.tone}
+                                            icon={tile.icon}
+                                            tone={tile.tone}
+                                            title={tile.title}
+                                            mobileTitle={tile.mobileTitle}
+                                            value={tile.value}
                                             loading={pageLoading}
-                                            title={m.title}
-                                            value={m.value}
+                                            compact={isMobile}
                                         />
                                     </Col>
                                 ))}
                             </Row>
 
-                            <MotionCard
-                                loading={pageLoading}
-                                skeleton='table'
-                                skeletonRows={7}
-                                skeletonColumns={6}
-                                filterBar={
-                                    <Row
-                                        data-guide='compliance-filters'
-                                        gutter={[8, 8]}
-                                        align='middle'
-                                        style={{ width: '100%' }}
-                                    >
-                                        <Col xs={24} sm={12} lg={8} style={{ minWidth: 0 }}>
-                                            <Input
-                                                placeholder='Search SME…'
-                                                value={searchText}
-                                                onChange={e => setSearchText(e.target.value)}
-                                                prefix={<SearchOutlined />}
-                                                allowClear
-                                            />
-                                        </Col>
+                            <ComplianceFilters
+                                filters={filters}
+                                onChange={patchFilters}
+                                programmeOptions={isAllPrograms ? programmeOptions : []}
+                                branchOptions={branchOptions}
+                                groupOptions={groupOptions}
+                                documentOptions={documentOptions}
+                                actions={toolbarActions}
+                            />
 
-                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
-                                            <Button
-                                                data-guide='email-compliance-reminders'
-                                                shape='round'
-                                                icon={<MailOutlined />}
-                                                block
-                                                onClick={() => {
-                                                    const targets = buildEmailTargets()
+                            <div className='ws-layout'>
+                                <ComplianceList
+                                    views={visibleViews}
+                                    loading={pageLoading}
+                                    selectedId={selectedId}
+                                    onSelect={selectView}
+                                    sort={filters.sort}
+                                    onSortChange={sort => patchFilters({ sort })}
+                                    showProgramme={isAllPrograms}
+                                    resetKey={`${filters.search}|${filters.segment}|${filters.programme}|${filters.branch}|${filters.group}|${filters.document}`}
+                                    emptyText={views.length
+                                        ? 'No SMEs match these filters'
+                                        : isAllPrograms
+                                            ? 'No onboarded SMEs across the available programmes'
+                                            : 'No onboarded SMEs in this programme'}
+                                />
 
-                                                    if (!targets.length) {
-                                                        message.info('All good — no reminders needed for this program.')
-                                                        return
-                                                    }
-
-                                                    setEmailTargets(targets)
-                                                    setEmailTemplatesOpen(true)
-                                                }}
-                                            >
-                                                Email Reminders
-                                            </Button>
-                                        </Col>
-
-                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
-                                            <Button
-                                                data-guide='quick-compliance-reminders'
-                                                shape='round'
-                                                icon={<MailOutlined />}
-                                                block
-                                                onClick={handleSendReminders}
-                                            >
-                                                Quick Reminders
-                                            </Button>
-                                        </Col>
-
-                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
-                                            <Button
-                                                data-guide='bulk-ai-compliance'
-                                                shape='round'
-                                                icon={<RobotOutlined />}
-                                                block
-                                                loading={aiBatchRunning}
-                                                disabled={aiBatchRunning || rows.length === 0}
-                                                onClick={() => {
-                                                    Modal.confirm({
-                                                        centered: true,
-                                                        title: 'Run AI verification for all SMEs?',
-                                                        content: `This checks every uploaded document across ${rows.length} SME(s) shown here. Each check may use an AI request, so this can take a while and consume shared AI quota.`,
-                                                        okText: 'Run AI Verify All',
-                                                        onOk: () =>
-                                                            runBatchVerification(
-                                                                rows.map(r => r.participantId),
-                                                                'all SMEs'
-                                                            )
-                                                    })
-                                                }}
-                                            >
-                                                {aiBatchRunning && aiBatchProgress
-                                                    ? `Verifying ${aiBatchProgress.done}/${aiBatchProgress.total}…`
-                                                    : 'AI Verify All'}
-                                            </Button>
-                                        </Col>
-
-                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
-                                            <Button
-                                                data-guide='setup-compliance-documents'
-                                                shape='round'
-                                                icon={<SettingOutlined />}
-                                                block
-                                                disabled={!activeProgramId || isAllPrograms}
-                                                title={
-                                                    !activeProgramId || isAllPrograms
-                                                        ? 'Select one active program to configure its documents.'
-                                                        : undefined
-                                                }
-                                                onClick={openRequirementsManager}
-                                            >
-                                                Setup Documents
-                                            </Button>
-                                        </Col>
-                                    </Row>
-                                }
-                                filterBarProps={{
-                                    background: metricPalette.filterBarBg,
-                                    borderColor: metricPalette.filterBarBorder,
-                                    borderRadius: 14,
-                                    boxShadow: metricPalette.filterBarShadow,
-                                    padding: 16
-                                }}
-                            >
-                                <div data-guide='compliance-table'>
-                                    <Table
-                                        rowKey='key'
-                                        dataSource={rows}
-                                        columns={columns}
-                                        style={{ background: token.colorBgContainer }}
-                                        locale={{
-                                            emptyText: (
+                                {!isMobile && (
+                                    <div className='ws-detail-sticky'>
+                                        {detailPanel || (
+                                            <MotionCard loading={pageLoading} skeleton='text' skeletonRows={8}>
                                                 <Empty
-                                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                                    description={isAllPrograms
-                                                        ? 'No participants found across the available programs.'
-                                                        : 'No participants found for this program.'}
+                                                    className='ws-detail-empty'
+                                                    description={views.length
+                                                        ? 'Select an SME to review their documents'
+                                                        : 'No SMEs to review yet'}
                                                 />
-                                            )
-                                        }}
-                                        pagination={{ position: ['bottomCenter'], pageSize: 7, showSizeChanger: false }}
-                                    />
-                                </div>
-                            </MotionCard>
+                                            </MotionCard>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {isMobile && (
+                                <Drawer
+                                    className='ws-drawer'
+                                    open={drawerOpen && !!selectedView}
+                                    onClose={() => setDrawerOpen(false)}
+                                    placement='right'
+                                    width='100%'
+                                    title={selectedView?.name || 'SME'}
+                                >
+                                    {detailPanel}
+                                </Drawer>
+                            )}
                         </>
                     )}
 
@@ -3692,20 +3832,6 @@ const ComplianceTrackingPage: React.FC = () => {
                     />
 
                     <Modal
-                        className='guide-manage-compliance-modal'
-                        centered
-                        open={manageOpen}
-                        title={manageTarget ? `Manage: ${manageTarget.participantName}` : 'Manage compliance'}
-                        onCancel={() => setManageOpen(false)}
-                        footer={null}
-                        width={1100}
-                    >
-                        <div data-guide='manage-compliance-content'>
-                            {renderManageList()}
-                        </div>
-                    </Modal>
-
-                    <Modal
                         className='guide-upload-compliance-modal'
                         centered
                         open={uploadOpen}
@@ -3837,6 +3963,8 @@ const ComplianceTrackingPage: React.FC = () => {
 
                     <Modal
                         centered
+                        // Mounted up front, so the AI's reason can be filled in before it opens.
+                        forceRender
                         open={reasonOpen}
                         title={reasonStatus === 'invalid' ? 'Invalidate document' : 'Query document'}
                         onCancel={() => {

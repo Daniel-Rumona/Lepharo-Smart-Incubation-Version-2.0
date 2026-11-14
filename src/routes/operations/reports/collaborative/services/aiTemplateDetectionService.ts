@@ -1,7 +1,7 @@
 import { getAuth } from 'firebase/auth'
 import type { ExtractedDocumentStructure, ReportContentType } from '../types'
 
-const AI_BASE_URL = String(import.meta.env.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-incubation.hf.space').replace(/\/$/, '')
+const AI_BASE_URL = String(import.meta.env.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-inc.hf.space').replace(/\/$/, '')
 
 export type TemplateDetectionSuggestion = {
   nodeIds: string[]

@@ -52,7 +52,6 @@ import {
 } from "@/services/evidenceModel";
 import { InterventionWizard, wizardInitialFrom, type WizardValues } from "./InterventionWizard";
 import { InterventionDetailModal } from "./InterventionDetailModal";
-import WhatsWorkingCard from "@/components/dashboards/shared/WhatsWorkingCard";
 import {
     DeleteOutlined,
     EditOutlined,
@@ -1274,10 +1273,6 @@ const InterventionsManager: React.FC = () => {
                 <>
                     <div data-guide="intervention-metrics" style={{ marginBottom: 16 }}>
                         <MetricsGrid metrics={summaryMetrics} />
-                    </div>
-
-                    <div data-guide="intervention-impact" style={{ marginBottom: 16 }}>
-                        <WhatsWorkingCard canRefresh includeEarly />
                     </div>
 
                     <MotionCard

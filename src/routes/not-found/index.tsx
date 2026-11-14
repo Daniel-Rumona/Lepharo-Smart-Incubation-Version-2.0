@@ -11,8 +11,11 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
-// Shared with the landing page: the orbit animation, accent variables
-// and dark-mode treatment all come from here so the two stay one design.
+import { useIdentity } from '@/contexts/IdentityContext'
+import { roleHomePath } from '@/utils/roleHome'
+// Shared with the landing page: the `lx` wrapper brings its colour tokens,
+// warm background, aurora fields and dark-mode values so the two stay one
+// design. The orbit itself is styled in NotFound.css.
 import '../landing/LandingPage.css'
 import './NotFound.css'
 
@@ -32,14 +35,25 @@ export default function NotFoundPage() {
     const navigate = useNavigate()
     const { pathname } = useLocation()
     const reduceMotion = useReducedMotion()
+    const { user, loading } = useIdentity()
 
-    const goBack = () => (window.history.length > 1 ? navigate(-1) : navigate('/'))
+    // Signed-in users go back to their own dashboard; only visitors get the
+    // public landing page. While identity is still resolving, /login routes a
+    // signed-in user on by itself.
+    const homePath = user ? roleHomePath(user.role) : loading ? '/login' : '/'
+    const goHome = () => navigate(homePath)
+    const goBack = () => (window.history.length > 1 ? navigate(-1) : goHome())
 
     return (
-        <div className='landing-page nf-page'>
+        <div className='lx nf-page'>
             <Helmet>
                 <title>Page not found | Smart Incubation Platform</title>
             </Helmet>
+
+            <div className='lx-bg' aria-hidden='true'>
+                <span className='lx-aurora lx-aurora-a' />
+                <span className='lx-aurora lx-aurora-b' />
+            </div>
 
             <div className='nf-theme'>
                 <ThemeToggle compact />
@@ -97,8 +111,8 @@ export default function NotFoundPage() {
                 </motion.div>
 
                 <motion.div className='nf-actions' {...rise(0.32)}>
-                    <button type='button' className='nf-btn is-primary' onClick={() => navigate('/')}>
-                        <HomeOutlined /> Go Home
+                    <button type='button' className='nf-btn is-primary' onClick={goHome}>
+                        <HomeOutlined /> {user ? 'Go to Dashboard' : 'Go Home'}
                     </button>
                     <button type='button' className='nf-btn' onClick={goBack}>
                         <ArrowLeftOutlined /> Go Back

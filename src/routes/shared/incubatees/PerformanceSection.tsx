@@ -6,6 +6,7 @@ import HighchartsReact from 'highcharts-react-official'
 import { Dayjs } from 'dayjs'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { groupJobs } from '@/lib/jobs'
 import { JobContract, MonthlyFinancePoint, SmePerformanceDetail, SmeRow, carryForwardMonthlyValues, countActiveJobsForMonth, monthKeyFromValue, monthNames } from './participantsData'
 
 type PerformanceSectionProps = {
@@ -62,7 +63,9 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
             : fallbackKeyByMonthIndex.get(month.monthIndex) === month.key
                 ? perfDetail?.mergedRevenue[month.monthIndex] ?? null
                 : null)
-        const hasVerifiedJobs = jobContracts.length > 0
+        // One job per person per position, renewals and re-uploads included (src/lib/jobs.ts).
+        const jobs = groupJobs(jobContracts)
+        const hasVerifiedJobs = jobs.length > 0
         const carriedPermanent = carryForwardMonthlyValues(perfDetail?.mergedPerm || Array(12).fill(null))
         const carriedTemporary = carryForwardMonthlyValues(perfDetail?.mergedTemp || Array(12).fill(null))
         const reportedEmployees = months.map(month => {
@@ -72,7 +75,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
             return permanent == null && temporary == null ? null : (permanent || 0) + (temporary || 0)
         })
         const verifiedJobs = months.map(month => hasVerifiedJobs
-            ? countActiveJobsForMonth(jobContracts, month.key)
+            ? countActiveJobsForMonth(jobs, month.key)
             : null)
         const hasReportedEmployees = reportedEmployees.some(value => value != null)
         const hasData = revenue.some(value => value != null) || hasReportedEmployees || hasVerifiedJobs

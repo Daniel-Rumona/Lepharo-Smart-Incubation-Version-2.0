@@ -3,7 +3,7 @@ import type { OutcomeType } from '@/services/evidenceModel'
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 export type DesignStep = 'outcomes' | 'schedule' | 'breakdown'

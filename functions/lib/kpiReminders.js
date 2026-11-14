@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.kpiManualUpdateReminderCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 const syntheticData_1 = require("./syntheticData");
 // Chases manually-tracked KPIs (kpiDefinitions.trackingMode === "manual") that
@@ -72,7 +72,7 @@ async function resolveDepartmentRecipients(departmentId) {
     });
     return recipients;
 }
-exports.kpiManualUpdateReminderCron = (0, scheduler_1.onSchedule)({
+exports.kpiManualUpdateReminderCron = (0, cronHeartbeat_1.scheduledJob)("kpiManualUpdateReminderCron", {
     region: "us-central1",
     schedule: "0 7 * * *",
     timeZone: "Africa/Johannesburg",

@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { inquiryService } from './inquiryService'
+import { sendNotification } from '@/utils/sendNotification'
 
 export interface FollowUp {
   id: string
@@ -36,7 +37,56 @@ export interface FollowUp {
   createdAt: Date
   completedAt?: Date
   updatedAt: Date
+  /** What came of it, written when it is marked done. */
+  outcome?: string
+  completedBy?: string
+  completedByName?: string
+  /** Who works it: the branch's reception desk. assignedTo only records who logged it. */
+  owner?: 'reception'
+  createdVia?: 'portal' | 'reception'
+  /**
+   * The department coordinators it is escalated to, while they hold it. Empty
+   * once it is handed back or taken back. The rules give these people access.
+   */
+  escalatedToUids?: string[]
+  escalation?: FollowUpEscalation
 }
+
+export interface FollowUpEscalation {
+  departmentId: string
+  departmentName: string
+  note: string
+  byUid: string
+  byName: string
+  at?: Date
+  recipients: { uid: string; name: string }[]
+  status: 'open' | 'returned' | 'taken-back'
+  /** Copied from the inquiry, which department coordinators cannot open. */
+  company?: string
+  description?: string
+  returnNote?: string
+  returnedByName?: string
+  returnedAt?: Date
+}
+
+const toDateOrUndefined = (value: any) => (typeof value?.toDate === 'function' ? value.toDate() : value || undefined)
+
+/** A follow-up doc, with its timestamps as Dates. */
+const toFollowUp = (id: string, data: any): FollowUp => ({
+  id,
+  ...data,
+  scheduledDate: toDateOrUndefined(data.scheduledDate),
+  createdAt: toDateOrUndefined(data.createdAt),
+  completedAt: toDateOrUndefined(data.completedAt),
+  updatedAt: toDateOrUndefined(data.updatedAt),
+  ...(data.escalation && {
+    escalation: {
+      ...data.escalation,
+      at: toDateOrUndefined(data.escalation.at),
+      returnedAt: toDateOrUndefined(data.escalation.returnedAt)
+    }
+  })
+})
 
 export interface FollowUpFormData {
   inquiryId: string
@@ -48,6 +98,8 @@ export interface FollowUpFormData {
   assignedTo: string
   assignedToName: string
   assignedToEmail?: string
+  owner?: 'reception'
+  createdVia?: 'portal' | 'reception'
 }
 
 export interface FollowUpQueryParams {
@@ -91,6 +143,8 @@ export const followUpService = {
         assignedTo: followUpData.assignedTo,
         assignedToName: followUpData.assignedToName,
         assignedToEmail: followUpData.assignedToEmail || '',
+        owner: followUpData.owner || 'reception',
+        createdVia: followUpData.createdVia || 'reception',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         isActive: true
@@ -118,17 +172,7 @@ export const followUpService = {
       )
 
       const snapshot = await getDocs(q)
-      let followUps = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          scheduledDate: data.scheduledDate?.toDate(),
-          createdAt: data.createdAt?.toDate(),
-          completedAt: data.completedAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate()
-        }
-      }) as FollowUp[]
+      let followUps = snapshot.docs.map(doc => toFollowUp(doc.id, doc.data()))
 
       // Apply client-side filtering to avoid complex index requirements
       if (params?.status) {
@@ -153,8 +197,8 @@ export const followUpService = {
         })
       }
 
-      // Sort by scheduled date
-      followUps.sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime())
+      // Sort by scheduled date (undated ones last, rather than failing the whole list)
+      followUps.sort((a, b) => (a.scheduledDate?.getTime() ?? Infinity) - (b.scheduledDate?.getTime() ?? Infinity))
 
       // Apply limit if provided
       if (params?.limit) {
@@ -168,39 +212,23 @@ export const followUpService = {
     }
   },
 
-  // Get follow-ups for center coordinator (exclude receptionist-assigned follow-ups)
+  /** One inquiry's follow-ups, earliest due first: what its detail view shows and acts on. */
+  async getFollowUpsForInquiry(inquiryId: string): Promise<FollowUp[]> {
+    const snap = await getDocs(query(collection(db, 'followUps'), where('inquiryId', '==', inquiryId)))
+    return snap.docs
+      .filter(d => d.data().isActive !== false)
+      .map(d => toFollowUp(d.id, d.data()))
+      .sort((a, b) => (a.scheduledDate?.getTime() ?? Infinity) - (b.scheduledDate?.getTime() ?? Infinity))
+  },
+
+  // Get follow-ups for a center coordinator: everything at their centre, reception's included.
   async getCenterCoordinatorFollowUps(branchId: string, params?: FollowUpQueryParams): Promise<FollowUp[]> {
     try {
-      // Get all follow-ups for the branch
       const followUps = await this.getFollowUpsByBranch(branchId, params)
-
-      // Filter out follow-ups assigned to receptionists
-      // Center coordinators should only see follow-ups not assigned to receptionists
-      const filteredFollowUps = followUps.filter(followUp => {
-        // Check if the assignedTo user is a receptionist
-        // We'll exclude follow-ups where assignedTo contains receptionist-related identifiers
-        const assignedTo = followUp.assignedTo?.toLowerCase() || ''
-        const assignedToName = followUp.assignedToName?.toLowerCase() || ''
-
-        // Exclude if assigned to a receptionist (common receptionist identifiers)
-        const isReceptionist =
-          assignedTo.includes('receptionist') ||
-          assignedToName.includes('receptionist') ||
-          assignedTo.includes('reception') ||
-          assignedToName.includes('reception') ||
-          // Also exclude if the assignedTo is an email that might be a receptionist
-          (assignedTo.includes('@') && (
-            assignedTo.includes('reception') ||
-            assignedTo.includes('front') ||
-            assignedTo.includes('desk')
-          ))
-
-        return !isReceptionist
-      })
 
       // Add overdue status calculation
       const now = new Date()
-      const processedFollowUps = filteredFollowUps.map(followUp => {
+      const processedFollowUps = followUps.map(followUp => {
         const isOverdue = followUp.status === 'Pending' &&
                          followUp.scheduledDate < now &&
                          followUp.inquiryId // Only mark as overdue if it's related to an inquiry
@@ -294,6 +322,156 @@ export const followUpService = {
       console.error('Error updating follow-up status:', error)
       throw error
     }
+  },
+
+  /**
+   * Mark a follow-up done with what came of it, and optionally book the next one
+   * for the same inquiry. The outcome is kept apart from the original notes, and
+   * the inquiry moves to Contacted, as updateFollowUpStatus does.
+   */
+  async completeFollowUp(
+    followUp: FollowUp,
+    outcome: string,
+    completedBy: { uid: string; name: string; email?: string },
+    next?: { scheduledDate: Date; followUpType: FollowUp['followUpType']; notes?: string }
+  ): Promise<string | null> {
+    await updateDoc(doc(db, 'followUps', followUp.id), {
+      status: 'Completed',
+      outcome: outcome.trim(),
+      completedAt: serverTimestamp(),
+      completedBy: completedBy.uid,
+      completedByName: completedBy.name,
+      updatedAt: serverTimestamp()
+    })
+
+    try {
+      await inquiryService.updateInquiryStatus(followUp.inquiryId, 'Contacted', completedBy.uid, 'Follow-up completed')
+    } catch (inquiryError) {
+      console.warn('Failed to update inquiry status:', inquiryError)
+    }
+
+    if (!next) return null
+    return this.createFollowUp({
+      inquiryId: followUp.inquiryId,
+      branchId: followUp.branchId,
+      scheduledDate: next.scheduledDate,
+      followUpType: next.followUpType,
+      priority: followUp.priority,
+      notes: next.notes || '',
+      assignedTo: completedBy.uid,
+      assignedToName: completedBy.name,
+      assignedToEmail: completedBy.email || ''
+    })
+  },
+
+  /**
+   * The coordinators of a department who should get an escalation from this
+   * branch: the department's coordinators at the branch, or, when it has none
+   * there, the department's coordinators at any branch. Departments are matched
+   * by id only.
+   */
+  async findDepartmentCoordinators(departmentId: string, branchId: string): Promise<{ uid: string; name: string }[]> {
+    const snap = await getDocs(
+      query(collection(db, 'users'), where('role', '==', 'coordinator'), where('departmentId', '==', departmentId))
+    )
+    const active = snap.docs.filter(d => String(d.data().status || 'Active').toLowerCase() !== 'inactive')
+    const atBranch = active.filter(d => d.data().assignedBranch === branchId || d.data().branchId === branchId)
+    return (atBranch.length ? atBranch : active).map(d => ({
+      uid: d.id,
+      name: String(d.data().name || d.data().email || 'Coordinator')
+    }))
+  },
+
+  /**
+   * Hand a follow-up to a department's coordinators. They are notified and can
+   * see it (the rules key on escalatedToUids); reception keeps it under Escalated.
+   * Throws 'no_coordinator' when the department has no coordinator anywhere.
+   */
+  async escalateFollowUp(
+    followUp: FollowUp,
+    department: { id: string; name: string },
+    note: string,
+    by: { uid: string; name: string }
+  ): Promise<{ uid: string; name: string }[]> {
+    const recipients = await this.findDepartmentCoordinators(department.id, followUp.branchId)
+    if (!recipients.length) throw new Error('no_coordinator')
+
+    // The coordinators cannot open the inquiry itself, so the details they need travel with it.
+    const inquiry = await inquiryService.getInquiryById(followUp.inquiryId).catch(() => null)
+
+    await updateDoc(doc(db, 'followUps', followUp.id), {
+      escalatedToUids: recipients.map(r => r.uid),
+      escalation: {
+        departmentId: department.id,
+        departmentName: department.name,
+        note: note.trim(),
+        byUid: by.uid,
+        byName: by.name,
+        at: serverTimestamp(),
+        recipients,
+        status: 'open',
+        company: inquiry?.contactInfo?.company || '',
+        description: inquiry?.inquiryDetails?.description || ''
+      },
+      updatedAt: serverTimestamp()
+    })
+
+    await sendNotification({
+      type: 'follow-up-escalated',
+      recipientIds: recipients.map(r => r.uid),
+      message: `${by.name} escalated a follow-up to ${department.name}: ${followUp.customerName}${note.trim() ? ` — "${note.trim()}"` : ''}`,
+      link: '/coordinator/follow-ups',
+      actionTarget: { collection: 'followUps', docId: followUp.id }
+    })
+    return recipients
+  },
+
+  /** Reception takes an escalated follow-up back before the department has finished it. */
+  async takeBackFollowUp(followUp: FollowUp): Promise<void> {
+    await updateDoc(doc(db, 'followUps', followUp.id), {
+      escalatedToUids: [],
+      'escalation.status': 'taken-back',
+      updatedAt: serverTimestamp()
+    })
+  },
+
+  /** A department coordinator hands an escalated follow-up back to reception, with a note. */
+  async handBackFollowUp(followUp: FollowUp, note: string, by: { uid: string; name: string }): Promise<void> {
+    await updateDoc(doc(db, 'followUps', followUp.id), {
+      escalatedToUids: [],
+      'escalation.status': 'returned',
+      'escalation.returnNote': note.trim(),
+      'escalation.returnedByName': by.name,
+      'escalation.returnedAt': serverTimestamp(),
+      updatedAt: serverTimestamp()
+    })
+
+    const reception = await getDocs(
+      query(collection(db, 'users'), where('role', '==', 'receptionist'), where('assignedBranch', '==', followUp.branchId))
+    ).catch(() => null)
+    const ids = reception ? reception.docs.map(d => d.id) : []
+    if (ids.length) {
+      await sendNotification({
+        type: 'follow-up-returned',
+        recipientIds: ids,
+        message: `${by.name} handed back the follow-up for ${followUp.customerName}: "${note.trim()}"`,
+        link: '/receptionist/follow-ups',
+        actionTarget: { collection: 'followUps', docId: followUp.id }
+      })
+    }
+  },
+
+  /**
+   * Follow-ups escalated to this coordinator, open or finished. Marking one done
+   * keeps its escalatedToUids, so finished ones stay listed; handing back or
+   * reception taking it back empties it, and it leaves this list.
+   */
+  async getEscalatedToMe(uid: string): Promise<FollowUp[]> {
+    const snap = await getDocs(query(collection(db, 'followUps'), where('escalatedToUids', 'array-contains', uid)))
+    return snap.docs
+      .filter(d => d.data().isActive !== false)
+      .map(d => toFollowUp(d.id, d.data()))
+      .sort((a, b) => (a.scheduledDate?.getTime() ?? Infinity) - (b.scheduledDate?.getTime() ?? Infinity))
   },
 
   // Update follow-up details
@@ -403,7 +581,7 @@ export const followUpService = {
     }
   },
 
-  // Get follow-up statistics for center coordinator (excludes receptionist-assigned follow-ups)
+  // Get follow-up statistics for a center coordinator: everything at their centre
   async getCenterCoordinatorFollowUpStats(branchId: string): Promise<{
     total: number
     pending: number
@@ -412,7 +590,6 @@ export const followUpService = {
     cancelled: number
   }> {
     try {
-      // Get center coordinator follow-ups (which already exclude receptionist-assigned ones)
       const followUps = await this.getCenterCoordinatorFollowUps(branchId)
 
       const now = new Date()
@@ -424,13 +601,12 @@ export const followUpService = {
         cancelled: 0
       }
 
+      // getCenterCoordinatorFollowUps has already relabelled past pending ones "Overdue".
       followUps.forEach(followUp => {
-        if (followUp.status === 'Pending') {
-          if (followUp.scheduledDate < now) {
-            stats.overdue++
-          } else {
-            stats.pending++
-          }
+        if (followUp.status === 'Overdue' || (followUp.status === 'Pending' && followUp.scheduledDate < now)) {
+          stats.overdue++
+        } else if (followUp.status === 'Pending') {
+          stats.pending++
         } else if (followUp.status === 'Completed') {
           stats.completed++
         } else if (followUp.status === 'Cancelled') {

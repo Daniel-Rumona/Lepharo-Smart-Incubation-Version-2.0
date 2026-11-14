@@ -1440,12 +1440,6 @@ export const CustomLayout: React.FC = () => {
                 ],
             },
             {
-                key: "linkages",
-                to: "/coordinator/interventions/linkages",
-                label: "Linkages Portal",
-                icon: <LinkOutlined />,
-            },
-            {
                 key: "surveys-portal",
                 to: "/operations/surveys",
                 label: "Surveys Portal",
@@ -2138,7 +2132,7 @@ export const CustomLayout: React.FC = () => {
         },
 
         "Market Linkages": {
-            topLevel: [...SHARED_OPERATIONS_TOP, "coordinators", "linkages"],
+            topLevel: [...SHARED_OPERATIONS_TOP, "coordinators"],
             children: {
                 coordinators: ["coordinators-db", "assignments"],
             },

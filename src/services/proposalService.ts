@@ -1,5 +1,4 @@
 import {
-    addDoc,
     collection,
     doc,
     getDocs,
@@ -8,7 +7,6 @@ import {
     query,
     runTransaction,
     serverTimestamp,
-    updateDoc,
     where,
     writeBatch
 } from 'firebase/firestore'
@@ -20,6 +18,7 @@ import {
 } from 'firebase/storage'
 import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
+import { isStaffRole } from '@/lib/roleLabels'
 import type {
     Proposal,
     ProposalActor,
@@ -134,27 +133,40 @@ export const listenToProposals = (
     onData: (proposals: Proposal[]) => void,
     onError: (error: Error) => void
 ) => {
-    const proposalsQuery = actor.role === 'projectadmin' && actor.branchId
-        ? query(
-            collection(db, COLLECTION),
-            where('centreIds', 'array-contains', actor.branchId)
-        )
-        : query(collection(db, COLLECTION))
+    const branchId = actor.role === 'projectadmin' ? actor.branchId : null
+    // Centre coordinators see their centre's proposals. Older records carry only
+    // branchId or assignedBranch, not centreIds, so each shape gets its own query.
+    const queries = branchId
+        ? [
+            query(collection(db, COLLECTION), where('centreIds', 'array-contains', branchId)),
+            query(collection(db, COLLECTION), where('branchId', '==', branchId)),
+            query(collection(db, COLLECTION), where('assignedBranch.id', '==', branchId))
+        ]
+        : [query(collection(db, COLLECTION))]
 
-    return onSnapshot(
+    // Archived proposals are included; the page decides where to show them.
+    const results: Array<Map<string, Proposal> | null> = queries.map(() => null)
+    const emit = () => {
+        if (results.some(result => result === null)) return
+        const merged = new Map<string, Proposal>()
+        results.forEach(result => result?.forEach((proposal, id) => merged.set(id, proposal)))
+        const records = Array.from(merged.values()).filter(item =>
+            !branchId || item.centres.some(centre => centre.id === branchId)
+        )
+        onData(sortByUpdated(records))
+    }
+
+    const unsubscribers = queries.map((proposalsQuery, index) => onSnapshot(
         proposalsQuery,
         snapshot => {
-            const records = snapshot.docs
-                .map(item => normalizeProposal(item.id, item.data()))
-                .filter(item => {
-                    if (item.isArchived) return false
-                    if (actor.role !== 'projectadmin' || !actor.branchId) return true
-                    return item.centres.some(centre => centre.id === actor.branchId)
-                })
-            onData(sortByUpdated(records))
+            results[index] = new Map(snapshot.docs.map(item =>
+                [item.id, normalizeProposal(item.id, item.data())] as const
+            ))
+            emit()
         },
         error => onError(error)
-    )
+    ))
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe())
 }
 
 export const listProposalContributors = async (): Promise<ProposalContributor[]> => {
@@ -169,11 +181,11 @@ export const listProposalContributors = async (): Promise<ProposalContributor[]>
                 role: String(data.role || data.jobTitle || 'User')
             }
         })
+        // Lepharo staff only: SMEs, training SMEs, funders and system admins are not contributors.
         .filter(user => {
-            const role = String(user.role || '').trim().toLowerCase()
             const email = String(user.email || '').trim().toLowerCase()
             return Boolean(user.name && email) &&
-                !['incubatee', 'participant', 'sme'].includes(role) &&
+                isStaffRole(user.role) &&
                 !email.endsWith('@quantilytix.co.za')
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -243,8 +255,11 @@ export const updateProposal = async (
     const by = actorContributor(actor)
     const batch = writeBatch(db)
 
+    const becameAccepted = input.status === 'Accepted' && proposal.status !== 'Accepted'
     batch.update(proposalRef, {
         ...input,
+        acceptedAt: becameAccepted ? serverTimestamp() : input.acceptedAt || null,
+        isArchived: input.status === 'Archived',
         updatedAt: serverTimestamp(),
         updatedBy: by,
         funder: input.clientName,
@@ -280,7 +295,9 @@ export const changeProposalStatus = async (
 
     batch.update(proposalRef, {
         status,
-        acceptedAt: status === 'Accepted' ? serverTimestamp() : proposal.acceptedAt || null,
+        acceptedAt: status === 'Accepted' && proposal.status !== 'Accepted'
+            ? serverTimestamp()
+            : proposal.acceptedAt || null,
         updatedAt: serverTimestamp(),
         updatedBy: by,
         isArchived: status === 'Archived'
@@ -347,8 +364,10 @@ export const uploadProposalDocument = async (
     }))
     const url = await getDownloadURL(storageRef)
     const by = actorContributor(actor)
-    const documentRef = await addDoc(
-        collection(db, COLLECTION, proposal.id, 'documents'),
+    // The record, its history entry and the proposal's timestamp land together.
+    const documentRef = doc(collection(db, COLLECTION, proposal.id, 'documents'))
+    const batch = writeBatch(db)
+    batch.set(documentRef,
         {
             name: file.name,
             category,
@@ -363,16 +382,23 @@ export const uploadProposalDocument = async (
         }
     )
 
-    await addDoc(collection(db, COLLECTION, proposal.id, 'history'), {
+    batch.set(doc(collection(db, COLLECTION, proposal.id, 'history')), {
         action: 'document_uploaded',
         note: `${category} document uploaded: ${file.name}`,
         createdAt: serverTimestamp(),
         createdBy: by
     })
-    await updateDoc(doc(db, COLLECTION, proposal.id), {
+    batch.update(doc(db, COLLECTION, proposal.id), {
         updatedAt: serverTimestamp(),
         updatedBy: by
     })
+    try {
+        await batch.commit()
+    } catch (error) {
+        // No record was written, so the uploaded file would be orphaned.
+        await deleteObject(storageRef).catch(() => undefined)
+        throw error
+    }
 
     return documentRef.id
 }
@@ -384,9 +410,6 @@ export const deleteProposalDocument = async (
 ) => {
     if (document.id === 'legacy-proposal-document') {
         throw new Error('Replace legacy documents from the existing Programs module.')
-    }
-    if (document.storagePath) {
-        await deleteObject(ref(storage, document.storagePath)).catch(() => undefined)
     }
     const batch = writeBatch(db)
     batch.delete(doc(db, COLLECTION, proposal.id, 'documents', document.id))
@@ -401,4 +424,9 @@ export const deleteProposalDocument = async (
         updatedBy: actorContributor(actor)
     })
     await batch.commit()
+    // The file goes only after its record, so a failed write never leaves a
+    // record pointing at a deleted file.
+    if (document.storagePath) {
+        await deleteObject(ref(storage, document.storagePath)).catch(() => undefined)
+    }
 }

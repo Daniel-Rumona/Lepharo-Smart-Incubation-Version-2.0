@@ -391,6 +391,12 @@ const InterventionsCompletionCard: React.FC<
         });
     }, [buckets, allRows]);
 
+    // Empty only when the chart has nothing to draw: the series count work open,
+    // pending or overdue during the period, not only work created or completed in it.
+    const hasActivity = bucketCounts.some(
+        (counts) => counts.assignments + counts.pending + counts.overdue + counts.completed > 0
+    );
+
     const chartOptions: Highcharts.Options = {
         chart: { type: "spline", backgroundColor: "transparent", height: 390 },
         title: {
@@ -448,7 +454,7 @@ const InterventionsCompletionCard: React.FC<
                 transition={{ duration: 0.4 }}
             >
                 <Card style={cardStyle} title="Interventions by Period">
-                    {filteredRows.length ? (
+                    {hasActivity ? (
                         <HighchartsReact highcharts={Highcharts} options={chartOptions} />
                     ) : (
                         <Empty description="No interventions in this period" />
@@ -1004,7 +1010,7 @@ const ReportingDashboard: React.FC = () => {
 
     const monthlyOptions: Highcharts.Options = {
         chart: { backgroundColor: "transparent" },
-        title: { text: "Monthly Performance: Completion, Turnaround and Feedback" },
+        title: { text: undefined },
         credits: { enabled: false },
         xAxis: { categories: monthlyData.categories, crosshair: true },
         yAxis: [
@@ -1145,6 +1151,7 @@ const ReportingDashboard: React.FC = () => {
                     <Space style={{ float: "right" }}>
                         <MilestoneJourneyButton
                             scope="operations"
+                            dateRange={dateRange}
                             departmentId={journeyDepartmentIds[0]}
                             departmentIds={journeyDepartmentIds}
                             programId={isAllPrograms ? null : activeProgramId}
@@ -1322,7 +1329,7 @@ const ReportingDashboard: React.FC = () => {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.4 }}
                             >
-                                <Card style={cardStyle} title="Monthly Performance">
+                                <Card style={cardStyle} title="Monthly Performance: Completion, Turnaround and Feedback">
                                     {monthlyData.categories.length ? (
                                         <HighchartsReact
                                             highcharts={Highcharts}

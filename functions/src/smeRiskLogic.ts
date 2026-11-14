@@ -146,7 +146,7 @@ const expectedCycleDays = (input: RiskScoreInputs): number | null =>
   input.expectedServiceIntervalDays && input.expectedServiceIntervalDays > 0 ? input.expectedServiceIntervalDays : null;
 
 /** Whole cycles gone by without service: against the SME's own schedule when it has one, else 30-day cycles. */
-const cyclesWithoutService = (input: RiskScoreInputs): number =>
+export const cyclesWithoutService = (input: RiskScoreInputs): number =>
   Math.floor((input.daysSinceLastService ?? 0) / (expectedCycleDays(input) ?? W.defaultCycleDays));
 
 const inactivityLabel = (input: RiskScoreInputs, fixedLabel: string): string => {
@@ -553,4 +553,58 @@ export function deriveRiskInputs(records: RiskRecords, now: number): RiskScoreIn
     emailBounced: records.emailBounced,
     poorFeedbackCount: poorFeedback,
   };
+}
+
+/**
+ * Signals the Risk Register page doesn't load live; the nightly snapshot has them.
+ * Document counts are not among them: the register and the twin read documents live,
+ * as uploads measured against the programme's requirements, and that reading wins.
+ */
+export const SNAPSHOT_ONLY_INPUTS = [
+  "missedAppointments",
+  "declinedAppointments",
+  "revenueDropPercent",
+  "overdueFollowUps",
+  "openQueries",
+  "emailBounced",
+] as const;
+
+/**
+ * An SME's score inputs from live assignments and plan, plus the signals only the nightly
+ * snapshot (smeRiskSnapshots/{participantId}) has. The Risk Register and the digital twin
+ * both use this, so they show the same score for the same SME.
+ */
+export function scoreInputsFor(args: {
+  assignments: any[];
+  diagnosticPlan?: any;
+  departmentsById: Record<string, any>;
+  closedInterventionIds: Set<string>;
+  // expired: documents past their expiry date, scored like the nightly job does; 0 when not given.
+  docs: { missing: number; queried: number; rejected: number; expired?: number };
+  snapshot?: any;
+  joinedAt: number | null;
+  now: number;
+}): RiskScoreInputs {
+  const stored = args.snapshot?.inputs || null;
+  const live = deriveRiskInputs({
+    assignments: args.assignments,
+    appointments: [],
+    monthlyRevenue: [],
+    followUps: [],
+    openQueries: 0,
+    emailBounced: false,
+    compliance: { missing: args.docs.missing, queried: args.docs.queried, rejected: args.docs.rejected, expired: args.docs.expired ?? 0 },
+    coverage: {
+      plan: args.diagnosticPlan || null,
+      departmentsById: args.departmentsById,
+      closedInterventionIds: args.closedInterventionIds,
+    },
+    knownServiceAt: typeof stored?.lastServiceAt === "number" ? stored.lastServiceAt : null,
+    joinedAt: args.joinedAt,
+  }, args.now);
+  if (!stored) return live;
+  const fromSnapshot = Object.fromEntries(
+    SNAPSHOT_ONLY_INPUTS.filter((key) => stored[key] !== undefined).map((key) => [key, stored[key]])
+  );
+  return { ...live, ...fromSnapshot };
 }

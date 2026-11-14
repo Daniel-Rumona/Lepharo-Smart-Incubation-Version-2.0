@@ -32,7 +32,6 @@ const emailShared_1 = require("./emailShared");
 const movRecipients_1 = require("./movRecipients");
 const brevoClient_1 = require("./brevoClient");
 const inAppNotifications_1 = require("./inAppNotifications");
-const config_1 = require("./config");
 const departmentRoles_1 = require("./departmentRoles");
 const REGION = "us-central1";
 const FROM = () => process.env.SMTP_FROM || process.env.SMTP_USER;
@@ -41,7 +40,7 @@ const LOGIN_URL = emailShared_1.APP_BASE_URL.replace(/\/$/, "");
  * only the assignment context; the recipient is resolved server-side from the
  * participant record. The in-app copy uses 'intervention_reminder_sme', which
  * is deliberately absent from NOTIFICATION_REGISTRY so it never emails twice. */
-exports.sendInterventionReminderEmail = (0, https_1.onRequest)({ ...config_1.BREVO_EGRESS, region: REGION, cors: true }, (req, res) => {
+exports.sendInterventionReminderEmail = (0, https_1.onRequest)({ region: REGION, cors: true }, (req, res) => {
     (async () => {
         let recipientEmail = null;
         let participantId = '';
@@ -245,7 +244,7 @@ exports.onLeaveRequestDecisionEmail = (0, firestore_1.onDocumentWritten)({ regio
         after.from || after.startDate ? `From: ${clean(after.from || after.startDate)}` : "",
         after.to || after.endDate ? `To: ${clean(after.to || after.endDate)}` : "",
         decision === "rejected" && after.rejectionReason ? `Reason: ${clean(after.rejectionReason)}` : "",
-    ], "/operations/hr/leave");
+    ], "/leave-management");
     await (0, inAppNotifications_1.notifyInApp)({
         type: `leave_${decision}`,
         message: `Your ${clean(after.type || after.leaveType) || "leave"} request has been ${decision}.`,
@@ -358,7 +357,7 @@ exports.onAssignedInterventionEmail = (0, firestore_1.onDocumentWritten)({ regio
                 `Hello ${assigned.name},`,
                 `${title} has been assigned to you for ${sme.name}.`,
                 after.dueDate ? `Due date: ${clean(after.dueDate)}` : "",
-            ], "/coordinator/allocated");
+            ], "/allocated");
             await ref.update(notificationPatch("assignment", "assignee", assigned.email));
         }
         if (sme.email) {
@@ -369,7 +368,7 @@ exports.onAssignedInterventionEmail = (0, firestore_1.onDocumentWritten)({ regio
             ], "/incubatee/interventions");
             await ref.update(notificationPatch("assignment", "participant", sme.email));
         }
-        await inApp("intervention_assigned", `${title} has been assigned to you for ${sme.name}.`, [assigneeUid], "/coordinator/allocated");
+        await inApp("intervention_assigned", `${title} has been assigned to you for ${sme.name}.`, [assigneeUid], "/allocated");
         await inApp("intervention_assigned_sme", `${title} has been assigned to ${assigned.name}. Please review and accept it.`, [await smeUid()], "/incubatee/interventions");
     }
     if (before && status(before.assigneeCompletionStatus) !== "completed" &&
@@ -392,11 +391,11 @@ exports.onAssignedInterventionEmail = (0, firestore_1.onDocumentWritten)({ regio
             const decision = status(after.participantAcceptanceStatus);
             await send(assigned.email, `Participant ${decision}: ${title}`, "Intervention acceptance update", [
                 `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`,
-            ], "/coordinator/allocated");
+            ], "/allocated");
             await ref.update(notificationPatch("assignmentLifecycle", `participant${decision}`, assigned.email));
         }
         const decision = status(after.participantAcceptanceStatus);
-        await inApp(`intervention-${decision}`, `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`, [assigneeUid], "/coordinator/allocated");
+        await inApp(`intervention-${decision}`, `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`, [assigneeUid], "/allocated");
     }
     if (before && status(before.participantCompletionStatus) !== status(after.participantCompletionStatus) &&
         ["confirmed", "rejected"].includes(status(after.participantCompletionStatus))) {
@@ -407,13 +406,13 @@ exports.onAssignedInterventionEmail = (0, firestore_1.onDocumentWritten)({ regio
             await send(assigned.email, `Completion ${decision}: ${title}`, "Completion review update", [
                 `${clean(after.participantName) || "The participant"} has ${decision} completion of ${title}.`,
                 ...(decision === "rejected" && reason ? [`Their reason: “${reason}”`, "Correct it, deliver what's missing, or explain in the system; the HOD decides if you can't agree."] : []),
-            ], "/coordinator/allocated");
+            ], "/allocated");
             await ref.update(notificationPatch("assignmentLifecycle", `completion${decision}`, assigned.email));
         }
         const decision = status(after.participantCompletionStatus);
         // A rejection's in-app notice (with the reason) comes from onWorkflowQueryChanged, as a delivery dispute.
         if (decision === "confirmed") {
-            await inApp("intervention-confirmed", `${clean(after.participantName) || "The participant"} has confirmed completion of ${title}.`, [assigneeUid], "/coordinator/allocated");
+            await inApp("intervention-confirmed", `${clean(after.participantName) || "The participant"} has confirmed completion of ${title}.`, [assigneeUid], "/allocated");
         }
     }
 });

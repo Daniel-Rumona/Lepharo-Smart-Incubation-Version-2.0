@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { withOwner } from '@/lib/storageOwner'
+import { captureJobsBaseline } from '@/lib/jobs'
 import { auth, db, storage } from '@/firebase'
 import { CREATE_USER_URL } from '@/routes/shared/incubatees/participantsData'
 import { createSmeLoginByPhone } from '@/services/phoneLogin'
@@ -341,6 +342,11 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
             docs: [],
             requirementsMet: []
         }],
+        // Starting headcount for Jobs Created/Sustained (src/lib/jobs.ts).
+        jobsBaseline: captureJobsBaseline(
+            { headcountHistory: { monthly: toTotals(input.headcount?.monthly), annual: toTotals(input.headcount?.annual) } },
+            dayjs(now)
+        ),
         manuallyCreated: true
     }))
 

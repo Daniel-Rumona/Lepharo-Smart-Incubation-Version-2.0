@@ -37,7 +37,7 @@ const lower = (value: unknown) => clean(value).toLowerCase();
 const STAFF_ROLES = new Set([
   "system_admin", "system admin", "superadmin", "admin", "director", "operations", "head of department", "hod",
   "headofdepartment", "projectadmin", "project admin", "project_admin", "center coordinator", "center_coordinator",
-  "coordinator", "receptionist", "employee", "hr", "projectmanager", "consultant", "auxiliary",
+  "coordinator", "receptionist", "employee", "hr",
 ]);
 
 async function requireUser(uid: string | undefined) {

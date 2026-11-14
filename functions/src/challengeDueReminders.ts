@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { APP_BASE_URL, db, sendStatusChangeNotification } from "./emailShared";
 
 // Chases operational challenges (operationalChallenges) that are approaching or past their
@@ -72,7 +72,7 @@ async function resolveRecipients(challenge: any): Promise<{ uid: string; email: 
 
 function buildContent(challenge: any, challengeId: string, phase: Phase, dueLabel: string) {
   const title = clean(challenge.title) || "Operational challenge";
-  const link = `${APP_BASE_URL.replace(/\/$/, "")}/operations/success-challenges?challenge=${encodeURIComponent(challengeId)}&checkin=1`;
+  const link = `${APP_BASE_URL.replace(/\/$/, "")}/success-challenges?challenge=${encodeURIComponent(challengeId)}&checkin=1`;
   const heading = phase.kind === "upcoming"
     ? "Challenge due soon"
     : phase.kind === "due"
@@ -115,7 +115,7 @@ function buildContent(challenge: any, challengeId: string, phase: Phase, dueLabe
   return { subject: `${heading}: ${title}`, html, text, title };
 }
 
-export const challengeDueReminderCron = onSchedule(
+export const challengeDueReminderCron = scheduledJob("challengeDueReminderCron",
   {
     region: "us-central1",
     schedule: "0 7 * * *",
@@ -168,7 +168,7 @@ export const challengeDueReminderCron = onSchedule(
         challengeId: challengeSnap.id,
         challengeTitle: content.title,
         phase: phase.key,
-        link: `/operations/success-challenges?challenge=${challengeSnap.id}&checkin=1`,
+        link: `/success-challenges?challenge=${challengeSnap.id}&checkin=1`,
         createdAt: new Date(),
         readBy: {},
       });

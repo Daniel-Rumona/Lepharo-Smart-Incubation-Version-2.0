@@ -286,6 +286,7 @@ const IncubateeAnalytics = () => {
                 <Col span={24}>
                   <MilestoneJourney
                     scope="sme"
+                    dateRange={dateRange}
                     email={user?.email}
                     participantId={user?.participantId}
                   />

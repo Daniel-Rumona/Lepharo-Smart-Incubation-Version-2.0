@@ -8,31 +8,25 @@ import {
     RiseOutlined,
     TeamOutlined
 } from '@ant-design/icons'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
-import { db } from '@/firebase'
 import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
+import { activeJobsOn, expiringWithin, groupJobs, type JobContractRecord } from '@/lib/jobs'
+import { activeInMonths, asOfMonthEnd, loadJobContracts } from '@/lib/jobsData'
 import {
-    buildEmployeeKey,
     formatSignedPercent,
-    getContractMonthStart,
-    getEffectiveContractsForMonth,
     getFullReportingMonths,
     getPreviousReportingMonths,
-    getUniqueJobsForPeriod,
     hasPeriodRevenueData,
     loadProgramFinanceSeries,
     moneyCompact,
     periodLabel,
     signedPercent,
     sumPeriodRevenue,
-    toDayjs,
     type DateRangeValue,
-    type FinanceCompanySeries,
-    type JobContract
+    type FinanceCompanySeries
 } from './ProjectAdminProgramPulse'
 
 const { Text } = Typography
@@ -81,7 +75,7 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
 
     const [jobsLoading, setJobsLoading] = useState(true)
     const [jobsError, setJobsError] = useState('')
-    const [contracts, setContracts] = useState<JobContract[]>([])
+    const [contracts, setContracts] = useState<JobContractRecord[]>([])
 
     const [financeLoading, setFinanceLoading] = useState(true)
     const [financeError, setFinanceError] = useState('')
@@ -93,11 +87,9 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
         setJobsError('')
         ;(async () => {
             try {
-                const snap = await getDocs(programId
-                    ? query(collection(db, 'hseJobContracts'), where('programId', '==', programId))
-                    : query(collection(db, 'hseJobContracts')))
+                const rows = await loadJobContracts(programId)
                 if (cancelled) return
-                setContracts(snap.docs.map(item => ({ id: item.id, ...(item.data() as any) })) as JobContract[])
+                setContracts(rows)
             } catch (error) {
                 console.error('[ProjectAdminPerformance] jobs failed', error)
                 if (!cancelled) {
@@ -137,37 +129,25 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
     }, [programId])
 
     // ---- Jobs health ----
-    const jobs = useMemo(() => {
-        const current = hasPeriod ? getUniqueJobsForPeriod(contracts, reportingMonths) : []
-        const previous = previousMonths.length ? getUniqueJobsForPeriod(contracts, previousMonths) : []
-        const permanent = current.filter(item => item.contractType === 'permanent').length
-        const temporary = current.filter(item => item.contractType === 'temporal')
+    // One job per person per position, renewals and re-uploads included (src/lib/jobs.ts).
+    const groupedJobs = useMemo(() => groupJobs(contracts), [contracts])
 
-        // Contracts carry only the month they were reported and an end date, so a
-        // temporary term runs from the first month the job was reported to its end date.
-        const firstReported = new Map<string, Dayjs>()
-        contracts.forEach(item => {
-            const month = getContractMonthStart(item)
-            if (!month) return
-            const key = buildEmployeeKey(item)
-            const seen = firstReported.get(key)
-            if (!seen || month.isBefore(seen)) firstReported.set(key, month)
-        })
-        const terms = temporary.flatMap(item => {
-            const end = toDayjs(item.contractEndDate)
-            const start = firstReported.get(buildEmployeeKey(item))
-            if (!end || !start) return []
-            return [Math.max(end.diff(start, 'month', true), 0)]
+    const jobs = useMemo(() => {
+        const current = hasPeriod ? activeInMonths(groupedJobs, reportingMonths) : []
+        const previous = activeInMonths(groupedJobs, previousMonths)
+        const permanent = current.filter(job => job.contractType === 'permanent').length
+        const temporary = current.filter(job => job.contractType === 'temporary')
+
+        // A temporary term runs from the job's start (its first upload month when
+        // no start date was captured) to its contract expiry.
+        const terms = temporary.flatMap(job => {
+            if (!job.contractExpiry || !job.start) return []
+            return [Math.max(job.contractExpiry.diff(job.start, 'month', true), 0)]
         })
 
         const endMonth = reportingMonths[reportingMonths.length - 1]
-        const active = endMonth ? getEffectiveContractsForMonth(contracts, endMonth) : []
-        const soonLimit = dayjs().add(EXPIRING_SOON_DAYS, 'day')
-        const expiringSoon = active.filter(item => {
-            if (item.contractType !== 'temporal') return false
-            const end = toDayjs(item.contractEndDate)
-            return Boolean(end && !end.isBefore(dayjs(), 'day') && !end.isAfter(soonLimit))
-        }).length
+        const active = endMonth ? activeJobsOn(groupedJobs, asOfMonthEnd(endMonth)) : []
+        const expiringSoon = expiringWithin(active, dayjs(), EXPIRING_SOON_DAYS).length
 
         const total = current.length
         return {
@@ -182,7 +162,7 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
             changePercent: signedPercent(total, previous.length),
             hasPrevious: previous.length > 0
         }
-    }, [contracts, hasPeriod, reportingMonths, previousMonths])
+    }, [groupedJobs, hasPeriod, reportingMonths, previousMonths])
 
     // ---- Revenue health ----
     const revenue = useMemo(() => {
@@ -225,18 +205,18 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
         const thisMonth = dayjs().startOf('month')
         return reportingMonths.map(month => {
             const reported = month.isAfter(thisMonth, 'month') ? false : true
-            const active = reported ? getEffectiveContractsForMonth(contracts, month) : []
+            const active = reported ? activeJobsOn(groupedJobs, asOfMonthEnd(month)) : []
             const hasRevenue = companies.some(company => hasPeriodRevenueData(company.months, [month]))
             return {
                 label: month.format('MMM YY'),
                 revenue: hasRevenue
                     ? companies.reduce((sum, company) => sum + sumPeriodRevenue(company.months, [month]), 0)
                     : null,
-                permanent: reported ? active.filter(item => item.contractType === 'permanent').length : null,
-                temporary: reported ? active.filter(item => item.contractType === 'temporal').length : null
+                permanent: reported ? active.filter(job => job.contractType === 'permanent').length : null,
+                temporary: reported ? active.filter(job => job.contractType === 'temporary').length : null
             }
         })
-    }, [contracts, companies, reportingMonths])
+    }, [groupedJobs, companies, reportingMonths])
 
     const hasMonthlyData = monthly.some(row => row.revenue !== null || row.permanent || row.temporary)
 
@@ -361,7 +341,7 @@ const ProjectAdminPerformance: React.FC<Props> = ({ programId, dateRange }) => {
                             <StatRow
                                 label='Average temporary term'
                                 hint={jobs.termsKnown
-                                    ? `From first reported month to end date, across ${jobs.termsKnown} contract${jobs.termsKnown === 1 ? '' : 's'}`
+                                    ? `From start to contract end, across ${jobs.termsKnown} job${jobs.termsKnown === 1 ? '' : 's'}`
                                     : 'No temporary contracts with an end date'}
                                 value={jobs.avgTermMonths === null ? '—' : `${jobs.avgTermMonths.toFixed(1)} months`}
                             />

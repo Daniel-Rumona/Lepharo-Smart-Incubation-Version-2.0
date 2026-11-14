@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.challengeDueReminderCron = exports.challengeReminderPhase = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 // Chases operational challenges (operationalChallenges) that are approaching or past their
 // due date and are not yet resolved. The recipient is asked whether the challenge has been
@@ -96,7 +96,7 @@ async function resolveRecipients(challenge) {
 }
 function buildContent(challenge, challengeId, phase, dueLabel) {
     const title = clean(challenge.title) || "Operational challenge";
-    const link = `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}/operations/success-challenges?challenge=${encodeURIComponent(challengeId)}&checkin=1`;
+    const link = `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}/success-challenges?challenge=${encodeURIComponent(challengeId)}&checkin=1`;
     const heading = phase.kind === "upcoming"
         ? "Challenge due soon"
         : phase.kind === "due"
@@ -136,7 +136,7 @@ function buildContent(challenge, challengeId, phase, dueLabel) {
     ].join("\n");
     return { subject: `${heading}: ${title}`, html, text, title };
 }
-exports.challengeDueReminderCron = (0, scheduler_1.onSchedule)({
+exports.challengeDueReminderCron = (0, cronHeartbeat_1.scheduledJob)("challengeDueReminderCron", {
     region: "us-central1",
     schedule: "0 7 * * *",
     timeZone: "Africa/Johannesburg",
@@ -184,7 +184,7 @@ exports.challengeDueReminderCron = (0, scheduler_1.onSchedule)({
             challengeId: challengeSnap.id,
             challengeTitle: content.title,
             phase: phase.key,
-            link: `/operations/success-challenges?challenge=${challengeSnap.id}&checkin=1`,
+            link: `/success-challenges?challenge=${challengeSnap.id}&checkin=1`,
             createdAt: new Date(),
             readBy: {},
         });

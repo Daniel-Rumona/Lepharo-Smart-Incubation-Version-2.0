@@ -138,7 +138,7 @@ export const onInquiryCreatedNotifyStaff = onDocumentWritten(
         const { subject, html, text } = buildNotificationEmail({
           inquiry: after,
           branchName,
-          detailUrl: `${base}/receptionist/inquiries/${event.params.inquiryId}`,
+          detailUrl: `${base}/inquiries/${event.params.inquiryId}`,
         });
         sends.push(transporter.sendMail({ from, to: receptionistEmails, subject, html, text }));
       }
@@ -163,7 +163,7 @@ export const onInquiryCreatedNotifyStaff = onDocumentWritten(
           message: `New inquiry from ${submitter} at ${branchName}.`,
           recipientIds: await uidsForEmails(receptionistEmails),
           inquiryId,
-          link: `/receptionist/inquiries/${inquiryId}`,
+          link: `/inquiries/${inquiryId}`,
         }),
         notifyInApp({
           type: "inquiry_received",

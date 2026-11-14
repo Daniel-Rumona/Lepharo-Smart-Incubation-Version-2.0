@@ -1,0 +1,56 @@
+/* Incubatees tab. Flex-wrap rather than a fixed grid: cards grow to fill
+   each row whichever charts the filters leave, so no row ends with a gap.
+   A card's grow factor keeps the wider charts (age, sector) wider. */
+.ii-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.ii-cell {
+    min-width: 0;
+    flex: 4 1 320px;
+}
+
+.ii-span-6 {
+    flex: 6 1 420px;
+}
+
+.ii-span-8 {
+    flex: 8 1 520px;
+}
+
+/* A chart with a single category, shown as a figure instead. */
+.ii-cell.is-single {
+    flex: 3 1 240px;
+}
+
+/* Cards in a row share its height. */
+.ii-cell > .qtx-motion-card,
+.ii-cell > .qtx-motion-card > .ant-card {
+    height: 100%;
+}
+
+.ii-single {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 160px;
+    height: 100%;
+    text-align: center;
+}
+
+.ii-single-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.ii-single-label {
+    font-size: 14px;
+    color: var(--app-text-muted);
+}

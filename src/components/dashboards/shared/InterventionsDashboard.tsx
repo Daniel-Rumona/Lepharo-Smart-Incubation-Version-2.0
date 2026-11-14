@@ -74,6 +74,16 @@ export type InterventionsDashboardProps = {
      */
     sideCards?: React.ReactNode
 
+    /**
+     * Puts the side cards at the top of the right column, above upcoming
+     * appointments, and moves the MOV card under the work breakdown on the
+     * left. HSE uses it so its jobs snapshot leads.
+     */
+    sideCardsFirst?: boolean
+
+    /** Set false to show the metric tiles without their "… this month" subtitles. */
+    metricSubtitles?: boolean
+
     /** Full-width sections below the main row. */
     children?: React.ReactNode
 
@@ -102,6 +112,8 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
     title,
     matchesDepartment,
     sideCards,
+    sideCardsFirst = false,
+    metricSubtitles = true,
     children,
     showAppointments = true,
     departmentIds,
@@ -361,6 +373,25 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
         }
     ]
 
+    const appointmentsCard = showAppointments ? (
+        <UpcomingAppointmentsCard
+            departmentId={departmentIds ? undefined : user?.departmentId}
+            departmentIds={departmentIds}
+            programId={activeProgramId}
+            daysAhead={7}
+            limit={8}
+            onViewCalendar={() => setCalendarVisible(true)}
+        />
+    ) : null
+
+    const movCard = (
+        <MovSubmissionStatusCard
+            departmentId={user?.departmentId}
+            programId={programId}
+            dateRange={range}
+        />
+    )
+
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Helmet>
@@ -371,44 +402,33 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                 metrics={metrics}
                 loading={metricsLoading}
                 onSelect={setDrillKey}
-                periodLabel={periodLabel}
+                periodLabel={metricSubtitles ? periodLabel : undefined}
             />
             {scopeControl}
 
             <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
                 <Col xs={24} xl={12}>
-                    <DepartmentInterventionsStatus
-                        departmentId={user?.departmentId}
-                        matchesDepartment={departmentIds ? matchesDepartment : undefined}
-                        programId={programId || undefined}
-                        title="Where work is stuck"
-                        bucketScope="open"
-                        tableMode="modal"
-                        dateRange={range}
-                        pageSize={8}
-                    />
+                    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+                        <DepartmentInterventionsStatus
+                            departmentId={user?.departmentId}
+                            matchesDepartment={departmentIds ? matchesDepartment : undefined}
+                            programId={programId || undefined}
+                            title="Where work is stuck"
+                            bucketScope="open"
+                            tableMode="modal"
+                            dateRange={range}
+                            pageSize={8}
+                        />
+                        {sideCardsFirst ? movCard : null}
+                    </Space>
                 </Col>
 
                 <Col xs={24} xl={12}>
                     <Space direction="vertical" size={24} style={{ width: '100%' }}>
-                        {showAppointments ? (
-                            <UpcomingAppointmentsCard
-                                departmentId={departmentIds ? undefined : user?.departmentId}
-                                departmentIds={departmentIds}
-                                programId={activeProgramId}
-                                daysAhead={7}
-                                limit={8}
-                                onViewCalendar={() => setCalendarVisible(true)}
-                            />
-                        ) : null}
-
-                        <MovSubmissionStatusCard
-                            departmentId={user?.departmentId}
-                            programId={programId}
-                            dateRange={range}
-                        />
-
-                        {sideCards}
+                        {sideCardsFirst ? sideCards : null}
+                        {appointmentsCard}
+                        {sideCardsFirst ? null : movCard}
+                        {sideCardsFirst ? null : sideCards}
                     </Space>
                 </Col>
             </Row>

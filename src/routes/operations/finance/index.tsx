@@ -6,8 +6,10 @@ import {
     Card,
     Col,
     DatePicker,
+    Drawer,
     Empty,
     Form,
+    Grid,
     Input,
     List,
     Modal,
@@ -17,13 +19,15 @@ import {
     Skeleton,
     Space,
     Table,
+    Tabs,
     Tag,
+    Tooltip,
     Typography,
+    theme,
     message,
 } from "antd";
 import {
     DownloadOutlined,
-    EyeOutlined,
     ExportOutlined,
     ArrowDownOutlined,
     ArrowUpOutlined,
@@ -34,12 +38,10 @@ import {
     FileWordOutlined,
     PlusOutlined,
     ReloadOutlined,
+    RightOutlined,
     SearchOutlined,
-    UserOutlined,
     DollarOutlined,
-    FileTextOutlined,
     RiseOutlined,
-    TeamOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
@@ -48,13 +50,20 @@ import { auth, db } from "@/firebase";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
 import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
+import type { ColumnsType } from "antd/es/table";
+import { useDashboardDateRange } from "@/lib/useDashboardDateRange";
+import FinanceOverview from "./FinanceOverview";
+import Sparkline from "./Sparkline";
+import { compactMoney, seriesPeriodStats, sortMonths, type PeriodStats } from "./financeMonths";
+import { loadSyntheticFinanceAccounts } from "@/services/syntheticFinance";
+import { useDataColor } from "@/lib/chartColors";
+import "./finance.css";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import {
     guideTarget,
     usePageGuides,
     type PageGuideRegistration,
 } from "@/components/guide-me";
-import CountUp from "react-countup";
 import { Chart as HighchartsChart } from "@highcharts/react";
 
 const { Text } = Typography;
@@ -100,6 +109,11 @@ type MonthlyFinancePoint = {
     profit: number;
 };
 
+/** Which accounts the table lists. */
+type ListView = "supported" | "unassigned" | "unmatched";
+
+type DrawerTab = "trends" | "documents" | "financials";
+
 type ProgrammeMatchStatus =
     | "supported"
     | "other-program"
@@ -121,6 +135,8 @@ type Participant = {
     documents: FinanceDocument[];
     loadingStats: boolean;
     statsError?: string;
+    /** Seeded digital-twin account (syntheticFinanceAccounts), not from Qx. */
+    isDemo?: boolean;
 };
 
 type FirestoreParticipant = {
@@ -340,12 +356,6 @@ const getMonthlySummary = (rows: MonthlyFinancePoint[]) => {
     };
 };
 
-const getChangeColor = (value?: number | null) => {
-    if (value === null || value === undefined) return "#8c8c8c";
-    if (value > 0) return "#52c41a";
-    if (value < 0) return "#ff4d4f";
-    return "#8c8c8c";
-};
 
 const getChangeIcon = (value?: number | null) => {
     if (value === null || value === undefined) return null;
@@ -506,8 +516,6 @@ const CreateClientModal = ({
 
     const handleCreate = async (values: any) => {
         setLoading(true);
-        setStatsLoading(true);
-        setMetricsReady(false);
 
         try {
             const token = await getFinanceTokenFromEnv();
@@ -640,14 +648,10 @@ const CreateClientModal = ({
     );
 };
 
-const DocumentViewModal = ({
+const DocumentsPanel = ({
     participant,
-    open,
-    onClose,
 }: {
     participant: Participant | null;
-    open: boolean;
-    onClose: () => void;
 }) => {
     const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -689,14 +693,7 @@ const DocumentViewModal = ({
     };
 
     return (
-        <Modal
-            title={participant ? `${participant.name} Documents` : "Documents"}
-            open={open}
-            onCancel={onClose}
-            footer={null}
-            width={760}
-            destroyOnClose
-        >
+        <div>
             {!participant ? (
                 <Empty description="No client selected" />
             ) : participant.documents.length === 0 ? (
@@ -711,6 +708,8 @@ const DocumentViewModal = ({
                                     key="download"
                                     icon={<DownloadOutlined />}
                                     loading={busyId === doc.id}
+                                    disabled={participant.isDemo}
+                                    title={participant.isDemo ? "Demo record: there is no file to download" : undefined}
                                     onClick={() => downloadDocument(doc)}
                                 >
                                     Download
@@ -740,23 +739,28 @@ const DocumentViewModal = ({
                     )}
                 />
             )}
-        </Modal>
+        </div>
     );
 };
 
-const QxFinancialsDownloadModal = ({
+const FinancialsPanel = ({
     participant,
-    open,
-    onClose,
+    initialRange,
 }: {
     participant: Participant | null;
-    open: boolean;
-    onClose: () => void;
+    /** Starting report window; the topbar period when one is set. */
+    initialRange?: [Dayjs, Dayjs] | null;
 }) => {
-    const [range, setRange] = useState<[Dayjs, Dayjs]>([
-        dayjs().startOf("year"),
-        dayjs().endOf("year"),
-    ]);
+    const defaultRange = (): [Dayjs, Dayjs] =>
+        initialRange ? [initialRange[0], initialRange[1]] : [dayjs().startOf("year"), dayjs().endOf("day")];
+
+    const [range, setRange] = useState<[Dayjs, Dayjs]>(defaultRange);
+
+    useEffect(() => {
+        setRange(defaultRange());
+        // Reset when another SME is opened or the topbar period changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [participant?.id, initialRange?.[0]?.valueOf(), initialRange?.[1]?.valueOf()]);
 
     const [documentType, setDocumentType] = useState<
         | "income-statement"
@@ -802,7 +806,6 @@ const QxFinancialsDownloadModal = ({
             );
 
             message.success("Financial report downloaded.");
-            onClose();
         } catch (error: any) {
             console.error(
                 "Financials download failed:",
@@ -817,24 +820,13 @@ const QxFinancialsDownloadModal = ({
     };
 
     return (
-        <Modal
-            title={
-                participant
-                    ? `Download Financials - ${participant.name}`
-                    : "Download Financials"
-            }
-            open={open}
-            onCancel={onClose}
-            footer={null}
-            destroyOnClose
-        >
+        <div>
             <Space direction="vertical" style={{ width: "100%" }} size={16}>
-                <Alert
-                    type="info"
-                    showIcon
-                    message="Choose the report type and reporting period."
-                />
+                <Text type="secondary">
+                    Choose the report type and reporting period, then download the PDF.
+                </Text>
 
+                <Text strong style={{ marginBottom: -8 }}>Report</Text>
                 <Select
                     value={documentType}
                     onChange={setDocumentType}
@@ -847,8 +839,10 @@ const QxFinancialsDownloadModal = ({
                     ]}
                 />
 
+                <Text strong style={{ marginBottom: -8 }}>Period</Text>
                 <RangePicker
                     style={{ width: "100%" }}
+                    format="DD MMM YYYY"
                     value={range}
                     onChange={(value) => {
                         if (value?.[0] && value?.[1]) {
@@ -864,22 +858,21 @@ const QxFinancialsDownloadModal = ({
                     loading={loading}
                     onClick={downloadFinancials}
                 >
-                    Download Financials
+                    Download financials
                 </Button>
             </Space>
-        </Modal>
+        </div>
     );
 };
 
-const RevenueTrendModal = ({
+const TrendsPanel = ({
     participant,
-    open,
-    onClose,
 }: {
     participant: Participant | null;
-    open: boolean;
-    onClose: () => void;
 }) => {
+    const { token } = theme.useToken();
+    // Neutral data colour: the accent unless it would read as a judgement (crimson).
+    const dataColour = useDataColor();
     const [trendView, setTrendView] = useState<"revenue" | "profitLoss">("revenue");
     const [trendRange, setTrendRange] = useState<
         [Dayjs | null, Dayjs | null] | null
@@ -941,8 +934,6 @@ const RevenueTrendModal = ({
     }, [datedRows]);
 
     useEffect(() => {
-        if (!open) return;
-
         setTrendView("revenue");
         setTrendRange(
             availableRange
@@ -950,7 +941,6 @@ const RevenueTrendModal = ({
                 : null,
         );
     }, [
-        open,
         participant?.id,
         availableRange?.[0]?.valueOf(),
         availableRange?.[1]?.valueOf(),
@@ -1042,7 +1032,7 @@ const RevenueTrendModal = ({
         return {
             chart: {
                 type: isRevenue ? "spline" : "column",
-                height: 330,
+                height: 300,
                 spacingTop: 28,
                 spacingRight: 20,
                 spacingBottom: 12,
@@ -1060,7 +1050,6 @@ const RevenueTrendModal = ({
             xAxis: {
                 categories: filteredRows.map((item) => item.label),
                 tickLength: 0,
-                lineColor: "#f0f0f0",
                 labels: {
                     style: {
                         fontSize: "11px",
@@ -1071,14 +1060,13 @@ const RevenueTrendModal = ({
                 title: {
                     text: undefined,
                 },
-                gridLineColor: "#f0f0f0",
                 plotLines: isRevenue
                     ? []
                     : [
                         {
                             value: 0,
                             width: 1,
-                            color: "#8c8c8c",
+                            color: token.colorTextQuaternary,
                             zIndex: 3,
                         },
                     ],
@@ -1126,7 +1114,7 @@ const RevenueTrendModal = ({
 
                             if (value === 0) return undefined;
 
-                            return money(value);
+                            return compactMoney(value);
                         },
                         style: {
                             fontSize: "10px",
@@ -1140,6 +1128,7 @@ const RevenueTrendModal = ({
                 {
                     name: isRevenue ? "Revenue" : "Profit / Loss",
                     type: isRevenue ? "spline" : "column",
+                    ...(isRevenue ? { color: dataColour } : {}),
                     data: filteredRows.map((item) => {
                         const value = isRevenue
                             ? Number(item.revenue || 0)
@@ -1153,32 +1142,19 @@ const RevenueTrendModal = ({
                             y: value,
                             color:
                                 value > 0
-                                    ? "#52c41a"
+                                    ? token.colorSuccess
                                     : value < 0
-                                        ? "#ff4d4f"
-                                        : "#d9d9d9",
+                                        ? token.colorError
+                                        : token.colorTextQuaternary,
                         };
                     }),
                 },
             ],
         };
-    }, [filteredRows, trendView]);
+    }, [filteredRows, trendView, token, dataColour]);
 
     return (
-        <Modal
-            className="guide-finance-trends-modal"
-            title={
-                participant
-                    ? `${participant.name} Financial Trends`
-                    : "Financial Trends"
-            }
-            open={open}
-            onCancel={onClose}
-            footer={null}
-            width={980}
-            centered
-            destroyOnClose
-        >
+        <div>
             {!participant ? (
                 <Empty description="No client selected" />
             ) : rows.length === 0 ? (
@@ -1247,7 +1223,7 @@ const RevenueTrendModal = ({
                                     gutter={[12, 12]}
                                     align="stretch"
                                 >
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<DollarOutlined />}
                                             tone='info'
@@ -1256,13 +1232,13 @@ const RevenueTrendModal = ({
                                                     ? `Latest (${currentPeriodRow.label})`
                                                     : "Latest"
                                             }
-                                            value={money(
+                                            value={compactMoney(
                                                 filteredSummary.currentMonthRevenue,
                                             )}
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<DollarOutlined />}
                                             tone='info'
@@ -1271,13 +1247,13 @@ const RevenueTrendModal = ({
                                                     ? `Previous (${previousPeriodRow.label})`
                                                     : "Previous"
                                             }
-                                            value={money(
+                                            value={compactMoney(
                                                 filteredSummary.previousMonthRevenue,
                                             )}
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={
                                                 getChangeIcon(
@@ -1299,7 +1275,7 @@ const RevenueTrendModal = ({
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<BarChartOutlined />}
                                             tone='info'
@@ -1308,7 +1284,7 @@ const RevenueTrendModal = ({
                                                     ? `Best (${bestRevenueMonth.label})`
                                                     : "Best Month"
                                             }
-                                            value={money(
+                                            value={compactMoney(
                                                 bestRevenueMonth?.revenue ?? null,
                                             )}
                                         />
@@ -1320,7 +1296,7 @@ const RevenueTrendModal = ({
                                     gutter={[12, 12]}
                                     align="stretch"
                                 >
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<DollarOutlined />}
                                             tone={
@@ -1335,17 +1311,17 @@ const RevenueTrendModal = ({
                                                     style={{
                                                         color:
                                                             totalProfitLoss >= 0
-                                                                ? "#389e0d"
-                                                                : "#cf1322",
+                                                                ? token.colorSuccess
+                                                                : token.colorError,
                                                     }}
                                                 >
-                                                    {money(totalProfitLoss)}
+                                                    {compactMoney(totalProfitLoss)}
                                                 </Text>
                                             }
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<ArrowUpOutlined />}
                                             tone='success'
@@ -1354,7 +1330,7 @@ const RevenueTrendModal = ({
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<ArrowDownOutlined />}
                                             tone='danger'
@@ -1363,7 +1339,7 @@ const RevenueTrendModal = ({
                                         />
                                     </Col>
 
-                                    <Col xs={24} sm={12} lg={6}>
+                                    <Col xs={24} sm={12}>
                                         <MetricTile
                                             icon={<BarChartOutlined />}
                                             tone={
@@ -1378,7 +1354,7 @@ const RevenueTrendModal = ({
                                                     ? `Best P/L (${bestProfitMonth.label})`
                                                     : "Best P/L"
                                             }
-                                            value={money(
+                                            value={compactMoney(
                                                 bestProfitMonth?.profit ?? null,
                                             )}
                                         />
@@ -1406,7 +1382,7 @@ const RevenueTrendModal = ({
                                         containerProps={{
                                             style: {
                                                 width: "100%",
-                                                minHeight: 330,
+                                                minHeight: 300,
                                             },
                                         }}
                                     />
@@ -1416,36 +1392,9 @@ const RevenueTrendModal = ({
                     )}
                 </Space>
             )}
-        </Modal>
+        </div>
     );
 };
-
-const MetricValueSkeleton = ({
-    width = 82,
-}: {
-    width?: number;
-}) => (
-    <div
-        style={{
-            width: "100%",
-            maxWidth: width,
-            minWidth: 0,
-            overflow: "hidden",
-        }}
-    >
-        <Skeleton.Input
-            active
-            size="small"
-            block
-            style={{
-                width: "100%",
-                maxWidth: "100%",
-                minWidth: 0,
-                height: 24,
-            }}
-        />
-    </div>
-);
 
 export const ParticipantsFinancialView: React.FC = () => {
     const { user } = useFullIdentity() as any;
@@ -1476,27 +1425,22 @@ export const ParticipantsFinancialView: React.FC = () => {
 
     const [loading, setLoading] = useState(false);
     const [clients, setClients] = useState<Participant[]>([]);
+    const [demoClients, setDemoClients] = useState<Participant[]>([]);
 
     const [search, setSearch] = useState("");
     const [activeParticipant, setActiveParticipant] =
         useState<Participant | null>(null);
-    const [documentsOpen, setDocumentsOpen] = useState(false);
-    const [financialsOpen, setFinancialsOpen] = useState(false);
-    const [revenueTrendOpen, setRevenueTrendOpen] = useState(false);
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [drawerTab, setDrawerTab] = useState<DrawerTab>("trends");
     const [members, setMembers] = useState<FinanceMember[]>([]);
     const [selectedMemberId, setSelectedMemberId] = useState<string>("all");
-    const [unsupportedAccountsOpen, setUnsupportedAccountsOpen] = useState(false);
-    const [unmatchedAccountsOpen, setUnmatchedAccountsOpen] = useState(false);
+    const [listView, setListView] = useState<ListView>("supported");
 
-    const [unsupportedSmeFilter, setUnsupportedSmeFilter] = useState("");
-    const [unsupportedCoordinatorFilter, setUnsupportedCoordinatorFilter] =
-        useState<string | undefined>();
+    // Reporting window from the topbar date filter, shared with the dashboards.
+    const { range: dateRange, label: periodLabel } = useDashboardDateRange();
+    const screens = Grid.useBreakpoint();
 
-    const [unmatchedSmeFilter, setUnmatchedSmeFilter] = useState("");
-    const [unmatchedCoordinatorFilter, setUnmatchedCoordinatorFilter] =
-        useState<string | undefined>();
-
-    const [statsLoading, setStatsLoading] = useState(false);
+    const [, setStatsLoading] = useState(false);
     const [metricsReady, setMetricsReady] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
 
@@ -1523,7 +1467,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Programme finance overview",
                                 description:
-                                    "These metrics use supported SMEs only. Accounts flagged as Not in Any Programme or No Participant Link stay available for investigation but do not affect the programme figures.",
+                                    "These figures cover supported SMEs for the period picked in the top bar date filter. Accounts flagged as Not in any programme or No participant link stay available for investigation but do not affect the programme figures.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1534,7 +1478,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Finance-user scope",
                                 description:
-                                    "Operations can select All Companies or a finance user. Each user card shows only the active SMEs they manage in the current programme scope, and users with no active SMEs are hidden.",
+                                    "Operations can narrow the page to one finance user. The overview and lists then show only the SMEs linked to that user; the number beside each name is their active SMEs in the current programme.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1544,7 +1488,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Search and manage accounts",
                                 description:
-                                    "Search the current finance list, refresh finance data, create a finance client and review programme-link exceptions from one filter bar.",
+                                    "Search the list, switch between supported SMEs and the programme-link exceptions, refresh finance data and create a finance client from one bar.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1555,7 +1499,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Programme-link checks",
                                 description:
-                                    "Not in Any Programme identifies matched SMEs without an accepted programme application. No Participant Link identifies finance accounts that could not be matched to a Lepharo Smart Incubation SME by email. Operations see all exception accounts; coordinators see only accounts linked to their own Qx finance email.",
+                                    "Not in any programme lists matched SMEs without an accepted programme application. No participant link lists finance accounts that could not be matched to a Lepharo Smart Incubation SME by email. Operations see all exception accounts; coordinators see only accounts linked to their own Qx finance email.",
                                 side: "bottom",
                                 align: "center",
                             },
@@ -1565,7 +1509,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "SME finance records",
                                 description:
-                                    "Review current and previous revenue, month-on-month movement, available finance documents and programme-link status. Supported SMEs are listed first when flagged accounts are present.",
+                                    "Each row shows the SME's recent trend, revenue in the period, its latest full month and the change on the month before. Select a row to open its finance panel.",
                                 side: "top",
                                 align: "start",
                             },
@@ -1574,9 +1518,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                             element: guideTarget("finance-client-actions"),
                             skipMissingElement: true,
                             popover: {
-                                title: "Finance actions",
+                                title: "Open in Qx",
                                 description:
-                                    "Open uploaded documents, inspect financial trends, download financials and open the linked Qx company workspace when access is available.",
+                                    "Open the linked Qx company workspace when you have access to it.",
                                 side: "left",
                                 align: "center",
                             },
@@ -1599,7 +1543,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Open financial trends",
                                 description:
-                                    "Select Trend on an SME row to open its monthly financial analysis.",
+                                    "Select an SME row to open its finance panel.",
                                 side: "left",
                                 align: "center",
                                 showButtons: ["close"],
@@ -1612,7 +1556,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                             popover: {
                                 title: "Financial trends",
                                 description:
-                                    "This workspace analyses the selected SME using its available monthly finance history.",
+                                    "The finance panel holds the SME's trends, documents and financial downloads.",
                                 side: "left",
                                 align: "start",
                             },
@@ -1897,7 +1841,7 @@ export const ParticipantsFinancialView: React.FC = () => {
                 ? res.data.members
                 : [];
 
-            const companies = Array.isArray(res.data?.companies)
+            const companies: any[] = Array.isArray(res.data?.companies)
                 ? res.data.companies
                 : [];
 
@@ -2090,6 +2034,53 @@ export const ParticipantsFinancialView: React.FC = () => {
         }
     }, [connected, activeProgramId]);
 
+    // Demo accounts for the digital-twin SMEs (test project only). They load
+    // independently of Qx and sit alongside the Qx companies as supported SMEs.
+    useEffect(() => {
+        let cancelled = false;
+
+        loadSyntheticFinanceAccounts(activeProgramId).then((accounts) => {
+            if (cancelled) return;
+            setDemoClients(
+                accounts.map((account) => {
+                    const monthlyFinance = sortMonths(
+                        account.months.map((m) => ({
+                            month: m.month,
+                            monthLabel: m.monthLabel,
+                            revenue: m.revenue,
+                            expenses: m.expenses,
+                            profit: m.profit,
+                        })),
+                    );
+                    const summary = getMonthlySummary(monthlyFinance);
+
+                    return {
+                        id: `demo:${account.id}`,
+                        name: account.name,
+                        email: account.email,
+                        isSupportedProgram: true,
+                        programmeMatchStatus: "supported" as const,
+                        revenue: account.totalRevenue,
+                        expenses: account.totalExpenses,
+                        currentMonthRevenue: summary.currentMonthRevenue,
+                        previousMonthRevenue: summary.previousMonthRevenue,
+                        momChangePercentage: summary.momChangePercentage,
+                        monthlyFinance,
+                        documents: account.documents as FinanceDocument[],
+                        loadingStats: false,
+                        isDemo: true,
+                    };
+                }),
+            );
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProgramId]);
+
+    const allClients = useMemo(() => [...clients, ...demoClients], [clients, demoClients]);
+
     const currentUserFinanceMembers = useMemo(() => {
         if (!currentUserEmail) return [];
 
@@ -2113,12 +2104,12 @@ export const ParticipantsFinancialView: React.FC = () => {
     // Coordinators only work with Qx companies linked to their own finance
     // member email. Operations keep the full finance population.
     const roleScopedClients = useMemo(() => {
-        if (!isCoordinator) return clients;
+        if (!isCoordinator) return allClients;
 
-        return clients.filter((client) =>
+        return allClients.filter((client) =>
             currentUserLinkedCompanyIds.has(String(client.id)),
         );
-    }, [clients, isCoordinator, currentUserLinkedCompanyIds]);
+    }, [allClients, isCoordinator, currentUserLinkedCompanyIds]);
 
     const unsupportedAccounts = useMemo(
         () =>
@@ -2196,37 +2187,50 @@ export const ParticipantsFinancialView: React.FC = () => {
         }
     }, [selectedMemberId, visibleFinanceMembers]);
 
-    const memberScopedClients = useMemo(() => {
-        // Coordinators do not get the Operations finance-user selector; their
-        // table is already scoped to every Qx company linked to their email.
-        if (isCoordinator) return roleScopedClients;
-
-        if (!selectedMember) return roleScopedClients;
-
-        const activeEntry = financeMembersWithActiveCounts.find(
-            ({ member }) => member.id === selectedMember.id,
+    // A selected finance user narrows every list, and the overview, to the
+    // SMEs linked to them. Coordinators are already scoped to their own email.
+    const memberCompanyIds = useMemo(() => {
+        if (isCoordinator || !selectedMember) return null;
+        return new Set(
+            (selectedMember.companies || []).map((company) => String(company.id)),
         );
+    }, [isCoordinator, selectedMember]);
 
-        if (!activeEntry) return [];
+    const scopedActiveClients = useMemo(
+        () =>
+            memberCompanyIds
+                ? activeClients.filter((client) => memberCompanyIds.has(String(client.id)))
+                : activeClients,
+        [activeClients, memberCompanyIds],
+    );
 
-        // Selecting a finance user from the Operations card row filters to the
-        // exact active SME count displayed on that card.
-        return roleScopedClients.filter(
-            (client) =>
-                client.programmeMatchStatus === "supported" &&
-                activeEntry.activeCompanyIds.has(String(client.id)),
-        );
-    }, [
-        financeMembersWithActiveCounts,
-        isCoordinator,
-        roleScopedClients,
-        selectedMember,
-    ]);
+    const scopedUnsupportedAccounts = useMemo(
+        () =>
+            memberCompanyIds
+                ? unsupportedAccounts.filter((client) => memberCompanyIds.has(String(client.id)))
+                : unsupportedAccounts,
+        [unsupportedAccounts, memberCompanyIds],
+    );
 
-    const scopedUnsupportedAccounts = unsupportedAccounts;
-    const scopedUnmatchedAccounts = unmatchedAccounts;
+    const scopedUnmatchedAccounts = useMemo(
+        () =>
+            memberCompanyIds
+                ? unmatchedAccounts.filter((client) => memberCompanyIds.has(String(client.id)))
+                : unmatchedAccounts,
+        [unmatchedAccounts, memberCompanyIds],
+    );
 
     const canSeeFinanceExceptions = isOperations || isCoordinator;
+
+    // Roles without the exception lists always see the supported SMEs.
+    const effectiveView: ListView = canSeeFinanceExceptions ? listView : "supported";
+
+    const viewClients =
+        effectiveView === "unassigned"
+            ? scopedUnsupportedAccounts
+            : effectiveView === "unmatched"
+                ? scopedUnmatchedAccounts
+                : scopedActiveClients;
 
     const canOpenClient = (client: Participant) =>
         currentUserLinkedCompanyIds.has(String(client.id));
@@ -2249,178 +2253,64 @@ export const ParticipantsFinancialView: React.FC = () => {
         return email || name || "Unknown user";
     };
 
-    const buildCoordinatorOptions = (accounts: Participant[]) => {
-        const accountIds = new Set(accounts.map((client) => String(client.id)));
-        const byEmail = new Map<string, { label: string; value: string }>();
-
-        members.forEach((member) => {
-            const memberEmail = normalizeEmail(member.email);
-            if (!memberEmail) return;
-
-            const hasLinkedAccount = (member.companies || []).some((company) =>
-                accountIds.has(String(company.id)),
-            );
-
-            if (!hasLinkedAccount) return;
-
-            byEmail.set(memberEmail, {
-                label: getFinanceUserLabel(member),
-                value: memberEmail,
-            });
-        });
-
-        return Array.from(byEmail.values()).sort((a, b) =>
-            a.label.localeCompare(b.label, undefined, {
-                sensitivity: "base",
-            }),
-        );
-    };
-
-    const unsupportedCoordinatorOptions = useMemo(
-        () => buildCoordinatorOptions(scopedUnsupportedAccounts),
-        [scopedUnsupportedAccounts, members],
+    const memberOptions = useMemo(
+        () => [
+            { value: "all", label: "All finance users" },
+            ...financeMembersWithActiveCounts
+                .map(({ member, activeCount }) => ({
+                    value: member.id,
+                    label: `${member.name || member.email || "Unknown user"} · ${activeCount} active`,
+                }))
+                .sort((a, b) =>
+                    a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+                ),
+        ],
+        [financeMembersWithActiveCounts],
     );
-
-    const unmatchedCoordinatorOptions = useMemo(
-        () => buildCoordinatorOptions(scopedUnmatchedAccounts),
-        [scopedUnmatchedAccounts, members],
-    );
-
-    const filteredUnsupportedAccounts = useMemo(() => {
-        const term = unsupportedSmeFilter.trim().toLowerCase();
-
-        return scopedUnsupportedAccounts.filter((client) => {
-            const matchesSme =
-                !term ||
-                client.name.toLowerCase().includes(term) ||
-                normalizeEmail(client.email).includes(term);
-
-            const matchesCoordinator =
-                !unsupportedCoordinatorFilter ||
-                getLinkedFinanceUsers(client.id).some(
-                    (member) =>
-                        normalizeEmail(member.email) ===
-                        unsupportedCoordinatorFilter,
-                );
-
-            return matchesSme && matchesCoordinator;
-        });
-    }, [
-        scopedUnsupportedAccounts,
-        unsupportedSmeFilter,
-        unsupportedCoordinatorFilter,
-        members,
-    ]);
-
-    const filteredUnmatchedAccounts = useMemo(() => {
-        const term = unmatchedSmeFilter.trim().toLowerCase();
-
-        return scopedUnmatchedAccounts.filter((client) => {
-            const matchesSme =
-                !term ||
-                client.name.toLowerCase().includes(term) ||
-                normalizeEmail(client.email).includes(term);
-
-            const matchesCoordinator =
-                !unmatchedCoordinatorFilter ||
-                getLinkedFinanceUsers(client.id).some(
-                    (member) =>
-                        normalizeEmail(member.email) ===
-                        unmatchedCoordinatorFilter,
-                );
-
-            return matchesSme && matchesCoordinator;
-        });
-    }, [
-        scopedUnmatchedAccounts,
-        unmatchedSmeFilter,
-        unmatchedCoordinatorFilter,
-        members,
-    ]);
 
     const filteredClients = useMemo(() => {
         const term = search.trim().toLowerCase();
 
         const rows = term
-            ? memberScopedClients.filter((client) => {
-                return (
+            ? viewClients.filter(
+                (client) =>
                     client.name.toLowerCase().includes(term) ||
-                    String(client.email || "")
-                        .toLowerCase()
-                        .includes(term)
-                );
-            })
-            : [...memberScopedClients];
+                    String(client.email || "").toLowerCase().includes(term),
+            )
+            : [...viewClients];
 
-        const hasSupportedAccounts = rows.some(
-            (client) => client.programmeMatchStatus === "supported",
+        return rows.sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
         );
+    }, [viewClients, search]);
 
-        const hasFlaggedAccounts = rows.some(
-            (client) =>
-                client.programmeMatchStatus === "unassigned" ||
-                client.programmeMatchStatus === "unmatched",
-        );
-
-        return [...rows].sort((a, b) => {
-            if (hasSupportedAccounts && hasFlaggedAccounts) {
-                const aSupported = a.programmeMatchStatus === "supported";
-                const bSupported = b.programmeMatchStatus === "supported";
-
-                if (aSupported !== bSupported) {
-                    return aSupported ? -1 : 1;
-                }
-            }
-
-            return a.name.localeCompare(b.name, undefined, {
-                sensitivity: "base",
-            });
+    const periodStatsById = useMemo(() => {
+        const map = new Map<string, PeriodStats>();
+        filteredClients.forEach((client) => {
+            map.set(
+                client.id,
+                seriesPeriodStats(client.monthlyFinance || [], dateRange, client.revenue),
+            );
         });
-    }, [memberScopedClients, search]);
+        return map;
+    }, [filteredClients, dateRange]);
 
-    const totals = useMemo(() => {
-        const revenue = activeClients.reduce(
-            (sum, item) => sum + Number(item.revenue || 0),
-            0,
-        );
+    const overviewReady =
+        !loading &&
+        !scopedActiveClients.some((client) => client.loadingStats) &&
+        (metricsReady || !connected);
 
-        const documents = activeClients.reduce(
-            (sum, item) => sum + Number(item.documents?.length || 0),
-            0,
-        );
-
-        const currentMonthRevenue = activeClients.reduce(
-            (sum, item) => sum + Number(item.currentMonthRevenue || 0),
-            0,
-        );
-
-        const growingClients = activeClients.filter(
-            (item) => Number(item.momChangePercentage || 0) > 0,
-        ).length;
-
-        return {
-            clients: activeClients.length,
-            revenue,
-            currentMonthRevenue,
-            growingClients,
-            documents,
-        };
-    }, [activeClients]);
-
-    const openDocuments = (client: Participant) => {
+    const openClient = (client: Participant, tab: DrawerTab = "trends") => {
         setActiveParticipant(client);
-        setDocumentsOpen(true);
+        setDrawerTab(tab);
+        setDrawerOpen(true);
     };
 
-    const openFinancials = (client: Participant) => {
-        setActiveParticipant(client);
-        setFinancialsOpen(true);
-    };
-
-    const openRevenueTrend = (client: Participant) => {
-        setActiveParticipant(client);
-        setRevenueTrendOpen(true);
-    };
+    // The drawer reads the live row, so figures that finish loading after it
+    // opens still show.
+    const drawerParticipant = activeParticipant
+        ? allClients.find((client) => client.id === activeParticipant.id) || activeParticipant
+        : null;
 
     const handleOpenCompanyInQx = async (
         companyId: string,
@@ -2476,512 +2366,297 @@ export const ParticipantsFinancialView: React.FC = () => {
             });
         }
     };
-    const tableColumns = [
+    const loadingCell = (
+        <Skeleton.Input active size="small" style={{ width: 88, height: 20, minWidth: 0 }} />
+    );
+
+    const changeOf = (record: Participant) => periodStatsById.get(record.id)?.latest?.change ?? null;
+
+    const tableColumns: ColumnsType<Participant> = [
         {
-            title: "Client",
-            dataIndex: "name",
+            title: "SME",
             key: "name",
-            render: (_: any, record: Participant) => (
-                <Space>
+            render: (_: unknown, record: Participant) => (
+                <Space size={12}>
                     <Avatar>{record.name.charAt(0).toUpperCase()}</Avatar>
-                    <Space direction="vertical" size={2}>
+                    <div style={{ minWidth: 0 }}>
                         <Space size={6} wrap>
                             <Text strong>{record.name}</Text>
-                            {record.programmeMatchStatus === "unassigned" && (
-                                <Tag color="red">Not in Any Programme</Tag>
-                            )}
-
-                            {record.programmeMatchStatus === "unmatched" && (
-                                <Tag color="orange">No Participant Link</Tag>
-                            )}
+                            {record.isDemo && <Tag bordered={false} color="purple" style={{ marginInlineEnd: 0 }}>Demo</Tag>}
                         </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
                             {record.email || "No email"}
                         </Text>
-                    </Space>
+                    </div>
                 </Space>
             ),
         },
         {
-            title: "Current Month Revenue",
-            dataIndex: "currentMonthRevenue",
-            key: "currentMonthRevenue",
-            render: (_: any, record: Participant) =>
+            title: "Trend",
+            key: "trend",
+            width: 100,
+            responsive: ["md"],
+            render: (_: unknown, record: Participant) =>
                 record.loadingStats ? (
-                    <Skeleton.Input
-                        active
-                        size="small"
-                        style={{ width: 96, height: 20 }}
-                    />
+                    <Skeleton.Input active size="small" style={{ width: 72, height: 20, minWidth: 0 }} />
                 ) : (
-                    <Text strong>{money(record.currentMonthRevenue)}</Text>
+                    <Sparkline values={periodStatsById.get(record.id)?.sparkline || []} />
                 ),
         },
         {
-            title: "Previous Month",
-            dataIndex: "previousMonthRevenue",
-            key: "previousMonthRevenue",
-            render: (_: any, record: Participant) =>
-                record.loadingStats ? (
-                    <Skeleton.Input
-                        active
-                        size="small"
-                        style={{ width: 96, height: 20 }}
-                    />
+            title: dateRange ? "Revenue in period" : "Total revenue",
+            key: "periodRevenue",
+            align: "right",
+            sorter: (a, b) =>
+                Number(periodStatsById.get(a.id)?.periodRevenue || 0) -
+                Number(periodStatsById.get(b.id)?.periodRevenue || 0),
+            render: (_: unknown, record: Participant) => {
+                if (record.loadingStats) return loadingCell;
+                const value = periodStatsById.get(record.id)?.periodRevenue ?? null;
+                return value === null ? (
+                    <Text type="secondary">—</Text>
                 ) : (
-                    money(record.previousMonthRevenue)
-                ),
+                    <Tooltip title={money(value)}>
+                        <Text strong>{compactMoney(value)}</Text>
+                    </Tooltip>
+                );
+            },
         },
         {
-            title: "MoM Change",
-            dataIndex: "momChangePercentage",
-            key: "momChangePercentage",
-            render: (_: any, record: Participant) =>
-                record.loadingStats ? (
-                    <Skeleton.Input
-                        active
-                        size="small"
-                        style={{ width: 96, height: 20 }}
-                    />
-                ) : (
-                    <Tag
-                        color={
-                            Number(record.momChangePercentage || 0) >= 0 ? "green" : "red"
-                        }
-                    >
-                        <Space size={4}>
-                            {getChangeIcon(record.momChangePercentage)}
-                            {percentage(record.momChangePercentage)}
-                        </Space>
-                    </Tag>
-                ),
+            title: "Latest month",
+            key: "latest",
+            align: "right",
+            responsive: ["sm"],
+            render: (_: unknown, record: Participant) => {
+                if (record.loadingStats) return loadingCell;
+                const latest = periodStatsById.get(record.id)?.latest;
+                if (!latest) return <Text type="secondary">—</Text>;
+                return (
+                    <div>
+                        <Tooltip title={money(latest.revenue)}>
+                            <Text>{compactMoney(latest.revenue)}</Text>
+                        </Tooltip>
+                        <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
+                            {latest.label}
+                        </Text>
+                    </div>
+                );
+            },
         },
         {
-            title: "Documents",
-            dataIndex: "documents",
-            key: "documents",
-            render: (_: any, record: Participant) =>
-                record.loadingStats ? (
-                    <Skeleton.Input
-                        active
-                        size="small"
-                        style={{ width: 96, height: 20 }}
-                    />
-                ) : (
-                    <Tag color="blue">{record.documents.length}</Tag>
-                ),
-        },
-        {
-            title: "Actions",
-            key: "actions",
-            render: (_: any, record: Participant) => (
-                <Space data-guide="finance-client-actions">
-                    <Button icon={<EyeOutlined />} onClick={() => openDocuments(record)}>
-                        Documents
-                    </Button>
-
-                    <Button
-                        data-guide="finance-trend-action"
-                        icon={<BarChartOutlined />}
-                        onClick={() => openRevenueTrend(record)}
-                    >
-                        Trend
-                    </Button>
-
-                    <Button
-                        icon={<DownloadOutlined />}
-                        onClick={() => openFinancials(record)}
-                    >
-                        Financials
-                    </Button>
-                    {canOpenClient(record) ? (
-                        <Button
-                            icon={<ExportOutlined />}
-                            onClick={(event) =>
-                                handleOpenCompanyInQx(record.id, record.name, event)
-                            }
+            title: "Change",
+            key: "change",
+            align: "right",
+            sorter: (a, b) => Number(changeOf(a) ?? -Infinity) - Number(changeOf(b) ?? -Infinity),
+            render: (_: unknown, record: Participant) => {
+                if (record.loadingStats) return loadingCell;
+                const change = changeOf(record);
+                if (change === null) return <Text type="secondary">—</Text>;
+                return (
+                    <Tooltip title="Against the month before">
+                        <Tag
+                            bordered={false}
+                            color={change > 0 ? "success" : change < 0 ? "error" : "default"}
+                            style={{ marginInlineEnd: 0 }}
                         >
-                            Open
-                        </Button>
-                    ) : null}
-                </Space>
+                            {getChangeIcon(change)} {Math.abs(change)}%
+                        </Tag>
+                    </Tooltip>
+                );
+            },
+        },
+        ...(effectiveView !== "supported"
+            ? ([
+                {
+                    title: "Finance user",
+                    key: "financeUser",
+                    responsive: ["lg"],
+                    render: (_: unknown, record: Participant) => {
+                        const linked = getLinkedFinanceUsers(record.id);
+                        return linked.length ? (
+                            <Text style={{ fontSize: 13 }}>
+                                {linked.map(getFinanceUserLabel).join(", ")}
+                            </Text>
+                        ) : (
+                            <Text type="secondary">Not linked</Text>
+                        );
+                    },
+                },
+            ] as ColumnsType<Participant>)
+            : []),
+        {
+            title: "Docs",
+            key: "documents",
+            align: "center",
+            width: 72,
+            responsive: ["sm"],
+            render: (_: unknown, record: Participant) =>
+                record.loadingStats ? (
+                    <Skeleton.Input active size="small" style={{ width: 28, height: 20, minWidth: 0 }} />
+                ) : record.documents.length ? (
+                    <Text>{record.documents.length}</Text>
+                ) : (
+                    <Text type="secondary">0</Text>
+                ),
+        },
+        {
+            title: "",
+            key: "actions",
+            width: 56,
+            align: "right",
+            render: (_: unknown, record: Participant) => (
+                <Button
+                    type="text"
+                    data-guide="finance-trend-action"
+                    aria-label={`View ${record.name}`}
+                    icon={<RightOutlined />}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        openClient(record);
+                    }}
+                />
             ),
         },
     ];
 
-    return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
+    const viewNotice =
+        effectiveView === "unassigned"
+            ? {
+                type: "info" as const,
+                message:
+                    "These accounts match a participant, but no accepted application with a programme was found for their finance email or the matched participant. They are left out of the programme figures above.",
+            }
+            : effectiveView === "unmatched"
+                ? {
+                    type: "warning" as const,
+                    message:
+                        "These finance accounts could not be matched to a Lepharo Smart Incubation SME by email or a unique beneficiary name. They are left out of the programme figures above.",
+                }
+                : null;
 
+    const statusTag = (client: Participant) =>
+        client.programmeMatchStatus === "unassigned" ? (
+            <Tag color="red" bordered={false}>Not in any programme</Tag>
+        ) : client.programmeMatchStatus === "unmatched" ? (
+            <Tag color="orange" bordered={false}>No participant link</Tag>
+        ) : null;
+
+    return (
+        <div style={{ padding: 24, minHeight: "100vh" }}>
             {!connected && authError && (
                 <Alert
                     type="warning"
                     showIcon
-                    style={{ marginBottom: 20 }}
+                    style={{ marginBottom: 16 }}
                     message="Finance workspace unavailable"
                     description={authError}
                 />
             )}
 
-            <Row
-                data-guide="finance-metrics"
-                gutter={[16, 16]}
-                style={{ marginBottom: 20 }}
-                align="stretch"
-            >
-                <Col xs={24} sm={12} md={8} xl={5}>
-                    <MetricTile
-                        icon={<TeamOutlined />}
-                        tone='info'
-                        title="Active SMEs"
-                        value={
-                            metricsReady ? (
-                                <CountUp
-                                    key={`clients-${totals.clients}`}
-                                    end={Number(totals.clients || 0)}
-                                    duration={0.8}
-                                    separator=","
-                                />
-                            ) : (
-                                <MetricValueSkeleton width={68} />
-                            )
-                        }
-                    />
-                </Col>
-
-                <Col xs={24} sm={12} md={8} xl={5}>
-                    <MetricTile
-                        icon={<DollarOutlined />}
-                        tone='success'
-                        title="Total Revenue"
-                        value={
-                            metricsReady ? (
-                                <CountUp
-                                    key={`revenue-${totals.revenue}`}
-                                    end={Number(totals.revenue || 0)}
-                                    duration={0.8}
-                                    formattingFn={(value) => money(value)}
-                                />
-                            ) : (
-                                <MetricValueSkeleton width={92} />
-                            )
-                        }
-                    />
-                </Col>
-
-                <Col xs={24} sm={12} md={8} xl={5}>
-                    <MetricTile
-                        icon={<DollarOutlined />}
-                        tone='info'
-                        title="Current Month Revenue"
-                        value={
-                            metricsReady ? (
-                                <CountUp
-                                    key={`current-${totals.currentMonthRevenue}`}
-                                    end={Number(totals.currentMonthRevenue || 0)}
-                                    duration={0.8}
-                                    formattingFn={(value) => money(value)}
-                                />
-                            ) : (
-                                <MetricValueSkeleton width={92} />
-                            )
-                        }
-                    />
-                </Col>
-
-                <Col xs={24} sm={12} md={8} xl={4}>
-                    <MetricTile
-                        icon={<RiseOutlined />}
-                        tone='info'
-                        title="Growing SMEs"
-                        value={
-                            metricsReady ? (
-                                <CountUp
-                                    key={`growing-${totals.growingClients}`}
-                                    end={Number(totals.growingClients || 0)}
-                                    duration={0.8}
-                                    separator=","
-                                />
-                            ) : (
-                                <MetricValueSkeleton width={68} />
-                            )
-                        }
-                    />
-                </Col>
-
-                <Col xs={24} sm={12} md={8} xl={5}>
-                    <MetricTile
-                        icon={<FileTextOutlined />}
-                        tone='info'
-                        title="Financial Documents"
-                        value={
-                            metricsReady ? (
-                                <CountUp
-                                    key={`documents-${totals.documents}`}
-                                    end={Number(totals.documents || 0)}
-                                    duration={0.8}
-                                    separator=","
-                                />
-                            ) : (
-                                <MetricValueSkeleton width={68} />
-                            )
-                        }
-                    />
-                </Col>
-            </Row>
-
-            {isOperations && members.length > 0 && (
-                <MotionCard
-                    style={{ borderRadius: 18, marginBottom: 16 }}
-                    bodyStyle={{ padding: 10 }}
-                >
-                    <div
-                        data-guide="finance-user-scope"
-                        style={{
-                            display: "grid",
-                            gridTemplateColumns: `repeat(${visibleFinanceMembers.length + 1}, minmax(170px, 1fr))`,
-                            gap: 8,
-                            width: "100%",
-                            overflowX: "auto",
-                        }}
-                    >
-                        <Card
-                            onClick={() => setSelectedMemberId("all")}
-                            onMouseEnter={(event) => {
-                                event.currentTarget.style.borderColor = "#1677ff";
-                                event.currentTarget.style.boxShadow = "none";
-                            }}
-                            onMouseLeave={(event) => {
-                                event.currentTarget.style.borderColor =
-                                    selectedMemberId === "all"
-                                        ? "#1677ff"
-                                        : "#f0f0f0";
-                                event.currentTarget.style.boxShadow = "none";
-                            }}
-                            styles={{
-                                body: {
-                                    padding: "6px 9px",
-                                },
-                            }}
-                            style={{
-                                borderRadius: 12,
-                                cursor: "pointer",
-                                minHeight: 54,
-                                boxShadow: "none",
-                                transition: "border-color 0.18s ease",
-                                border:
-                                    selectedMemberId === "all"
-                                        ? "1px solid #1677ff"
-                                        : "1px solid #f0f0f0",
-                                background:
-                                    selectedMemberId === "all"
-                                        ? "#f0f7ff"
-                                        : "#fff",
-                            }}
-                        >
-                            <Space align="center" size={8}>
-                                <Avatar size={30} icon={<TeamOutlined />} />
-
-                                <div style={{ minWidth: 0 }}>
-                                    <Text strong style={{ display: "block", lineHeight: 1.15 }}>
-                                        All Companies
-                                    </Text>
-                                    <Text type="secondary" style={{ fontSize: 11 }}>
-                                        {activeClients.length} active SMEs
-                                    </Text>
-                                </div>
-                            </Space>
-                        </Card>
-
-                        {financeMembersWithActiveCounts.map(({ member, activeCount }) => {
-                            const active = selectedMemberId === member.id;
-                            const selectable = activeCount > 0;
-
-                            return (
-                                <Card
-                                    key={member.id}
-                                    onClick={
-                                        selectable
-                                            ? () => setSelectedMemberId(member.id)
-                                            : undefined
-                                    }
-                                    onMouseEnter={(event) => {
-                                        if (!selectable) return;
-                                        event.currentTarget.style.borderColor =
-                                            "#1677ff";
-                                        event.currentTarget.style.boxShadow =
-                                            "none";
-                                    }}
-                                    onMouseLeave={(event) => {
-                                        if (!selectable) return;
-                                        event.currentTarget.style.borderColor =
-                                            active ? "#1677ff" : "#f0f0f0";
-                                        event.currentTarget.style.boxShadow =
-                                            "none";
-                                    }}
-                                    styles={{
-                                        body: {
-                                            padding: "6px 9px",
-                                        },
-                                    }}
-                                    style={{
-                                        borderRadius: 12,
-                                        cursor: selectable ? "pointer" : "default",
-                                        opacity: selectable ? 1 : 0.62,
-                                        minHeight: 54,
-                                        boxShadow: "none",
-                                        transition: "border-color 0.18s ease",
-                                        border: active
-                                            ? "1px solid #1677ff"
-                                            : "1px solid #f0f0f0",
-                                        background: active ? "#f0f7ff" : "#fff",
-                                    }}
-                                >
-                                    <Space
-                                        align="center"
-                                        size={8}
-                                        style={{ width: "100%", minWidth: 0 }}
-                                    >
-                                        <Avatar size={30} icon={<UserOutlined />}>
-                                            {member.name?.charAt(0)?.toUpperCase()}
-                                        </Avatar>
-
-                                        <div style={{ minWidth: 0, flex: 1 }}>
-                                            <Text
-                                                strong
-                                                ellipsis
-                                                style={{
-                                                    display: "block",
-                                                    maxWidth: "100%",
-                                                    lineHeight: 1.15,
-                                                }}
-                                            >
-                                                {member.name || "Unknown user"}
-                                            </Text>
-
-                                            <Text
-                                                type="secondary"
-                                                ellipsis
-                                                style={{
-                                                    display: "block",
-                                                    maxWidth: "100%",
-                                                    fontSize: 11,
-                                                    lineHeight: 1.15,
-                                                }}
-                                            >
-                                                {activeCount} active SME
-                                                {activeCount === 1 ? "" : "s"}
-                                            </Text>
-                                        </div>
-                                    </Space>
-                                </Card>
-                            );
-                        })}
-                    </div>
-                </MotionCard>
-            )}
+            <FinanceOverview
+                clients={scopedActiveClients}
+                ready={overviewReady}
+                dateRange={dateRange}
+                periodLabel={periodLabel}
+                onOpenClient={(client) => openClient(client)}
+            />
 
             <MotionCard
                 style={{ borderRadius: 18 }}
                 filterBar={
-                    <Row
+                    <div
                         data-guide="finance-filters"
-                        gutter={[10, 10]}
-                        align="middle"
-                        style={{ width: "100%" }}
+                        style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            gap: 10,
+                            width: "100%",
+                        }}
                     >
-                        <Col
-                            xs={24}
-                            md={canSeeFinanceExceptions ? 12 : 8}
-                            xl={canSeeFinanceExceptions ? 6 : 8}
-                        >
-                            <Input
-                                allowClear
-                                prefix={<SearchOutlined />}
-                                placeholder="Search by client or email"
-                                value={search}
-                                onChange={(event) => setSearch(event.target.value)}
-                                style={{ width: "100%" }}
-                            />
-                        </Col>
+                        <Input
+                            allowClear
+                            prefix={<SearchOutlined />}
+                            placeholder="Search SME or email"
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            style={{ flex: "1 1 200px", maxWidth: 300 }}
+                        />
 
                         {canSeeFinanceExceptions && (
-                            <Col
-                                xs={24}
-                                xl={10}
+                            <div
                                 data-guide="finance-link-exceptions"
+                                style={{ maxWidth: "100%", overflowX: "auto" }}
                             >
-                                <Row gutter={[10, 10]}>
-                                    <Col xs={24} sm={12}>
-                                        <Button
-                                            block
-                                            icon={<TeamOutlined />}
-                                            onClick={() =>
-                                                setUnsupportedAccountsOpen(true)
-                                            }
-                                            disabled={!connected}
-                                        >
-                                            Not in Any Programme (
-                                            {scopedUnsupportedAccounts.length})
-                                        </Button>
-                                    </Col>
-
-                                    <Col xs={24} sm={12}>
-                                        <Button
-                                            block
-                                            icon={<UserOutlined />}
-                                            onClick={() =>
-                                                setUnmatchedAccountsOpen(true)
-                                            }
-                                            disabled={!connected}
-                                        >
-                                            No Participant Link (
-                                            {scopedUnmatchedAccounts.length})
-                                        </Button>
-                                    </Col>
-                                </Row>
-                            </Col>
+                                <Segmented
+                                    value={effectiveView}
+                                    onChange={(value) => setListView(value as ListView)}
+                                    options={[
+                                        {
+                                            value: "supported",
+                                            label: `Supported (${scopedActiveClients.length})`,
+                                        },
+                                        {
+                                            value: "unassigned",
+                                            label: `Not in any programme (${scopedUnsupportedAccounts.length})`,
+                                        },
+                                        {
+                                            value: "unmatched",
+                                            label: `No participant link (${scopedUnmatchedAccounts.length})`,
+                                        },
+                                    ]}
+                                />
+                            </div>
                         )}
 
-                        <Col
-                            xs={24}
-                            sm={12}
-                            md={canSeeFinanceExceptions ? 12 : 8}
-                            xl={canSeeFinanceExceptions ? 4 : 8}
-                        >
+                        <div style={{ flex: "1 1 0", minWidth: 0 }} />
+
+                        {isOperations && members.length > 0 && (
+                            <div data-guide="finance-user-scope" style={{ flex: "0 1 260px", minWidth: 180 }}>
+                                <Select
+                                    showSearch
+                                    optionFilterProp="label"
+                                    value={selectedMemberId}
+                                    onChange={setSelectedMemberId}
+                                    options={memberOptions}
+                                    style={{ width: "100%" }}
+                                    aria-label="Finance user"
+                                />
+                            </div>
+                        )}
+
+                        <Tooltip title="Refresh finance data">
                             <Button
-                                block
                                 icon={<ReloadOutlined />}
                                 onClick={fetchClientsAndStats}
                                 disabled={!connected}
-                            >
-                                Refresh
-                            </Button>
-                        </Col>
+                                loading={loading}
+                                aria-label="Refresh finance data"
+                            />
+                        </Tooltip>
 
-                        <Col
-                            xs={24}
-                            sm={12}
-                            md={canSeeFinanceExceptions ? 12 : 8}
-                            xl={canSeeFinanceExceptions ? 4 : 8}
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={() => setCreateOpen(true)}
+                            disabled={!connected}
                         >
-                            <Button
-                                block
-                                icon={<PlusOutlined />}
-                                onClick={() => setCreateOpen(true)}
-                                disabled={!connected}
-                            >
-                                New Client
-                            </Button>
-                        </Col>
-                    </Row>
-                }>
+                            New client
+                        </Button>
+                    </div>
+                }
+            >
+                {viewNotice && (
+                    <Alert
+                        type={viewNotice.type}
+                        showIcon
+                        message={viewNotice.message}
+                        style={{ marginTop: 16 }}
+                    />
+                )}
 
                 {loading ? (
-                    <Space
-                        direction="vertical"
-                        size={12}
-                        style={{ width: "100%", marginTop: 16 }}
-                    >
+                    <Space direction="vertical" size={12} style={{ width: "100%", marginTop: 16 }}>
                         {Array.from({ length: 5 }).map((_, index) => (
                             <Skeleton
                                 key={index}
@@ -2994,232 +2669,114 @@ export const ParticipantsFinancialView: React.FC = () => {
                     </Space>
                 ) : filteredClients.length === 0 ? (
                     <Empty
+                        style={{ padding: "40px 0" }}
                         description={
-                            connected
-                                ? "No finance clients found."
-                                : "Finance workspace is not connected."
+                            !connected
+                                ? "Finance workspace is not connected."
+                                : search.trim()
+                                    ? "No SMEs match your search."
+                                    : effectiveView === "supported"
+                                        ? "No supported SMEs in this scope."
+                                        : "No accounts in this list."
                         }
                     />
                 ) : (
-                    <div data-guide="finance-table" style={{ marginTop: 24 }}>
+                    <div data-guide="finance-table" style={{ marginTop: 16 }}>
                         <Table
+                            className="finance-table"
                             rowKey="id"
                             columns={tableColumns}
                             dataSource={filteredClients}
+                            onRow={(record) => ({ onClick: () => openClient(record) })}
                             pagination={{
-                                pageSize: 8,
+                                pageSize: 10,
                                 position: ["bottomCenter"],
                                 showSizeChanger: false,
+                                hideOnSinglePage: true,
                             }}
-                            scroll={{ x: true }}
                         />
                     </div>
                 )}
             </MotionCard>
 
-            <Modal
-                title="Not in Any Programme"
-                open={unsupportedAccountsOpen}
-                onCancel={() => {
-                    setUnsupportedAccountsOpen(false);
-                    setUnsupportedSmeFilter("");
-                    setUnsupportedCoordinatorFilter(undefined);
-                }}
-                footer={null}
-                width={760}
-                centered
+            <Drawer
+                rootClassName="guide-finance-trends-modal"
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                width={screens.md ? 760 : "100%"}
                 destroyOnClose
+                title={
+                    drawerParticipant ? (
+                        <div style={{ minWidth: 0 }}>
+                            <Space size={8} wrap>
+                                <Text strong style={{ fontSize: 16 }}>{drawerParticipant.name}</Text>
+                                {statusTag(drawerParticipant)}
+                            </Space>
+                            <Text type="secondary" style={{ display: "block", fontSize: 12, fontWeight: 400 }}>
+                                {drawerParticipant.email || "No email"}
+                            </Text>
+                        </div>
+                    ) : (
+                        "SME finance"
+                    )
+                }
+                extra={
+                    drawerParticipant && canOpenClient(drawerParticipant) ? (
+                        <Button
+                            data-guide="finance-client-actions"
+                            icon={<ExportOutlined />}
+                            onClick={(event) =>
+                                handleOpenCompanyInQx(drawerParticipant.id, drawerParticipant.name, event)
+                            }
+                        >
+                            Open in Qx
+                        </Button>
+                    ) : null
+                }
             >
-                <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message="These accounts match participants, but no accepted application with a programme assignment was found for their finance email or matched participant."
+                {drawerParticipant?.isDemo && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Demo data from the digital-twin test seed. There are no files to download and no Qx company to open."
+                        style={{ marginBottom: 12 }}
+                    />
+                )}
+
+                {drawerParticipant?.statsError && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message={drawerParticipant.statsError}
+                        style={{ marginBottom: 12 }}
+                    />
+                )}
+
+                <Tabs
+                    activeKey={drawerTab}
+                    onChange={(key) => setDrawerTab(key as DrawerTab)}
+                    items={[
+                        {
+                            key: "trends",
+                            label: "Trends",
+                            children: <TrendsPanel participant={drawerParticipant} />,
+                        },
+                        {
+                            key: "documents",
+                            label: `Documents (${drawerParticipant?.documents.length || 0})`,
+                            children: <DocumentsPanel participant={drawerParticipant} />,
+                        },
+                        {
+                            key: "financials",
+                            label: "Download financials",
+                            disabled: Boolean(drawerParticipant?.isDemo),
+                            children: (
+                                <FinancialsPanel participant={drawerParticipant} initialRange={dateRange} />
+                            ),
+                        },
+                    ]}
                 />
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                    <Col xs={24} md={12}>
-                        <Input
-                            allowClear
-                            prefix={<SearchOutlined />}
-                            placeholder="Filter by SME"
-                            value={unsupportedSmeFilter}
-                            onChange={(event) =>
-                                setUnsupportedSmeFilter(event.target.value)
-                            }
-                        />
-                    </Col>
-
-                    <Col xs={24} md={12}>
-                        <Select
-                            allowClear
-                            showSearch
-                            optionFilterProp="label"
-                            placeholder="All coordinators"
-                            value={unsupportedCoordinatorFilter}
-                            onChange={setUnsupportedCoordinatorFilter}
-                            options={unsupportedCoordinatorOptions}
-                            style={{ width: "100%" }}
-                        />
-                    </Col>
-                </Row>
-
-                <List
-                    dataSource={filteredUnsupportedAccounts}
-                    locale={{
-                        emptyText: "No accounts match the selected filters.",
-                    }}
-                    pagination={
-                        filteredUnsupportedAccounts.length > 5
-                            ? {
-                                pageSize: 5,
-                                position: "bottom",
-                                align: "center",
-                                showSizeChanger: false,
-                            }
-                            : false
-                    }
-                    renderItem={(client) => {
-                        const linkedUsers = getLinkedFinanceUsers(client.id);
-
-                        return (
-                            <List.Item>
-                                <List.Item.Meta
-                                    avatar={
-                                        <Avatar>
-                                            {client.name.charAt(0).toUpperCase()}
-                                        </Avatar>
-                                    }
-                                    title={<Text strong>{client.name}</Text>}
-                                    description={
-                                        <Space direction="vertical" size={2}>
-                                            <Text type="secondary">
-                                                {client.email || "No email"}
-                                            </Text>
-                                            <Text
-                                                type="secondary"
-                                                style={{ fontSize: 12 }}
-                                            >
-                                                Finance user:{" "}
-                                                {linkedUsers.length > 0
-                                                    ? linkedUsers
-                                                        .map(getFinanceUserLabel)
-                                                        .join(", ")
-                                                    : "Not linked"}
-                                            </Text>
-                                        </Space>
-                                    }
-                                />
-
-                                <Tag color="red">Not in Any Programme</Tag>
-                            </List.Item>
-                        );
-                    }}
-                />
-            </Modal>
-
-            <Modal
-                title="No Participant Link"
-                open={unmatchedAccountsOpen}
-                onCancel={() => {
-                    setUnmatchedAccountsOpen(false);
-                    setUnmatchedSmeFilter("");
-                    setUnmatchedCoordinatorFilter(undefined);
-                }}
-                footer={null}
-                width={760}
-                centered
-                destroyOnClose
-            >
-                <Alert
-                    type="warning"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message="These finance accounts could not be matched to a Lepharo Smart Incubation SME by email or a unique beneficiary name."
-                />
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                    <Col xs={24} md={12}>
-                        <Input
-                            allowClear
-                            prefix={<SearchOutlined />}
-                            placeholder="Filter by SME"
-                            value={unmatchedSmeFilter}
-                            onChange={(event) =>
-                                setUnmatchedSmeFilter(event.target.value)
-                            }
-                        />
-                    </Col>
-
-                    <Col xs={24} md={12}>
-                        <Select
-                            allowClear
-                            showSearch
-                            optionFilterProp="label"
-                            placeholder="All coordinators"
-                            value={unmatchedCoordinatorFilter}
-                            onChange={setUnmatchedCoordinatorFilter}
-                            options={unmatchedCoordinatorOptions}
-                            style={{ width: "100%" }}
-                        />
-                    </Col>
-                </Row>
-
-                <List
-                    dataSource={filteredUnmatchedAccounts}
-                    locale={{
-                        emptyText: "No accounts match the selected filters.",
-                    }}
-                    pagination={
-                        filteredUnmatchedAccounts.length > 5
-                            ? {
-                                pageSize: 5,
-                                position: "bottom",
-                                align: "center",
-                                showSizeChanger: false,
-                            }
-                            : false
-                    }
-                    renderItem={(client) => {
-                        const linkedUsers = getLinkedFinanceUsers(client.id);
-
-                        return (
-                            <List.Item>
-                                <List.Item.Meta
-                                    avatar={
-                                        <Avatar>
-                                            {client.name.charAt(0).toUpperCase()}
-                                        </Avatar>
-                                    }
-                                    title={<Text strong>{client.name}</Text>}
-                                    description={
-                                        <Space direction="vertical" size={2}>
-                                            <Text type="secondary">
-                                                {client.email || "No email"}
-                                            </Text>
-                                            <Text
-                                                type="secondary"
-                                                style={{ fontSize: 12 }}
-                                            >
-                                                Finance user:{" "}
-                                                {linkedUsers.length > 0
-                                                    ? linkedUsers
-                                                        .map(getFinanceUserLabel)
-                                                        .join(", ")
-                                                    : "Not linked"}
-                                            </Text>
-                                        </Space>
-                                    }
-                                />
-
-                                <Tag color="orange">
-                                    No Participant Link
-                                </Tag>
-                            </List.Item>
-                        );
-                    }}
-                />
-            </Modal>
+            </Drawer>
 
             <CreateClientModal
                 open={createOpen}
@@ -3227,24 +2784,6 @@ export const ParticipantsFinancialView: React.FC = () => {
                 onCreated={(client) => {
                     setClients((prev) => [client, ...prev]);
                 }}
-            />
-
-            <DocumentViewModal
-                participant={activeParticipant}
-                open={documentsOpen}
-                onClose={() => setDocumentsOpen(false)}
-            />
-
-            <RevenueTrendModal
-                participant={activeParticipant}
-                open={revenueTrendOpen}
-                onClose={() => setRevenueTrendOpen(false)}
-            />
-
-            <QxFinancialsDownloadModal
-                participant={activeParticipant}
-                open={financialsOpen}
-                onClose={() => setFinancialsOpen(false)}
             />
         </div>
     );

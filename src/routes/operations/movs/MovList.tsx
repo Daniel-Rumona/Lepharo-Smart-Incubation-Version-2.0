@@ -85,6 +85,11 @@ export const MovList: React.FC<Props> = ({ rows, loading, selectedId, onSelect, 
                                             <div className='ws-row-meta'>{[mov.interventionTitle, mov.facilitatorName].filter(Boolean).join(' · ') || '—'}</div>
                                             <div className='mv-row-flags'>
                                                 {!hasMovEvidence(mov) && <span className='mv-flag is-danger'>No evidence</span>}
+                                                {hasMovEvidence(mov) && ['weak', 'unreadable'].includes(String((mov as any).evidenceCheck?.verdict)) && (
+                                                    <span className='mv-flag is-warning' title={(mov as any).evidenceCheck?.summary}>
+                                                        {(mov as any).evidenceCheck.verdict === 'weak' ? 'Weak evidence' : 'Evidence unreadable'}
+                                                    </span>
+                                                )}
                                                 {queries?.open ? <span className='mv-flag is-warning'>{queries.open} open {queries.open === 1 ? 'query' : 'queries'}</span> : null}
                                                 {inPack && <span className='mv-flag'>In {monthLabel(inPack, 'MMM YYYY')} pack</span>}
                                                 {late && <span className='mv-flag is-warning'>Late · {dayjs(late, 'YYYY-MM').format('MMM')} pack</span>}

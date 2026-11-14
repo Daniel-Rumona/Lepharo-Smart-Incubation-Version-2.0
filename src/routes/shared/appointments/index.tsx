@@ -108,6 +108,7 @@ import {
 } from '@/components/guide-me'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { TrainingPlanAppointmentModal } from '@/components/trainings/TrainingPlanAppointmentModal'
+import { isTrainingInterventionId } from '@/components/trainings/trainingPlan'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { Helmet } from 'react-helmet'
 import SessionReviewModal from './SessionReviewModal'
@@ -3389,6 +3390,10 @@ const Appointments: React.FC = () => {
             const appointmentId = String(appointment.id || '').trim()
             const directId = String(appointment.assignedInterventionId || '').trim()
 
+            // Training sessions are booked against a training's plan, not an
+            // assigned intervention: there is nothing to link or progress.
+            if (isTrainingInterventionId(appointment.interventionId)) continue
+
             const directAssignment = directAssignmentsById.get(directId)
             if (directAssignment && assignmentCanOwnAppointment(appointment, directAssignment)) {
                 linkedByAppointmentId.set(appointmentId, directId)
@@ -3458,7 +3463,11 @@ const Appointments: React.FC = () => {
             (coverageRecord as any)?._displayType === 'group' && Array.isArray((coverageRecord as any)._groupMembers)
                 ? (coverageRecord as any)._groupMembers
                 : [coverageRecord]
-        const isGroupCoverage = coverageAppointmentRows.length > 1
+        // The same rule the form uses to show per-member attendance: a group
+        // session with a single invitation (e.g. a training session with one
+        // person attending) still records attendance per member.
+        const isGroupCoverage =
+            (coverageRecord as any)?._displayType === 'group' && Array.isArray((coverageRecord as any)._groupMembers)
         const participantAttendanceValues = (
             coverageForm.getFieldValue('participantAttendance') ||
             values.participantAttendance ||

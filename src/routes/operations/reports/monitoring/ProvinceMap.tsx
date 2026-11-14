@@ -1,19 +1,25 @@
 // SAProvincesDrillMap.tsx
-import React, { useEffect, useMemo, useState } from "react";
+// Geographic distribution card: provinces shaded by the chosen measure, with a
+// click zooming into the province and showing its centres as pins at their
+// attendance-centre coordinates. Centres without captured coordinates still
+// count in every total; they are only left off the map and listed in the footer.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
+import "highcharts/highcharts-more";
 import "highcharts/modules/map";
-import "highcharts/modules/drilldown";
 import {
+    Breadcrumb,
     Button,
     Modal,
     Row,
     Col,
     Space,
-    Card,
     Typography,
-    Empty,
     Skeleton,
+    Segmented,
+    Progress,
+    theme,
 } from "antd";
 import {
     collection,
@@ -29,31 +35,37 @@ import { db } from "@/firebase";
 import { getCanonicalInterventionStatus } from "./interventionStatus";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { filterReportRecords } from "@/utils/reportVisibility";
-
-
-Highcharts.setOptions({
-    plotOptions: {
-        series: { animation: { duration: 600 } },
-    },
-});
+import { fetchCenterLocation, isCenterConfigured } from "@/services/attendanceCenters";
+import { findSaTown, SaTown } from "./saTowns";
+import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { MetricTile, MetricTone } from "@/components/dashboards/metrics/MetricTile";
+import {
+    CheckCircleOutlined,
+    SolutionOutlined,
+    TeamOutlined,
+    UserAddOutlined,
+} from "@ant-design/icons";
 
 const { Text } = Typography;
 
-const cardStyle: React.CSSProperties = {
-    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.12)",
-    transition: "all 0.3s ease",
-    borderRadius: 8,
-    border: "1px solid #d6e4ff",
-    padding: 16,
-};
-
-type Metric = "interventions" | "incubatees";
-type ProvinceName = "Gauteng" | "North West" | "Free State";
+type Metric = "interventions" | "incubatees" | "completion";
+type ProvinceName =
+    | "Gauteng"
+    | "North West"
+    | "Free State"
+    | "Limpopo"
+    | "Mpumalanga"
+    | "KwaZulu-Natal"
+    | "Eastern Cape"
+    | "Western Cape"
+    | "Northern Cape";
+type InterventionClass = "completed" | "in-progress" | "assigned";
 
 type AssignedInterventionRow = {
     id: string;
     participantId?: string;
     branchId?: string;
+    title?: string;
     status?: string;
     interventionStatus?: string;
     assignmentStatus?: string;
@@ -83,28 +95,56 @@ type BranchInfo = {
     id: string;
     name: string;
     province: ProvinceName;
+    town?: SaTown;
 };
 
-type BranchInterventionAgg = {
-    completed: number[];
-    inProgress: number[];
-    assigned: number[];
+type CentrePin = {
+    branchId: string;
+    lat: number;
+    lon: number;
+    // Placed at the branch's town because no exact centre location is captured.
+    approximateTown?: string;
 };
 
-type BranchApplicationAgg = {
-    accepted: number[];
+type ScopedIntervention = {
+    branchId: string;
+    participantId?: string;
+    title: string;
+    cls: InterventionClass;
+    month: number;
+};
+
+type ScopedAcceptance = {
+    branchId: string;
+    month: number;
+};
+
+type ScopeStats = {
+    interventions: number;
+    completed: number;
+    incubatees: number;
+    activeSmes: number;
 };
 
 type Props = {
     provincesGeo?: any;
-    municipalitiesGeo?: any;
     metric?: Metric;
     dateFrom: Date;
     dateTo: Date;
     programId?: string;
 };
 
-const PROV_ALLOWED: ProvinceName[] = ["Gauteng", "North West", "Free State"];
+const PROV_ALLOWED: ProvinceName[] = [
+    "Gauteng",
+    "North West",
+    "Free State",
+    "Limpopo",
+    "Mpumalanga",
+    "KwaZulu-Natal",
+    "Eastern Cape",
+    "Western Cape",
+    "Northern Cape",
+];
 
 const months = [
     "Jan",
@@ -126,14 +166,14 @@ const STATUS_COLORS: Record<string, string> = {
     assigned: "#1677ff",
     "in-progress": "#faad14",
     completed: "#52c41a",
-    declined: "#ff4d4f",
-    rejected: "#ff4d4f",
-    pending: "#8c8c8c",
-    approved: "#13c2c2",
     accepted: "#2f54eb",
-    cancelled: "#595959",
-    unknown: "#bfbfbf",
 };
+
+const METRIC_OPTIONS = [
+    { label: "Interventions", value: "interventions" },
+    { label: "Incubatees", value: "incubatees" },
+    { label: "Completion rate", value: "completion" },
+];
 
 const tsToDate = (v: any): Date | undefined => {
     if (!v) return undefined;
@@ -146,18 +186,20 @@ const tsToDate = (v: any): Date | undefined => {
     return undefined;
 };
 
-const sumArray = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-
 const normalizeProvince = (v?: string): ProvinceName | undefined => {
+    // Compare without spaces, dashes or the word "province", so "KwaZulu Natal",
+    // "kwazulu-natal" and "North-West Province" all match.
     const raw = String(v || "")
         .replace(/province/gi, "")
-        .trim()
-        .toLowerCase();
+        .replace(/^orange /i, "")
+        .toLowerCase()
+        .replace(/[^a-z]/g, "");
 
-    if (raw === "gauteng") return "Gauteng";
-    if (raw === "north west" || raw === "northwest") return "North West";
-    if (raw === "free state" || raw === "freestate") return "Free State";
-    return undefined;
+    if (raw === "kzn") return "KwaZulu-Natal";
+    if (raw === "nw") return "North West";
+    return PROV_ALLOWED.find(
+        (prov) => prov.toLowerCase().replace(/[^a-z]/g, "") === raw
+    );
 };
 
 const acceptedOnly = (status?: string) => {
@@ -165,19 +207,92 @@ const acceptedOnly = (status?: string) => {
     return s === "accepted";
 };
 
+const inRing = (lon: number, lat: number, ring: number[][]) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+    }
+    return inside;
+};
+
+const featureContains = (feature: any, lon: number, lat: number) => {
+    const geometry = feature?.geometry;
+    const polygons: number[][][][] =
+        geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.coordinates || [];
+    return polygons.some(
+        (polygon) =>
+            inRing(lon, lat, polygon[0]) &&
+            !polygon.slice(1).some((hole) => inRing(lon, lat, hole))
+    );
+};
+
+// The feature with the closest boundary vertex to the point.
+const nearestFeature = (features: any[], lon: number, lat: number) => {
+    let best: any = null;
+    let bestDistance = Infinity;
+    features.forEach((feature) => {
+        const geometry = feature?.geometry;
+        const polygons: number[][][][] =
+            geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.coordinates || [];
+        polygons.forEach((polygon) =>
+            polygon[0].forEach(([x, y]) => {
+                const distance = (x - lon) ** 2 + (y - lat) ** 2;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = feature;
+                }
+            })
+        );
+    });
+    return best;
+};
+
+const emptyStats = (): ScopeStats => ({
+    interventions: 0,
+    completed: 0,
+    incubatees: 0,
+    activeSmes: 0,
+});
+
+const completionRate = (s: ScopeStats) =>
+    s.interventions ? Math.round((s.completed / s.interventions) * 100) : 0;
+
+const measureOf = (s: ScopeStats, metric: Metric) =>
+    metric === "interventions"
+        ? s.interventions
+        : metric === "incubatees"
+            ? s.incubatees
+            : completionRate(s);
+
+const formatMeasure = (value: number, metric: Metric) =>
+    metric === "completion" ? `${value}%` : String(value);
+
+// Pins are coloured by completion rate whatever the measure.
+const rateColor = (s: ScopeStats) => {
+    if (!s.interventions) return "#8c8c8c";
+    const rate = completionRate(s);
+    if (rate >= 70) return STATUS_COLORS.completed;
+    if (rate >= 40) return STATUS_COLORS["in-progress"];
+    return "#ff4d4f";
+};
+
 const SAProvincesDrillMap: React.FC<Props> = ({
     provincesGeo,
-    municipalitiesGeo,
-    metric = "interventions",
+    metric: initialMetric = "interventions",
     dateFrom,
     dateTo,
     programId,
 }) => {
     const { user } = useFullIdentity() as any;
+    const { token } = theme.useToken();
 
     const [provGeo, setProvGeo] = useState<any>(provincesGeo || null);
-    const [muniGeo, setMuniGeo] = useState<any>(municipalitiesGeo || null);
     const [loading, setLoading] = useState(false);
+    const [metric, setMetric] = useState<Metric>(initialMetric);
 
     const [assignedRows, setAssignedRows] = useState<AssignedInterventionRow[]>(
         []
@@ -190,13 +305,20 @@ const SAProvincesDrillMap: React.FC<Props> = ({
     const [participantBranchById, setParticipantBranchById] = useState<
         Record<string, string>
     >({});
-    const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([]);
+    const [centreByBranchId, setCentreByBranchId] = useState<
+        Record<string, CentrePin>
+    >({});
+    // Branches whose record names no recognisable province; they can't be
+    // counted anywhere on the map, so the footer names them.
+    const [unplacedBranchNames, setUnplacedBranchNames] = useState<string[]>([]);
 
     const [expanded, setExpanded] = useState(false);
     const [selectedProvince, setSelectedProvince] = useState<ProvinceName | null>(
         null
     );
+    const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+    const [districtGeo, setDistrictGeo] = useState<any>(null);
 
     useEffect(() => {
         if (!provincesGeo) {
@@ -207,17 +329,16 @@ const SAProvincesDrillMap: React.FC<Props> = ({
         }
     }, [provincesGeo]);
 
+    // District shapes are only needed once someone drills into a province.
     useEffect(() => {
-        if (!municipalitiesGeo) {
-            fetch("/data/municipalities.json")
-                .then((r) => r.json())
-                .then(setMuniGeo)
-                .catch(() => setMuniGeo(null));
-        }
-    }, [municipalitiesGeo]);
+        if (!selectedProvince || districtGeo) return;
+        fetch("/data/districts.json")
+            .then((r) => r.json())
+            .then(setDistrictGeo)
+            .catch((err) => console.warn("[SAProvincesDrillMap] districts failed to load:", err));
+    }, [selectedProvince, districtGeo]);
 
     useEffect(() => {
-        if (!programId) return;
         let cancelled = false;
 
         const run = async () => {
@@ -233,7 +354,8 @@ const SAProvincesDrillMap: React.FC<Props> = ({
                             setApplicationRows([]);
                             setBranchInfoById({});
                             setParticipantBranchById({});
-                            setAllowedBranchIds([]);
+                            setCentreByBranchId({});
+                            setUnplacedBranchNames([]);
                         }
                         return;
                     }
@@ -264,6 +386,7 @@ const SAProvincesDrillMap: React.FC<Props> = ({
 
                 // 2. Branch docs
                 const nextBranchInfoById: Record<string, BranchInfo> = {};
+                const nextUnplacedBranchNames: string[] = [];
 
                 if (nextAllowedBranchIds.length) {
                     const chunkSize = 10;
@@ -279,20 +402,85 @@ const SAProvincesDrillMap: React.FC<Props> = ({
 
                         brSnap.docs.forEach((d) => {
                             const x = d.data() as DocumentData;
-                            const province = normalizeProvince(
-                                x.province || x.location || x.region || x.provincename || x.area
-                            );
+                            // Some branches keep the province inside a location
+                            // object, sometimes with only the city or address filled.
+                            const location = x.location;
+                            const name = String(x.name || x.branchName || "Unknown Branch");
+                            const recordedProvince = [
+                                x.province,
+                                typeof location === "string" ? location : location?.province,
+                                location?.city,
+                                location?.address,
+                                x.region,
+                                x.provincename,
+                                x.area,
+                            ]
+                                .map((value) => normalizeProvince(value))
+                                .find(Boolean);
 
-                            if (!province) return;
+                            // The branch's town (from its name, city or address) gives
+                            // a fallback pin, and the province when none is recorded.
+                            const foundTown = findSaTown(
+                                name,
+                                location?.city,
+                                location?.address,
+                                typeof location === "string" ? location : undefined
+                            );
+                            // A town in another province is a different place with the
+                            // same name (there are two Middelburgs), so it's ignored.
+                            const town =
+                                foundTown &&
+                                (!recordedProvince ||
+                                    normalizeProvince(foundTown.province) === recordedProvince)
+                                    ? foundTown
+                                    : undefined;
+                            const province =
+                                recordedProvince || normalizeProvince(town?.province);
+
+                            if (!province) {
+                                nextUnplacedBranchNames.push(name);
+                                return;
+                            }
 
                             nextBranchInfoById[d.id] = {
                                 id: d.id,
-                                name: String(x.name || x.branchName || "Unknown Branch"),
+                                name,
                                 province,
+                                town,
                             };
                         });
                     }
                 }
+
+                // Exact centre coordinates come from the attendance centre set up
+                // for clock-in. Without them the pin goes at the branch's town and
+                // is marked approximate; with neither, the branch has no pin.
+                const nextCentreByBranchId: Record<string, CentrePin> = {};
+                await Promise.all(
+                    Object.values(nextBranchInfoById).map(async ({ id: branchId, town }) => {
+                        try {
+                            const centre = await fetchCenterLocation(db, { branchId });
+                            if (centre && isCenterConfigured(centre)) {
+                                nextCentreByBranchId[branchId] = {
+                                    branchId,
+                                    lat: centre.latitude,
+                                    lon: centre.longitude,
+                                };
+                                return;
+                            }
+                        } catch (err) {
+                            console.warn("[SAProvincesDrillMap] centre lookup failed:", branchId, err);
+                        }
+                        if (town) {
+                            nextCentreByBranchId[branchId] = {
+                                branchId,
+                                lat: town.lat,
+                                lon: town.lon,
+                                approximateTown: town.name,
+                            };
+                        }
+                    })
+                );
 
                 // 3. Accepted applications only
                 const appConstraints = [where("applicationStatus", "==", "accepted")];
@@ -382,6 +570,7 @@ const SAProvincesDrillMap: React.FC<Props> = ({
                             id: d.id,
                             participantId,
                             branchId: resolvedBranchId,
+                            title: x.interventionTitle || x.title || undefined,
                             assignmentStatus: x.assignmentStatus,
                             status: x.status,
                             interventionStatus: x.interventionStatus,
@@ -405,8 +594,9 @@ const SAProvincesDrillMap: React.FC<Props> = ({
 
                 if (cancelled) return;
 
-                setAllowedBranchIds(nextAllowedBranchIds);
                 setBranchInfoById(nextBranchInfoById);
+                setUnplacedBranchNames(nextUnplacedBranchNames.sort((a, b) => a.localeCompare(b)));
+                setCentreByBranchId(nextCentreByBranchId);
                 setParticipantBranchById(nextParticipantBranchById);
                 setApplicationRows(appRows);
                 setAssignedRows(aiRows);
@@ -423,50 +613,18 @@ const SAProvincesDrillMap: React.FC<Props> = ({
         };
     }, [programId, user?.email]);
 
-    const inRange = (d?: Date) => {
-        if (!d) return false;
-        if (dateFrom && d < dateFrom) return false;
-        if (dateTo && d > dateTo) return false;
-        return true;
-    };
+    // A selection that no longer exists after a reload falls back to the country.
+    useEffect(() => {
+        if (selectedBranchId && !branchInfoById[selectedBranchId]) {
+            setSelectedBranchId(null);
+        }
+    }, [branchInfoById, selectedBranchId]);
 
-    const provinceShapes = useMemo(() => {
-        if (!provGeo) return [];
-        const shapes = (Highcharts as any).geojson(provGeo);
-        return shapes
-            .map((s: any) => {
-                const n = (s?.properties?.ADM1_EN || s?.name || "")
-                    .replace(/Province/i, "")
-                    .trim();
-                s.name = n;
-                return s;
-            })
-            .filter((s: any) => PROV_ALLOWED.includes(s.name));
-    }, [provGeo]);
+    const fromTime = dateFrom.getTime();
+    const toTime = dateTo.getTime();
 
-    // Use municipalities geo only as province drill surface, branch labels now come from branch docs
-    const provinceBranchFeatures = useMemo(() => {
-        const out: Record<ProvinceName, any[]> = {
-            Gauteng: [],
-            "North West": [],
-            "Free State": [],
-        };
-
-        const branchEntries = Object.values(branchInfoById);
-
-        branchEntries.forEach((branch) => {
-            out[branch.province].push({
-                name: branch.name,
-                __branchId__: branch.id,
-                value: 0,
-            });
-        });
-
-        return out;
-    }, [branchInfoById]);
-
-    const interventionsByBranch = useMemo(() => {
-        const out: Record<string, BranchInterventionAgg> = {};
+    const interventionsInRange = useMemo(() => {
+        const out: ScopedIntervention[] = [];
 
         assignedRows.forEach((row) => {
             const branchId =
@@ -478,378 +636,912 @@ const SAProvincesDrillMap: React.FC<Props> = ({
             if (!branchId || !branchInfoById[branchId]) return;
 
             const cls = getCanonicalInterventionStatus(row);
-            if (cls === "unknown") return;
+            if (cls !== "completed" && cls !== "in-progress" && cls !== "assigned") return;
 
             const date =
                 cls === "completed"
                     ? row.completedAt || row.updatedAt || row.createdAt
                     : row.createdAt || row.updatedAt;
 
-            if (!date || !inRange(date)) return;
-            const m = date.getMonth();
+            if (!date || date.getTime() < fromTime || date.getTime() > toTime) return;
 
-            if (!out[branchId]) {
-                out[branchId] = {
-                    completed: Array(12).fill(0),
-                    inProgress: Array(12).fill(0),
-                    assigned: Array(12).fill(0),
-                };
-            }
-
-            if (cls === "completed") out[branchId].completed[m]++;
-            else if (cls === "in-progress") out[branchId].inProgress[m]++;
-            else if (cls === "assigned") out[branchId].assigned[m]++;
+            out.push({
+                branchId,
+                participantId: row.participantId,
+                title: row.title || "Untitled intervention",
+                cls,
+                month: date.getMonth(),
+            });
         });
 
         return out;
-    }, [assignedRows, participantBranchById, branchInfoById, dateFrom, dateTo]);
+    }, [assignedRows, participantBranchById, branchInfoById, fromTime, toTime]);
 
-    const applicationsByBranch = useMemo(() => {
-        const out: Record<string, BranchApplicationAgg> = {};
+    const acceptancesInRange = useMemo(() => {
+        const out: ScopedAcceptance[] = [];
 
         applicationRows.forEach((row) => {
             if (!acceptedOnly(row.applicationStatus)) return;
-
-            const branchId = row.branchId;
-            if (!branchId || !branchInfoById[branchId]) return;
+            if (!row.branchId || !branchInfoById[row.branchId]) return;
 
             const date = row.createdAt || row.updatedAt;
-            if (!date || !inRange(date)) return;
-            const m = date.getMonth();
+            if (!date || date.getTime() < fromTime || date.getTime() > toTime) return;
 
-            if (!out[branchId]) {
-                out[branchId] = {
-                    accepted: Array(12).fill(0),
-                };
-            }
-
-            out[branchId].accepted[m]++;
+            out.push({ branchId: row.branchId, month: date.getMonth() });
         });
 
         return out;
-    }, [applicationRows, branchInfoById, dateFrom, dateTo]);
+    }, [applicationRows, branchInfoById, fromTime, toTime]);
 
-    const provinceTotals = useMemo(() => {
-        const base: Record<ProvinceName, number> = {
-            Gauteng: 0,
-            "North West": 0,
-            "Free State": 0,
-        };
+    // Stats for any set of branches, so provinces, pins and the panel all add up
+    // from the same rows.
+    const statsFor = useCallback(
+        (inScope: (branchId: string) => boolean): ScopeStats => {
+            const stats = emptyStats();
+            const participants = new Set<string>();
 
-        if (metric === "interventions") {
-            Object.entries(interventionsByBranch).forEach(([branchId, agg]) => {
-                const branch = branchInfoById[branchId];
-                if (!branch) return;
-
-                const total =
-                    sumArray(agg.completed) +
-                    sumArray(agg.inProgress) +
-                    sumArray(agg.assigned);
-
-                base[branch.province] += total;
+            interventionsInRange.forEach((row) => {
+                if (!inScope(row.branchId)) return;
+                stats.interventions++;
+                if (row.cls === "completed") stats.completed++;
+                if (row.participantId) participants.add(row.participantId);
             });
-        } else {
-            Object.entries(applicationsByBranch).forEach(([branchId, agg]) => {
-                const branch = branchInfoById[branchId];
-                if (!branch) return;
-
-                const total = sumArray(agg.accepted);
-                base[branch.province] += total;
-            });
-        }
-
-        return base;
-    }, [metric, interventionsByBranch, applicationsByBranch, branchInfoById]);
-
-    const branchTotalsForProvince = (prov: ProvinceName) => {
-        const out: Array<{ branchId: string; branchName: string; value: number }> =
-            [];
-
-        Object.values(branchInfoById)
-            .filter((branch) => branch.province === prov)
-            .forEach((branch) => {
-                let value = 0;
-
-                if (metric === "interventions") {
-                    const agg = interventionsByBranch[branch.id];
-                    value = agg
-                        ? sumArray(agg.completed) +
-                        sumArray(agg.inProgress) +
-                        sumArray(agg.assigned)
-                        : 0;
-                } else {
-                    const agg = applicationsByBranch[branch.id];
-                    value = agg ? sumArray(agg.accepted) : 0;
-                }
-
-                out.push({
-                    branchId: branch.id,
-                    branchName: branch.name,
-                    value,
-                });
+            acceptancesInRange.forEach((row) => {
+                if (inScope(row.branchId)) stats.incubatees++;
             });
 
+            stats.activeSmes = participants.size;
+            return stats;
+        },
+        [interventionsInRange, acceptancesInRange]
+    );
+
+    const statsByBranch = useMemo(() => {
+        const out: Record<string, ScopeStats> = {};
+        Object.keys(branchInfoById).forEach((branchId) => {
+            out[branchId] = statsFor((id) => id === branchId);
+        });
         return out;
+    }, [branchInfoById, statsFor]);
+
+    const statsByProvince = useMemo(() => {
+        const out = {} as Record<ProvinceName, ScopeStats>;
+        PROV_ALLOWED.forEach((prov) => {
+            out[prov] = statsFor((id) => branchInfoById[id]?.province === prov);
+        });
+        return out;
+    }, [branchInfoById, statsFor]);
+
+    // Each pinned centre's district, from its exact or town location. A centre
+    // without any location has no district and only counts at province level.
+    const districtByBranchId = useMemo(() => {
+        const out: Record<string, string> = {};
+        if (!districtGeo?.features) return out;
+        Object.values(centreByBranchId).forEach((pin) => {
+            const branch = branchInfoById[pin.branchId];
+            if (!branch) return;
+            const candidates = districtGeo.features.filter(
+                (feature: any) => feature.properties.province === branch.province
+            );
+            // Town points near a border can fall just outside the simplified
+            // outline; the province's nearest district is then the best guess.
+            const district =
+                candidates.find((feature: any) => featureContains(feature, pin.lon, pin.lat)) ||
+                nearestFeature(candidates, pin.lon, pin.lat);
+            if (district) out[pin.branchId] = district.properties.name;
+        });
+        return out;
+    }, [districtGeo, centreByBranchId, branchInfoById]);
+
+    const provinceDistricts = useMemo(
+        () =>
+            selectedProvince && districtGeo?.features
+                ? districtGeo.features.filter(
+                    (feature: any) => feature.properties.province === selectedProvince
+                )
+                : [],
+        [districtGeo, selectedProvince]
+    );
+
+    const statsByDistrict = useMemo(() => {
+        const out: Record<string, { stats: ScopeStats; centres: string[] }> = {};
+        provinceDistricts.forEach((feature: any) => {
+            const name = feature.properties.name as string;
+            out[name] = {
+                stats: statsFor((id) => districtByBranchId[id] === name),
+                centres: Object.keys(districtByBranchId).filter(
+                    (id) => districtByBranchId[id] === name
+                ),
+            };
+        });
+        return out;
+    }, [provinceDistricts, districtByBranchId, statsFor]);
+
+    // The district shown in the trail: the chosen one, or the selected centre's.
+    const activeDistrict =
+        selectedDistrict || (selectedBranchId ? districtByBranchId[selectedBranchId] : null) || null;
+
+    const inCurrentScope = useCallback(
+        (branchId: string) =>
+            selectedBranchId
+                ? branchId === selectedBranchId
+                : selectedDistrict
+                    ? districtByBranchId[branchId] === selectedDistrict
+                    : selectedProvince
+                        ? branchInfoById[branchId]?.province === selectedProvince
+                        : true,
+        [selectedBranchId, selectedDistrict, selectedProvince, branchInfoById, districtByBranchId]
+    );
+
+    const scopeStats = useMemo(() => statsFor(inCurrentScope), [statsFor, inCurrentScope]);
+
+    // Branches listed in the panel and checked for coordinates: the selected
+    // district's or province's, or every branch at national level.
+    const branchesInView = useMemo(
+        () =>
+            Object.values(branchInfoById).filter(
+                (branch) =>
+                    (!selectedProvince || branch.province === selectedProvince) &&
+                    (!selectedDistrict || districtByBranchId[branch.id] === selectedDistrict)
+            ),
+        [branchInfoById, selectedProvince, selectedDistrict, districtByBranchId]
+    );
+
+    const unmappedBranches = useMemo(
+        () =>
+            branchesInView
+                .filter((branch) => !centreByBranchId[branch.id])
+                .sort((a, b) => a.name.localeCompare(b.name)),
+        [branchesInView, centreByBranchId]
+    );
+
+
+    const provinceMapData = useMemo(() => {
+        if (!provGeo?.features) return null;
+        return {
+            ...provGeo,
+            features: provGeo.features
+                .map((feature: any) => {
+                    const name = normalizeProvince(
+                        feature?.properties?.ADM1_EN || feature?.properties?.name
+                    );
+                    return name
+                        ? { ...feature, properties: { ...feature.properties, name } }
+                        : null;
+                })
+                .filter(Boolean),
+        };
+    }, [provGeo]);
+
+    const selectProvince = (prov: ProvinceName | null) => {
+        setSelectedProvince(prov);
+        setSelectedDistrict(null);
+        setSelectedBranchId(null);
     };
 
-    const makeMapOptions = (): Highcharts.Options => {
-        const topLevelData = provinceShapes.map((shape: any) => ({
-            ...shape,
-            value: provinceTotals[shape.name as ProvinceName] || 0,
-            drilldown: shape.name,
-        }));
+    const selectDistrict = (district: string | null) => {
+        setSelectedDistrict(district);
+        setSelectedBranchId(null);
+    };
 
-        const subtitleMetric =
-            metric === "interventions" ? "Interventions" : "Accepted Incubatees";
+    // Clicking the selected centre again steps back up to its district.
+    const selectBranch = (branchId: string) => {
+        const branch = branchInfoById[branchId];
+        if (!branch) return;
+        const district = districtByBranchId[branchId] || null;
+        setSelectedProvince(branch.province);
+        setSelectedDistrict(district);
+        setSelectedBranchId((prev) => (prev === branchId ? null : branchId));
+    };
+
+    const showDistricts = provinceDistricts.length > 0;
+
+    const mapOptions = useMemo((): Highcharts.Options => {
+        // Once a province is drilled into, only that province is drawn (the
+        // provinces series stops drawing unlisted areas), and its districts
+        // carry the shading: the province goes transparent underneath them
+        // without a value, so the colour scale fits the districts.
+        const provinceData = PROV_ALLOWED.filter(
+            (prov) => !selectedProvince || prov === selectedProvince
+        ).map((prov) =>
+            selectedProvince && showDistricts
+                ? { id: `province-${prov}`, name: prov, color: "rgba(0,0,0,0)" }
+                : {
+                    id: `province-${prov}`,
+                    name: prov,
+                    value: measureOf(statsByProvince[prov], metric),
+                }
+        );
+
+        const districtData = provinceDistricts.map((feature: any) => {
+            const name = feature.properties.name as string;
+            const entry = statsByDistrict[name];
+            const hasCentres = !!entry?.centres.length;
+            const isSelected = name === activeDistrict;
+            return {
+                id: `district-${name}`,
+                name,
+                __centres__: entry?.centres.length || 0,
+                ...(hasCentres
+                    ? { value: measureOf(entry.stats, metric) }
+                    : { color: token.colorFillSecondary }),
+                ...(isSelected ? { borderColor: token.colorText, borderWidth: 2 } : {}),
+            };
+        });
+
+        const pinStats = Object.values(centreByBranchId)
+            .map((pin) => ({ pin, branch: branchInfoById[pin.branchId] }))
+            // Drilled into a province: only its own centres are pinned.
+            .filter(
+                ({ branch }) =>
+                    !!branch && (!selectedProvince || branch.province === selectedProvince)
+            )
+            .map(({ pin, branch }) => {
+                const stats = statsByBranch[pin.branchId] || emptyStats();
+                const value = measureOf(stats, metric);
+                const isSelected = pin.branchId === selectedBranchId;
+                const pinColor = rateColor(stats);
+                // Town-level pins are hollow: a faint fill with a coloured ring.
+                const approximate = !!pin.approximateTown;
+                return {
+                    name: branch.name,
+                    lat: pin.lat,
+                    lon: pin.lon,
+                    // Bubbles need a size even at zero, so z never drops below 1.
+                    z: Math.max(value, 1),
+                    __branchId__: pin.branchId,
+                    __label__: formatMeasure(value, metric),
+                    __rate__: stats.interventions ? `${completionRate(stats)}%` : "no interventions",
+                    __where__: approximate
+                        ? `Approximate: placed at ${pin.approximateTown} (no exact location captured)`
+                        : "Exact centre location",
+                    color: approximate
+                        ? (Highcharts.color(pinColor).setOpacity(0.2).get() as string)
+                        : pinColor,
+                    marker: {
+                        lineColor: isSelected
+                            ? token.colorText
+                            : approximate
+                                ? pinColor
+                                : token.colorBgContainer,
+                        lineWidth: isSelected ? 3 : approximate ? 2 : 1,
+                    },
+                };
+            });
+
+        const labelStyle = {
+            color: token.colorText,
+            textOutline: "none",
+            fontWeight: "600",
+        };
 
         return {
             chart: {
-                animation: { duration: 500 },
-                events: {
-                    drilldown: function (e: any) {
-                        const prov = e.point?.name as ProvinceName;
-                        setSelectedProvince(prov);
-                        setSelectedBranchId(null);
-
-                        const branchScores = branchTotalsForProvince(prov);
-
-                        (this as any).addSeriesAsDrilldown(e.point, {
-                            type: "column",
-                            name: prov,
-                            data: branchScores.map((item) => ({
-                                name: item.branchName,
-                                y: item.value,
-                                __branchId__: item.branchId,
-                                color: STATUS_COLORS.assigned,
-                            })),
-                            dataLabels: { enabled: true, format: "{point.y}" },
-                            tooltip: {
-                                pointFormat: "<b>{point.name}</b><br/>Value: {point.y}",
-                            },
-                            point: {
-                                events: {
-                                    click: function () {
-                                        const branchId = (this as any).__branchId__ as string;
-                                        setSelectedBranchId((prev) =>
-                                            prev === branchId ? null : branchId
-                                        );
-                                    },
-                                },
-                            },
-                        });
-                    },
-                    // The documented event for "back to the top level".
-                    drillupall: function () {
-                        setSelectedProvince(null);
-                        setSelectedBranchId(null);
-                    },
-                },
+                map: provinceMapData as any,
+                height: 420,
+                backgroundColor: "transparent",
+                animation: { duration: 300 },
             },
-            title: { text: "" },
-            subtitle: {
-                text: `${subtitleMetric} (${dateFrom.toLocaleDateString()} → ${dateTo.toLocaleDateString()})`,
-            },
-            mapNavigation: {
-                enabled: false,
-                enableButtons: false,
-                enableMouseWheelZoom: false,
-                enableDoubleClickZoom: false,
-                enableTouchZoom: false,
-            } as any,
+            title: { text: undefined },
+            mapNavigation: { enabled: false },
             navigation: { buttonOptions: { enabled: false } } as any,
             colorAxis: {
                 min: 0,
-                stops: [
-                    [0, "#E6F7FF"],
-                    [0.5, "#91D5FF"],
-                    [1, "#0050B3"],
-                ],
+                ...(metric === "completion" ? { max: 100 } : {}),
+                minColor: token.colorPrimaryBg,
+                maxColor: token.colorPrimary,
+                labels: { style: { color: token.colorTextSecondary } },
             },
-            legend: { enabled: true },
-            credits: { enabled: false },
-            drilldown: {
-                breadcrumbs: { floating: true },
-                drillUpButton: { relativeTo: "spacingBox", position: { x: 0, y: 50 } },
+            legend: {
+                enabled: true,
+                itemStyle: { color: token.colorTextSecondary },
+            },
+            tooltip: {
+                backgroundColor: token.colorBgElevated,
+                style: { color: token.colorText },
+            },
+            credits: {
+                enabled: true,
+                text: "Districts: geoBoundaries (CC BY 3.0 IGO) · Towns: © OpenStreetMap contributors",
+                href: "https://www.geoboundaries.org",
+                style: { color: token.colorTextQuaternary, fontSize: "9px" },
             },
             series: [
                 {
+                    id: "provinces",
                     type: "map",
                     name: "Provinces",
-                    data: topLevelData,
-                    dataLabels: { enabled: true, format: "{point.name}" },
+                    joinBy: ["name", "name"],
+                    data: provinceData,
+                    allAreas: !selectedProvince,
+                    cursor: "pointer",
+                    borderColor: token.colorBgContainer,
+                    showInLegend: false,
+                    dataLabels: {
+                        enabled: true,
+                        style: labelStyle,
+                        formatter: function () {
+                            const p = this as any;
+                            // Drilled in: the districts carry the labels.
+                            if (selectedProvince) return null;
+                            return `${p.point.name}<br/>${formatMeasure(p.point.value ?? 0, metric)}`;
+                        },
+                    },
                     tooltip: {
-                        pointFormat: "<b>{point.name}</b><br/>Value: {point.value}",
+                        pointFormatter: function () {
+                            const p = this as any;
+                            return p.value == null
+                                ? `<b>${p.name}</b><br/>Click to open`
+                                : `<b>${p.name}</b><br/>${formatMeasure(p.value, metric)}`;
+                        },
+                    },
+                    point: {
+                        events: {
+                            click: function () {
+                                const prov = (this as any).name as ProvinceName;
+                                selectProvince(prov === selectedProvince ? null : prov);
+                            },
+                        },
+                    },
+                } as any,
+                {
+                    id: "districts",
+                    type: "map",
+                    name: "Districts",
+                    mapData: {
+                        type: "FeatureCollection",
+                        features: provinceDistricts,
+                    },
+                    joinBy: ["name", "name"],
+                    data: districtData,
+                    visible: showDistricts,
+                    cursor: "pointer",
+                    borderColor: token.colorBgContainer,
+                    borderWidth: 1,
+                    showInLegend: false,
+                    dataLabels: {
+                        enabled: true,
+                        style: { ...labelStyle, fontWeight: "normal", fontSize: "10px" },
+                        formatter: function () {
+                            const p = (this as any).point;
+                            // Districts without centres get a dimmer label.
+                            return p.__centres__
+                                ? p.name
+                                : `<span style="color:${token.colorTextTertiary};font-weight:normal">${p.name}</span>`;
+                        },
+                    },
+                    tooltip: {
+                        pointFormatter: function () {
+                            const p = this as any;
+                            if (!p.__centres__) return `<b>${p.name}</b><br/>No centres`;
+                            return `<b>${p.name}</b><br/>${formatMeasure(p.value ?? 0, metric)}<br/>${p.__centres__} ${p.__centres__ === 1 ? "centre" : "centres"}`;
+                        },
+                    },
+                    point: {
+                        events: {
+                            click: function () {
+                                const name = (this as any).name as string;
+                                const centres = statsByDistrict[name]?.centres || [];
+                                if (!centres.length) return;
+                                // One centre: go straight to it.
+                                if (centres.length === 1) {
+                                    selectBranch(centres[0]);
+                                    return;
+                                }
+                                selectDistrict(name === selectedDistrict ? null : name);
+                            },
+                        },
+                    },
+                } as any,
+                {
+                    id: "centres",
+                    type: "mapbubble",
+                    name: "Centres (colour = completion rate, hollow = town-level location)",
+                    colorAxis: false,
+                    data: pinStats,
+                    minSize: 10,
+                    maxSize: 34,
+                    zMin: 0,
+                    cursor: "pointer",
+                    dataLabels: {
+                        enabled: !!selectedProvince,
+                        format: "{point.name} · {point.__label__}",
+                        style: { ...labelStyle, fontSize: "11px" },
+                        y: -16,
+                    },
+                    tooltip: {
+                        pointFormat:
+                            "<b>{point.name}</b><br/>Value: {point.__label__}<br/>Completion: {point.__rate__}<br/><i>{point.__where__}</i>",
+                    },
+                    point: {
+                        events: {
+                            click: function () {
+                                selectBranch((this as any).__branchId__ as string);
+                            },
+                        },
                     },
                 } as any,
             ],
         };
-    };
-
-    const [mapOptions, setMapOptions] =
-        useState<Highcharts.Options>(makeMapOptions);
-
-    useEffect(() => {
-        if (!provGeo || !provinceShapes.length) return;
-        setMapOptions(makeMapOptions());
+        // The select* helpers only call state setters with branchInfoById and
+        // districtByBranchId, which are already dependencies.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
-        provGeo,
-        muniGeo,
-        provinceShapes.length,
-        JSON.stringify(provinceTotals),
+        provinceMapData,
+        statsByProvince,
+        statsByBranch,
+        centreByBranchId,
+        branchInfoById,
+        districtByBranchId,
+        provinceDistricts,
+        statsByDistrict,
+        showDistricts,
+        activeDistrict,
+        selectedProvince,
+        selectedDistrict,
+        selectedBranchId,
         metric,
-        dateFrom.getTime(),
-        dateTo.getTime(),
-        JSON.stringify(Object.keys(branchInfoById)),
+        token,
     ]);
 
-    const sideChartOptions: Highcharts.Options = useMemo(() => {
-        const selectedBranch = selectedBranchId
-            ? branchInfoById[selectedBranchId]
-            : undefined;
+    // Zoom every mounted map (card and expanded modal) to the selection. The
+    // chart is updated in place rather than replaced, so the zoom survives
+    // option changes.
+    const charts = useRef(new Set<Highcharts.Chart>());
 
-        const scopeTitle = selectedBranch
-            ? selectedBranch.name
-            : selectedProvince
-                ? selectedProvince
-                : "South Africa";
+    const selectedPin = selectedBranchId ? centreByBranchId[selectedBranchId] : undefined;
 
-        if (metric === "interventions") {
-            const combined: BranchInterventionAgg = {
-                completed: Array(12).fill(0),
-                inProgress: Array(12).fill(0),
-                assigned: Array(12).fill(0),
-            };
+    const zoomToSelection = useCallback(
+        (chart: Highcharts.Chart) => {
+            const mapView = (chart as any).mapView;
+            if (!mapView) return;
+            if (!selectedProvince) {
+                mapView.zoomBy();
+                return;
+            }
+            const area =
+                (activeDistrict && (chart.get(`district-${activeDistrict}`) as any)) ||
+                (chart.get(`province-${selectedProvince}`) as any);
+            if (!area?.bounds) return;
+            // Zoom through the map view, not point.zoomTo(): zoomTo only redraws
+            // the clicked point's own series, leaving districts and pins behind
+            // at the old zoom.
+            if (selectedPin) {
+                // A centre: fit its district, then close in on its town.
+                mapView.fitToBounds(area.bounds, undefined, false);
+                mapView.setView([selectedPin.lon, selectedPin.lat], mapView.zoom + 1, true, true);
+            } else {
+                mapView.fitToBounds(area.bounds, undefined, true, true);
+            }
+        },
+        // showDistricts: district points only exist once their shapes load.
+        [selectedProvince, activeDistrict, selectedPin, showDistricts]
+    );
 
-            Object.entries(interventionsByBranch).forEach(([branchId, agg]) => {
-                const branch = branchInfoById[branchId];
-                if (!branch) return;
+    useEffect(() => {
+        charts.current.forEach((chart) => {
+            if ((chart as any).renderer) zoomToSelection(chart);
+            else charts.current.delete(chart);
+        });
+    }, [zoomToSelection]);
 
-                const inScope = selectedBranchId
-                    ? branchId === selectedBranchId
-                    : selectedProvince
-                        ? branch.province === selectedProvince
-                        : true;
+    const registerChart = useCallback(
+        (chart: Highcharts.Chart) => {
+            charts.current.add(chart);
+            zoomToSelection(chart);
+        },
+        [zoomToSelection]
+    );
 
-                if (!inScope) return;
+    const monthlyChartOptions: Highcharts.Options = useMemo(() => {
+        const axisStyle = { color: token.colorTextSecondary };
+        const base: Highcharts.Options = {
+            chart: { type: "column", height: 260, backgroundColor: "transparent" },
+            title: { text: undefined },
+            xAxis: { categories: months, labels: { style: axisStyle } },
+            legend: { enabled: true, itemStyle: { color: token.colorTextSecondary } },
+            tooltip: { shared: true },
+            plotOptions: { column: { stacking: "normal" } },
+            credits: { enabled: false },
+        };
 
-                combined.completed = combined.completed.map(
-                    (v, i) => v + (agg.completed[i] || 0)
-                );
-                combined.inProgress = combined.inProgress.map(
-                    (v, i) => v + (agg.inProgress[i] || 0)
-                );
-                combined.assigned = combined.assigned.map(
-                    (v, i) => v + (agg.assigned[i] || 0)
-                );
+        if (metric === "incubatees") {
+            const accepted = Array(12).fill(0);
+            acceptancesInRange.forEach((row) => {
+                if (inCurrentScope(row.branchId)) accepted[row.month]++;
             });
 
             return {
-                chart: { type: "column", animation: { duration: 500 } },
-                title: { text: `Monthly Intervention Status — ${scopeTitle}` },
-                xAxis: { categories: months },
+                ...base,
                 yAxis: {
-                    title: { text: "Interventions" },
+                    title: { text: undefined },
                     allowDecimals: false,
                     min: 0,
-                    stackLabels: { enabled: true },
+                    labels: { style: axisStyle },
                 },
-                legend: { enabled: true },
-                tooltip: { shared: true },
-                plotOptions: { column: { stacking: "normal" } },
                 series: [
                     {
                         type: "column",
-                        name: "Completed",
-                        data: combined.completed,
-                        color: STATUS_COLORS.completed,
-                    },
-                    {
-                        type: "column",
-                        name: "In Progress",
-                        data: combined.inProgress,
-                        color: STATUS_COLORS["in-progress"],
-                    },
-                    {
-                        type: "column",
-                        name: "Assigned",
-                        data: combined.assigned,
-                        color: STATUS_COLORS.assigned,
+                        name: "Accepted",
+                        data: accepted,
+                        color: STATUS_COLORS.accepted,
                     },
                 ],
-                credits: { enabled: false },
             };
         }
 
-        const combined: BranchApplicationAgg = {
-            accepted: Array(12).fill(0),
+        const byClass: Record<InterventionClass, number[]> = {
+            completed: Array(12).fill(0),
+            "in-progress": Array(12).fill(0),
+            assigned: Array(12).fill(0),
         };
-
-        Object.entries(applicationsByBranch).forEach(([branchId, agg]) => {
-            const branch = branchInfoById[branchId];
-            if (!branch) return;
-
-            const inScope = selectedBranchId
-                ? branchId === selectedBranchId
-                : selectedProvince
-                    ? branch.province === selectedProvince
-                    : true;
-
-            if (!inScope) return;
-
-            combined.accepted = combined.accepted.map(
-                (v, i) => v + (agg.accepted[i] || 0)
-            );
+        interventionsInRange.forEach((row) => {
+            if (inCurrentScope(row.branchId)) byClass[row.cls][row.month]++;
         });
 
         return {
-            chart: { type: "column", animation: { duration: 500 } },
-            title: { text: `Monthly Accepted Incubatees — ${scopeTitle}` },
-            xAxis: { categories: months },
+            ...base,
             yAxis: {
-                title: { text: "Accepted Incubatees" },
+                title: { text: undefined },
                 allowDecimals: false,
                 min: 0,
-                stackLabels: { enabled: true },
+                labels: { style: axisStyle },
             },
-            legend: { enabled: true },
-            tooltip: { shared: true },
-            plotOptions: { column: { stacking: "normal" } },
             series: [
                 {
                     type: "column",
-                    name: "Accepted",
-                    data: combined.accepted,
-                    color: STATUS_COLORS.accepted,
+                    name: "Completed",
+                    data: byClass.completed,
+                    color: STATUS_COLORS.completed,
+                },
+                {
+                    type: "column",
+                    name: "In Progress",
+                    data: byClass["in-progress"],
+                    color: STATUS_COLORS["in-progress"],
+                },
+                {
+                    type: "column",
+                    name: "Assigned",
+                    data: byClass.assigned,
+                    color: STATUS_COLORS.assigned,
                 },
             ],
-            credits: { enabled: false },
         };
+    }, [metric, interventionsInRange, acceptancesInRange, inCurrentScope, token]);
+
+    const metricLabel =
+        metric === "interventions"
+            ? "Interventions"
+            : metric === "incubatees"
+                ? "Accepted incubatees"
+                : "Completion rate";
+
+    type RankedItem = {
+        key: string;
+        label: string;
+        value: number;
+        display: string;
+        onClick?: () => void;
+    };
+
+    // Ranked lists for the current level: districts and centres in a province,
+    // centres in a district or the country, or a centre's top intervention types.
+    const rankedSections = useMemo((): Array<{ title: string; items: RankedItem[] }> => {
+        if (selectedBranchId) {
+            const counts = new Map<string, number>();
+            interventionsInRange.forEach((row) => {
+                if (row.branchId !== selectedBranchId) return;
+                counts.set(row.title, (counts.get(row.title) || 0) + 1);
+            });
+            return [
+                {
+                    title: "Top intervention types",
+                    items: Array.from(counts.entries())
+                        .map(([title, count]) => ({
+                            key: title,
+                            label: title,
+                            value: count,
+                            display: String(count),
+                        }))
+                        .sort((a, b) => b.value - a.value)
+                        .slice(0, 5),
+                },
+            ];
+        }
+
+        const centreItems = branchesInView
+            .map((branch) => {
+                const value = measureOf(statsByBranch[branch.id] || emptyStats(), metric);
+                return {
+                    key: branch.id,
+                    label: branch.name,
+                    value,
+                    display: formatMeasure(value, metric),
+                    onClick: () => selectBranch(branch.id),
+                };
+            })
+            .sort((a, b) => b.value - a.value);
+
+        const sections: Array<{ title: string; items: RankedItem[] }> = [];
+        if (selectedProvince && !selectedDistrict && showDistricts) {
+            sections.push({
+                title: `Districts by ${metricLabel.toLowerCase()}`,
+                items: Object.entries(statsByDistrict)
+                    .filter(([, entry]) => entry.centres.length > 0)
+                    .map(([name, entry]) => {
+                        const value = measureOf(entry.stats, metric);
+                        return {
+                            key: `district-${name}`,
+                            label: `${name} (${entry.centres.length} ${entry.centres.length === 1 ? "centre" : "centres"})`,
+                            value,
+                            display: formatMeasure(value, metric),
+                            onClick: () =>
+                                entry.centres.length === 1
+                                    ? selectBranch(entry.centres[0])
+                                    : selectDistrict(name),
+                        };
+                    })
+                    .sort((a, b) => b.value - a.value),
+            });
+        }
+        sections.push({
+            title: selectedDistrict
+                ? `Centres in ${selectedDistrict}`
+                : `Centres by ${metricLabel.toLowerCase()}`,
+            items: centreItems,
+        });
+        return sections;
+        // The select* helpers only call state setters.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
-        metric,
-        selectedProvince,
         selectedBranchId,
-        interventionsByBranch,
-        applicationsByBranch,
-        branchInfoById,
+        selectedProvince,
+        selectedDistrict,
+        showDistricts,
+        interventionsInRange,
+        branchesInView,
+        statsByBranch,
+        statsByDistrict,
+        districtByBranchId,
+        metric,
+        metricLabel,
     ]);
 
-    const hasAnyTopData = useMemo(() => {
-        return Object.values(provinceTotals).some((v) => v > 0);
-    }, [provinceTotals]);
+    const breadcrumbItems = [
+        {
+            title: selectedProvince ? (
+                <a onClick={() => selectProvince(null)}>South Africa</a>
+            ) : (
+                "South Africa"
+            ),
+        },
+        ...(selectedProvince
+            ? [
+                {
+                    title:
+                        activeDistrict || selectedBranchId ? (
+                            <a onClick={() => selectProvince(selectedProvince)}>{selectedProvince}</a>
+                        ) : (
+                            selectedProvince
+                        ),
+                },
+            ]
+            : []),
+        ...(activeDistrict
+            ? [
+                {
+                    title: selectedBranchId ? (
+                        <a onClick={() => selectDistrict(activeDistrict)}>{activeDistrict}</a>
+                    ) : (
+                        activeDistrict
+                    ),
+                },
+            ]
+            : []),
+        ...(selectedBranchId && branchInfoById[selectedBranchId]
+            ? [{ title: branchInfoById[selectedBranchId].name }]
+            : []),
+    ];
 
-    const currentScopeLabel = useMemo(() => {
-        if (selectedBranchId && branchInfoById[selectedBranchId]) {
-            return `Branch • ${branchInfoById[selectedBranchId].name}`;
-        }
-        if (selectedProvince) return `Province • ${selectedProvince}`;
-        return "National • South Africa";
-    }, [selectedBranchId, selectedProvince, branchInfoById]);
+    const hasAnyData = interventionsInRange.length > 0 || acceptancesInRange.length > 0;
+
+    // Where the figures apply, under the first tile.
+    const scopeLabel =
+        selectedBranchId && branchInfoById[selectedBranchId]
+            ? `At ${branchInfoById[selectedBranchId].name}`
+            : activeDistrict
+                ? `In ${activeDistrict}`
+                : selectedProvince
+                    ? `In ${selectedProvince}`
+                    : "Nationally";
+
+    // Same thresholds as the pin colours.
+    const completionTone: MetricTone = !scopeStats.interventions
+        ? "neutral"
+        : completionRate(scopeStats) >= 70
+            ? "success"
+            : completionRate(scopeStats) >= 40
+                ? "warning"
+                : "danger";
+
+    const renderBody = (fullWidth: boolean) => (
+        <>
+            <Space
+                wrap
+                style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
+            >
+                <Breadcrumb items={breadcrumbItems} />
+                <Text type="secondary">
+                    {dateFrom.toLocaleDateString()} → {dateTo.toLocaleDateString()}
+                </Text>
+            </Space>
+
+            <Row gutter={[16, 16]}>
+                <Col xs={24} lg={fullWidth ? 15 : 14}>
+                    {!hasAnyData && (
+                        <Text type="secondary">
+                            No geographic data for the selected filters.
+                        </Text>
+                    )}
+                    {provinceMapData ? (
+                        <HighchartsReact
+                            highcharts={Highcharts}
+                            constructorType="mapChart"
+                            options={mapOptions}
+                            updateArgs={[true, true, true]}
+                            callback={registerChart}
+                        />
+                    ) : (
+                        <div>Loading map…</div>
+                    )}
+                </Col>
+
+                <Col xs={24} lg={fullWidth ? 9 : 10}>
+                    {/* Wraps on the panel's own width, not the screen's: the
+                        panel is narrow beside the map, and compact tiles clip
+                        their text below about 135px. */}
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))",
+                            gap: 8,
+                            marginBottom: 16,
+                        }}
+                    >
+                        <div>
+                            {metric === "incubatees" ? (
+                                <MetricTile
+                                    compact
+                                    icon={<UserAddOutlined />}
+                                    tone="accent"
+                                    title="Accepted"
+                                    value={scopeStats.incubatees}
+                                    subtitle={scopeLabel}
+                                    wrapperStyle={{ height: "100%" }}
+                                />
+                            ) : (
+                                <MetricTile
+                                    compact
+                                    icon={<SolutionOutlined />}
+                                    tone="accent"
+                                    title="Interventions"
+                                    value={scopeStats.interventions}
+                                    subtitle={scopeLabel}
+                                    wrapperStyle={{ height: "100%" }}
+                                />
+                            )}
+                        </div>
+                        <div>
+                            <MetricTile
+                                compact
+                                icon={<CheckCircleOutlined />}
+                                tone={completionTone}
+                                title="Completed"
+                                value={`${completionRate(scopeStats)}%`}
+                                subtitle={`${scopeStats.completed} of ${scopeStats.interventions} done`}
+                                wrapperStyle={{ height: "100%" }}
+                            />
+                        </div>
+                        <div>
+                            <MetricTile
+                                compact
+                                icon={<TeamOutlined />}
+                                tone="info"
+                                title="Active SMEs"
+                                value={scopeStats.activeSmes}
+                                subtitle="With interventions"
+                                wrapperStyle={{ height: "100%" }}
+                            />
+                        </div>
+                    </div>
+
+                    <HighchartsReact highcharts={Highcharts} options={monthlyChartOptions} />
+
+                    {rankedSections.map((section) => {
+                        const max = Math.max(1, ...section.items.map((item) => item.value));
+                        return (
+                            <div key={section.title} style={{ marginBottom: 12 }}>
+                                <Text strong>{section.title}</Text>
+                                <div style={{ marginTop: 8 }}>
+                                    {section.items.length === 0 ? (
+                                        <Text type="secondary">Nothing in this scope yet.</Text>
+                                    ) : (
+                                        section.items.map((item) => (
+                                            <div
+                                                key={item.key}
+                                                onClick={item.onClick}
+                                                style={{
+                                                    cursor: item.onClick ? "pointer" : "default",
+                                                    padding: "4px 0",
+                                                }}
+                                            >
+                                                <Space
+                                                    style={{ width: "100%", justifyContent: "space-between" }}
+                                                >
+                                                    <Text ellipsis style={{ maxWidth: 240 }}>
+                                                        {item.label}
+                                                    </Text>
+                                                    <Text strong>{item.display}</Text>
+                                                </Space>
+                                                <Progress
+                                                    percent={Math.round((item.value / max) * 100)}
+                                                    showInfo={false}
+                                                    size="small"
+                                                />
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </Col>
+            </Row>
+
+            {unmappedBranches.length > 0 && (
+                <div
+                    style={{
+                        marginTop: 12,
+                        paddingTop: 8,
+                        borderTop: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                >
+                    <Text type="secondary">
+                        {unmappedBranches.length}{" "}
+                        {unmappedBranches.length === 1 ? "centre" : "centres"} not shown on
+                        the map (no location or recognisable town):{" "}
+                    </Text>
+                    {unmappedBranches.map((branch, index) => (
+                        <React.Fragment key={branch.id}>
+                            <a onClick={() => selectBranch(branch.id)}>{branch.name}</a>
+                            {index < unmappedBranches.length - 1 ? ", " : ""}
+                        </React.Fragment>
+                    ))}
+                    <Text type="secondary">. Their numbers still count in every total.</Text>
+                </div>
+            )}
+
+            {!selectedProvince && unplacedBranchNames.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                    <Text type="secondary">
+                        {unplacedBranchNames.length}{" "}
+                        {unplacedBranchNames.length === 1 ? "branch is" : "branches are"} not
+                        counted because their record has no recognisable province:{" "}
+                        {unplacedBranchNames.join(", ")}. Set the province on the branch to
+                        include {unplacedBranchNames.length === 1 ? "it" : "them"}.
+                    </Text>
+                </div>
+            )}
+        </>
+    );
+
+    const showSkeleton = loading && !Object.keys(branchInfoById).length;
 
     return (
         <div>
-            {loading ? (
-                <Card style={{ ...cardStyle, marginTop: 12 }}>
+            {showSkeleton ? (
+                <MotionCard>
                     <Skeleton
                         active
                         title={{ width: 260 }}
@@ -857,107 +1549,50 @@ const SAProvincesDrillMap: React.FC<Props> = ({
                         style={{ marginBottom: 16 }}
                     />
                     <Row gutter={16}>
-                        <Col xs={24} lg={12}>
-                            <Skeleton.Node active style={{ width: "100%", height: 360 }} />
+                        <Col xs={24} lg={14}>
+                            <Skeleton.Node active style={{ width: "100%", height: 420 }} />
                         </Col>
-                        <Col xs={24} lg={12}>
-                            <Skeleton
-                                active
-                                title={{ width: 160 }}
-                                paragraph={false}
-                                style={{ marginBottom: 12 }}
-                            />
-                            <Skeleton.Node active style={{ width: "100%", height: 320 }} />
+                        <Col xs={24} lg={10}>
+                            <Skeleton active paragraph={{ rows: 8 }} />
                         </Col>
                     </Row>
-                </Card>
+                </MotionCard>
             ) : (
                 <>
-                    <Card
-                        style={{ ...cardStyle, marginTop: 12 }}
-                        title={
-                            metric === "interventions"
-                                ? "Interventions — Geographic Distribution"
-                                : "Accepted Incubatees — Geographic Distribution"
-                        }
+                    <MotionCard
+                        title="Geographic Distribution"
                         extra={
                             <Space size="middle" wrap>
+                                <Segmented
+                                    options={METRIC_OPTIONS}
+                                    value={metric}
+                                    onChange={(value) => setMetric(value as Metric)}
+                                />
                                 <Button onClick={() => setExpanded(true)}>Expand</Button>
                             </Space>
                         }
                     >
-                        {!hasAnyTopData ? (
-                            <Empty description="No geographic data available for the selected filters." />
-                        ) : (
-                            <Row gutter={16}>
-                                <Col xs={24} lg={12}>
-                                    {provGeo ? (
-                                        <HighchartsReact
-                                            highcharts={Highcharts}
-                                            constructorType="mapChart"
-                                            options={mapOptions}
-                                            immutable
-                                        />
-                                    ) : (
-                                        <div>Loading map…</div>
-                                    )}
-                                </Col>
-
-                                <Col xs={24} lg={12}>
-                                    <Card variant="borderless">
-                                        <Space wrap style={{ marginBottom: 8 }}>
-                                            <Text strong>Scope:</Text>
-                                            <Text>{currentScopeLabel}</Text>
-                                            {(selectedProvince || selectedBranchId) && (
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => {
-                                                        setSelectedBranchId(null);
-                                                        setSelectedProvince(null);
-                                                    }}
-                                                >
-                                                    Clear selection
-                                                </Button>
-                                            )}
-                                        </Space>
-
-                                        <HighchartsReact
-                                            highcharts={Highcharts}
-                                            options={sideChartOptions}
-                                        />
-                                    </Card>
-                                </Col>
-                            </Row>
-                        )}
-                    </Card>
+                        {renderBody(false)}
+                    </MotionCard>
 
                     <Modal
                         open={expanded}
                         onCancel={() => setExpanded(false)}
                         footer={null}
-                        width={1100}
-                        title="Province → Branch drill-down"
+                        width={1280}
+                        title={
+                            <Space wrap>
+                                <span>Geographic Distribution</span>
+                                <Segmented
+                                    options={METRIC_OPTIONS}
+                                    value={metric}
+                                    onChange={(value) => setMetric(value as Metric)}
+                                />
+                            </Space>
+                        }
+                        destroyOnClose
                     >
-                        {!hasAnyTopData ? (
-                            <Empty description="No geographic data available for the selected filters." />
-                        ) : (
-                            <Row gutter={16}>
-                                <Col span={12}>
-                                    <HighchartsReact
-                                        highcharts={Highcharts}
-                                        constructorType="mapChart"
-                                        options={mapOptions}
-                                        immutable
-                                    />
-                                </Col>
-                                <Col span={12}>
-                                    <HighchartsReact
-                                        highcharts={Highcharts}
-                                        options={sideChartOptions}
-                                    />
-                                </Col>
-                            </Row>
-                        )}
+                        {renderBody(true)}
                     </Modal>
                 </>
             )}

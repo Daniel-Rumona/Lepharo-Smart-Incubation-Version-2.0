@@ -58,7 +58,22 @@ export type ChaserSpec = {
   /** YYYY-MM-DD, the last day the person wants it done by. */
   deadline: string;
   maxNudges: number;
+  /** A head of department's chaser: only this department's MOVs (set by the server, never from the request). */
+  departmentId?: string;
+  /** Done once a record leaves the stage, rather than followed on to the next person. */
+  stageOnly?: boolean;
 };
+
+/**
+ * Heads of department outside ROM and M&E chase their own department's queried MOVs: the ones waiting
+ * on a facilitator to fix what the HOD queried. Each ends once it is answered; the HOD is never chased.
+ */
+export function scopeToDepartment(spec: ChaserSpec, departmentId: string): { spec?: ChaserSpec; error?: string } {
+  if (spec.stage && spec.stage !== "queried") {
+    return { error: "As a head of department you can chase your department's queried MOVs: the ones waiting on a facilitator to fix them." };
+  }
+  return { spec: { ...spec, stage: "queried", departmentId, stageOnly: true } };
+}
 
 export type ChaserItem = {
   collection: ChaserCollection;
@@ -178,7 +193,9 @@ export function planRun(
     const item: ChaserItem = { ...before };
     if (!item.done) {
       const status = statusNow.get(item.id);
-      if (status === undefined || !isWaiting(item.collection, status)) {
+      const leftStage = !!spec.stageOnly && !!spec.stage && status !== undefined &&
+        !STAGE_STATUSES[spec.stage].statuses.includes(clean(status).toLowerCase());
+      if (status === undefined || !isWaiting(item.collection, status) || leftStage) {
         item.done = true;
         if (status !== undefined) item.status = status;
         plan.finished.push(item.id);

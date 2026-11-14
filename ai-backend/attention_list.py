@@ -8,7 +8,9 @@ it combines:
 - open interventions that are overdue or due in the next week (assignedInterventions),
 - whether a session is booked in the next two weeks (appointments),
 and gives each SME one next step. Who counts as "theirs" follows the watches' rules
-(functions/src/watchesLogic.ts visibilityFor): everyone, their programmes, or the SMEs they own.
+(functions/src/watchesLogic.ts visibilityFor): everyone, their programmes, or the SMEs they own;
+except that a head of department (outside the main, ROM and M&E departments, which oversee
+everything) gets the SMEs their department works with, and only their department's work.
 
 rank_attention is pure so test_attention_list.py runs without Firebase.
 """
@@ -23,14 +25,16 @@ SESSION_WINDOW_DAYS = 14
 OPEN_ASSIGNMENT = {"assigned", "in-progress", "needs-reassignment"}
 WEAK_EVIDENCE = ("weak", "missing", "unreadable")
 LEVEL_POINTS = {"Critical": 40, "High": 25, "Medium": 10}
+# Who gets the "needs you" list: the people who act on SMEs. Not receptionists (front desk) or funders.
 ROLE_VISIBILITY = {
-    **{role: "all" for role in ("director", "operations", "system_admin", "superadmin")},
-    **{role: "programmes" for role in ("projectadmin", "receptionist", "funder")},
-    **{role: "own" for role in ("coordinator", "consultant", "mentor", "facilitator", "advisor")},
+    **{role: "all" for role in ("director", "operations", "system_admin")},
+    "projectadmin": "programmes",
+    "coordinator": "own",
 }
 
 ATTENTION_PATTERN = re.compile(
-    r"\bneeds?\b[^.?!]{0,25}\b(me|my attention|attention|help|follow.?up)\b"
+    # "Who needs me?", not "tell me what you need from me".
+    r"(?<!\byou )\bneeds?\b[^.?!]{0,25}\b(me|my attention|attention|help|follow.?up)\b"
     r"|\bwho should i\b"
     r"|\bwhich (smes?|businesses|clients|participants)\b[^.?!]{0,40}\b(focus|priorit|attention|worr|chase|follow|struggl|behind)"
     r"|\bpriorit(y|ies|ise|ize)\b[^.?!]{0,30}\b(smes?|businesses|clients|this week|today)\b"
@@ -43,11 +47,16 @@ def asks_for_attention(question: str) -> bool:
     return bool(ATTENTION_PATTERN.search(question or ""))
 
 
-def visibility_for(role: str, uid: str, programmes: Optional[list[str]]) -> Optional[dict[str, Any]]:
-    """None when the person has no SMEs to rank. programmes: their programmes, or the one selected."""
+def visibility_for(
+    role: str, uid: str, programmes: Optional[list[str]], department_ids: Optional[list[str]] = None,
+) -> Optional[dict[str, Any]]:
+    """None when the person has no SMEs to rank. programmes: their programmes, or the one selected.
+    department_ids: a head of department's department and the ones under it; None for oversight."""
     kind = ROLE_VISIBILITY.get((role or "").strip().lower())
     if not kind:
         return None
+    if department_ids:
+        return {"kind": "department", "departmentIds": list(department_ids), "programmeIds": list(programmes or [])}
     if kind == "all":
         return {"kind": "programmes", "programmeIds": list(programmes)} if programmes else {"kind": "all"}
     if kind == "programmes":
@@ -89,6 +98,12 @@ def rank_attention(
 ) -> dict[str, Any]:
     """{"items": [...], "total": n}: SMEs that need the person, most pressing first."""
     smes: dict[str, dict[str, Any]] = {}
+    if visibility.get("kind") == "department":
+        # A department's SMEs are the ones it works with, and its list is its own work.
+        departments = set(visibility.get("departmentIds") or [])
+        assignments = [row for row in assignments if str(row.get("departmentId") or "") in departments]
+        weak_movs = [row for row in weak_movs if str(row.get("departmentId") or "") in departments]
+        department_smes = {str(row.get("participantId") or "") for row in assignments}
 
     def sme(participant_id: str, name: str, programme: str) -> dict[str, Any]:
         entry = smes.setdefault(participant_id, {
@@ -139,6 +154,8 @@ def rank_attention(
             return True
         if kind == "programmes":
             return entry["programId"] in programmes
+        if kind == "department":
+            return entry["participantId"] in department_smes and (not programmes or entry["programId"] in programmes)
         uid = visibility.get("uid")
         mine = uid in entry["ownerIds"] or uid in entry["assigneeIds"]
         return mine and (not programmes or entry["programId"] in programmes)
@@ -208,21 +225,33 @@ def load_attention(db: Any, visibility: dict[str, Any], now: Optional[datetime] 
     now = now or datetime.now(timezone.utc)
     now_ms = int(now.timestamp() * 1000)
     programmes = visibility.get("programmeIds") if visibility.get("kind") == "programmes" else None
+    departments = visibility.get("departmentIds") if visibility.get("kind") == "department" else None
 
-    def rows(collection: str, *filters: tuple[str, str, Any]) -> list[dict[str, Any]]:
+    def rows(collection: str, status: Optional[tuple[str, list[str]]] = None) -> list[dict[str, Any]]:
+        # One filtered field per query: programmes, or else the status. Two `in` filters together
+        # would need a composite index, and the list must not fail on a project without one.
         out: list[dict[str, Any]] = []
-        chunks = [programmes[i:i + 30] for i in range(0, len(programmes), 30)] if programmes else [None]
-        for chunk in chunks:
+        if programmes:
+            for i in range(0, len(programmes), 30):
+                query = db.collection(collection).where("programId", "in", programmes[i:i + 30])
+                out.extend({"id": doc.id, **(doc.to_dict() or {})} for doc in query.stream())
+        else:
             query = db.collection(collection)
-            for field, op, value in filters:
-                query = query.where(field, op, value)
-            if chunk is not None:
-                query = query.where("programId", "in", chunk)
+            if status:
+                query = query.where(status[0], "in", status[1])
             out.extend({"id": doc.id, **(doc.to_dict() or {})} for doc in query.stream())
         return out
 
     snapshots = rows("smeRiskSnapshots")
-    assignments = rows("assignedInterventions", ("assignmentStatus", "in", sorted(OPEN_ASSIGNMENT)))
+    # rank_attention keeps only open assignments, so the programme query needs no status filter.
+    if departments:
+        # Every assignment of the department, closed ones too: they say which SMEs it works with.
+        assignments = []
+        for i in range(0, len(departments), 30):
+            query = db.collection("assignedInterventions").where("departmentId", "in", departments[i:i + 30])
+            assignments.extend({"id": doc.id, **(doc.to_dict() or {})} for doc in query.stream())
+    else:
+        assignments = rows("assignedInterventions", ("assignmentStatus", sorted(OPEN_ASSIGNMENT)))
     # Few MOVs have a weak check, so one query for all of them; rank_attention applies the scope.
     weak_movs = [{"id": doc.id, **(doc.to_dict() or {})} for doc in db.collection("movDocuments").where("evidenceCheck.verdict", "in", list(WEAK_EVIDENCE)).stream()]
 

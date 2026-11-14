@@ -28,7 +28,7 @@ const isDispute = (q: any) => ["completion-rejected", "completion-rejection"].in
 const linkFor = (role: string, q: any, inMonitoring = false): string | null => {
   const r = lower(role).replace(/\s+/g, "");
   const movId = clean(q?.context?.movId || (q?.target?.type === "mov" ? q?.target?.id : ""));
-  if (r === "coordinator") return q?.target?.type === "assigned-intervention" ? "/coordinator/allocated" : "/coordinator/movs";
+  if (r === "coordinator") return q?.target?.type === "assigned-intervention" ? "/allocated" : "/coordinator/movs";
   if (r === "incubatee" || r === "beneficiary") return "/incubatee/interventions";
   if (r === "projectadmin") return "/projectadmin/movs";
   if (r === "operations") {

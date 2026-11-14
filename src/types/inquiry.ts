@@ -90,6 +90,7 @@ export interface StatusHistoryEntry {
   status: InquiryStatus;
   changedAt: Date;
   changedBy: string; // User ID
+  changedByName?: string;
   notes?: string;
 }
 
@@ -103,6 +104,8 @@ export interface CommunicationEntry {
   sentAt: Date;
   isInternal?: boolean; // true for internal notes, false for external communications
   attachments?: string[]; // File URLs if any
+  /** For a logged note: what kind of contact it records. */
+  noteKind?: 'call' | 'visit' | 'internal';
 }
 
 export interface Inquiry {
@@ -111,6 +114,14 @@ export interface Inquiry {
   programId?: string | null;
   programName?: string;
   sourceType?: 'Incubatee' | 'Non-Incubatee';
+  /** Who it is from: SME, potential incubatee, funder, stakeholder or visitor (lib/inquiryContactTypes). */
+  contactType?: string;
+  /** A walk-in: why they came (lib/inquiryContactTypes VISIT_PURPOSES). */
+  visitPurpose?: string;
+  /** Attending a session: the appointment they were checked in for. */
+  appointmentId?: string;
+  appointmentSessionId?: string;
+  visit?: { purpose: string; checkedInAt: Date; status: string; location?: string; sessionTitle?: string };
   /** The incubated SME this inquiry is about, when it is not the person who came in. */
   participantId?: string | null;
   /** True when someone attended on the SME's behalf, so the contact is not the SME owner. */
@@ -146,6 +157,13 @@ export interface InquiryFormData {
   programId?: string | null;
   programName?: string | null;
   sourceType?: 'Incubatee' | 'Non-Incubatee';
+  contactType?: string;
+  /** A walk-in: why they came (lib/inquiryContactTypes VISIT_PURPOSES). */
+  visitPurpose?: string;
+  /** Attending a session: the appointment they were checked in for. */
+  appointmentId?: string;
+  appointmentSessionId?: string;
+  visit?: { purpose: string; checkedInAt: Date; status: string; location?: string; sessionTitle?: string };
   participantId?: string | null;
   isRepresentative?: boolean;
 }
@@ -250,6 +268,7 @@ export const STATUS_COLORS = {
   'In Progress': '#1890ff',
   Contacted: '#13c2c2',
   Converted: '#52c41a',
+  Resolved: '#0d9488',
   Closed: '#8c8c8c',
   Lost: '#f5222d'
 } as const;

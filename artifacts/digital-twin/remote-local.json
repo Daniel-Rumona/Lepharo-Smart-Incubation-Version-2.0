@@ -1,0 +1,12 @@
+{
+  "byMethod": {
+    "telephonic": 37,
+    "virtual": 38
+  },
+  "created": 75,
+  "datasetHash": "a0a8bfee2d346d1b5eef025f46e01e4e59674878dc3606919d6d1b93decdabe0",
+  "documents": 225,
+  "eligible": 225,
+  "parentSeedRunId": "dtseed_20261009_v1",
+  "seedRunId": "dtseed_20261009_remote_v1"
+}

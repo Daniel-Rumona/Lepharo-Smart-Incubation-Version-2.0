@@ -1,0 +1,36 @@
+{
+  "completedAt": "2026-10-09T15:05:52.720Z",
+  "counts": {
+    "applications": 60,
+    "appointmentSessions": 275,
+    "appointments": 285,
+    "assignedInterventions": 300,
+    "consolidatedMOVs": 35,
+    "coordinators": 4,
+    "diagnosticPlans": 60,
+    "groupInterventionDeliveries": 5,
+    "interventions": 4,
+    "movDocuments": 235,
+    "outcomeAssessments": 365,
+    "outcomeFollowUps": 190,
+    "participantMonthlyMetrics": 720,
+    "participants": 60,
+    "programs": 2,
+    "syntheticActors": 10,
+    "syntheticHistory": 725,
+    "twinCapacityCalendars": 4,
+    "users": 60,
+    "workflowQueries": 45
+  },
+  "created": 3444,
+  "datasetHash": "47b7733ad9986f9c4bd9d89fc81fb96125388ae37ef5fe30b7129cd5f3ded9cf",
+  "evidenceFiles": [
+    "synthetic/dtseed_20261009_v1/sample-0.txt",
+    "synthetic/dtseed_20261009_v1/sample-1.txt",
+    "synthetic/dtseed_20261009_v1/sample-2.txt",
+    "synthetic/dtseed_20261009_v1/sample-3.txt"
+  ],
+  "projectId": "lepharo-smart-inc",
+  "seedRunId": "dtseed_20261009_v1",
+  "skippedExisting": 0
+}

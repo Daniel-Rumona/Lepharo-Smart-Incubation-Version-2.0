@@ -7,6 +7,8 @@ import { appendUpload, attachUpload, stageUpload, uploadOptions } from "./whatsa
 import { consentUserIds, setAlertConsent } from "./whatsappAlerts";
 import { reportAccess, reportOptions, requestReport } from "./reports/whatsappReports";
 import { coverageCancel, coveragePending, coverageStart, coverageSubmit, coverageUpdate } from "./whatsappCoverage";
+import { MOV_REVIEW_ACTIONS } from "./whatsappMovReview";
+import { performanceSummary } from "./whatsappPerformance";
 
 const COVERAGE_ACTIONS = {
   coverage_pending: coveragePending,
@@ -49,6 +51,13 @@ type GatewayAction =
   | "coverage_update"
   | "coverage_submit"
   | "coverage_cancel"
+  | "mov_review_pending"
+  | "mov_review_detail"
+  | "mov_review_approve"
+  | "mov_review_query_draft"
+  | "mov_review_query_send"
+  | "mov_review_cancel"
+  | "performance_summary"
   | "report_options"
   | "request_report"
   | "record_outcome_follow_up";
@@ -354,6 +363,19 @@ export const lphWhatsAppGateway = onRequest(
             return;
           }
           const result = await coverageAction(staff, payload);
+          json(res, result.status, result.body);
+          return;
+        }
+        // The director's view of the running performance cycles (whatsappPerformance.ts).
+        if (action === "performance_summary") {
+          const result = await performanceSummary(staff);
+          json(res, result.status, result.body);
+          return;
+        }
+        // A head of department approving or querying their department's MOVs (whatsappMovReview.ts).
+        const movReviewAction = MOV_REVIEW_ACTIONS[action];
+        if (movReviewAction) {
+          const result = await movReviewAction(staff, payload);
           json(res, result.status, result.body);
           return;
         }

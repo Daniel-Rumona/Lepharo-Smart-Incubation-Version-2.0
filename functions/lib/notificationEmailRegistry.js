@@ -87,7 +87,7 @@ exports.NOTIFICATION_REGISTRY = {
                     `It is time to check whether ${sme} has kept up the change from "${title}".`,
                     (0, workflowEmailFunctions_1.clean)(after.intendedOutcome) ? `What we wanted to see: ${(0, workflowEmailFunctions_1.clean)(after.intendedOutcome)}` : "",
                     "How is it going? Tap one:",
-                ], "/coordinator/check-backs", actionButtonsHtml(after.actions, actionLinks));
+                ], "/check-backs", actionButtonsHtml(after.actions, actionLinks));
                 return { subject: `Check-back due: ${title} (${sme})`, html, text };
             },
         },

@@ -127,7 +127,17 @@ const getBranchContact = (branch?: Branch | null) => {
     }
 }
 
-export const BranchManagement: React.FC = () => {
+type BranchManagementProps = {
+    /** Set by a page that draws its own search box and Add button (System Setup); the card then shows only the list. */
+    search?: string
+    /** Bumped by that page to open the Add form. */
+    addSignal?: number
+    /** Called after a branch is created, edited or deleted. */
+    onChanged?: () => void
+}
+
+export const BranchManagement: React.FC<BranchManagementProps> = ({ search, addSignal = 0, onChanged }) => {
+    const embedded = search !== undefined
     const [form] = Form.useForm<BranchFormValues>()
     const screens = Grid.useBreakpoint()
     const isMobile = !screens.md
@@ -224,7 +234,7 @@ export const BranchManagement: React.FC = () => {
     }, [])
 
     const filteredBranches = useMemo(() => {
-        const keyword = searchText.trim().toLowerCase()
+        const keyword = (search ?? searchText).trim().toLowerCase()
         if (!keyword) return branches
 
         return branches.filter(branch => {
@@ -243,7 +253,7 @@ export const BranchManagement: React.FC = () => {
                 .filter(Boolean)
                 .some(value => String(value).toLowerCase().includes(keyword))
         })
-    }, [branches, searchText])
+    }, [branches, searchText, search])
 
     const showModal = (edit = false, branch: Branch | null = null) => {
         setFormSection(edit ? 'choose' : 'details')
@@ -264,6 +274,11 @@ export const BranchManagement: React.FC = () => {
 
         setIsModalVisible(true)
     }
+
+    useEffect(() => {
+        if (addSignal > 0) showModal(false, null)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [addSignal])
 
     const handleCancel = () => {
         setIsModalVisible(false)
@@ -308,6 +323,7 @@ export const BranchManagement: React.FC = () => {
                 message.success('Operating hours updated successfully!')
                 handleCancel()
                 await fetchBranches()
+                onChanged?.()
                 return
             }
 
@@ -344,6 +360,7 @@ export const BranchManagement: React.FC = () => {
 
             handleCancel()
             await fetchBranches()
+            onChanged?.()
         } catch (error: any) {
             console.error('Branch save error:', error)
             message.error(error?.message || 'Operation failed')
@@ -359,6 +376,7 @@ export const BranchManagement: React.FC = () => {
             await branchService.deleteBranch(branchId)
             message.success('Branch deleted successfully!')
             setBranches(previous => previous.filter(branch => branch.id !== branchId))
+            onChanged?.()
         } catch (error: any) {
             console.error('Branch delete error:', error)
             message.error(error?.message || 'Failed to delete branch')
@@ -398,7 +416,7 @@ export const BranchManagement: React.FC = () => {
             key: 'location',
             render: (_: unknown, record: Branch) => (
                 <Space>
-                    <EnvironmentOutlined style={{ color: '#1890ff' }} />
+                    <EnvironmentOutlined style={{ color: 'var(--app-text-muted)' }} />
                     <Text>{getBranchLocation(record) || '—'}</Text>
                 </Space>
             ),
@@ -412,7 +430,7 @@ export const BranchManagement: React.FC = () => {
 
                 return name ? (
                     <Space>
-                        <UserOutlined style={{ color: '#1677ff' }} />
+                        <UserOutlined style={{ color: 'var(--app-text-muted)' }} />
                         <Text>{name}</Text>
                     </Space>
                 ) : (
@@ -430,7 +448,7 @@ export const BranchManagement: React.FC = () => {
                 return (
                     <div>
                         <div style={{ marginBottom: 4 }}>
-                            <MailOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                            <MailOutlined style={{ color: 'var(--app-text-muted)', marginRight: 8 }} />
                             {contact.email ? (
                                 <Text copyable={{ text: contact.email }}>{contact.email}</Text>
                             ) : (
@@ -438,7 +456,7 @@ export const BranchManagement: React.FC = () => {
                             )}
                         </div>
                         <div>
-                            <PhoneOutlined style={{ color: '#722ed1', marginRight: 8 }} />
+                            <PhoneOutlined style={{ color: 'var(--app-text-muted)', marginRight: 8 }} />
                             {contact.phone ? (
                                 <Text copyable={{ text: contact.phone }}>{contact.phone}</Text>
                             ) : (
@@ -490,7 +508,7 @@ export const BranchManagement: React.FC = () => {
                         description={
                             <div>
                                 <p>Are you sure you want to delete this branch?</p>
-                                <p style={{ color: '#ff4d4f', fontSize: 12, marginBottom: 0 }}>
+                                <p style={{ color: 'var(--ant-color-error, #ff4d4f)', fontSize: 12, marginBottom: 0 }}>
                                     This action cannot be undone.
                                 </p>
                             </div>
@@ -519,7 +537,10 @@ export const BranchManagement: React.FC = () => {
     return (
         <>
             <MotionCard
-                filterBar={
+                {...(embedded
+                    ? { bordered: false, styles: { body: { padding: 0 } }, style: { background: 'transparent', boxShadow: 'none', border: 'none' } }
+                    : {})}
+                filterBar={embedded ? undefined :
                     <div className='setup-toolbar'>
                         <div className='setup-toolbar-search'>
                             <Search

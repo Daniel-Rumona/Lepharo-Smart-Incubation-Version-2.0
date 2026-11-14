@@ -1,0 +1,12 @@
+{
+  "accounts": 30,
+  "datasetHash": "14fef99f207930c788c0d85e35a1a7375289cb79ad8c79a95dfdc3ba52746548",
+  "documents": 43,
+  "firstMonth": "2025-10",
+  "lastMonth": "2026-10",
+  "months": 13,
+  "parentSeedRunId": "dtseed_20261009_v1",
+  "programId": "dtseed_20261009_v1_program_0",
+  "seedRunId": "dtseed_20261009_finance_v2",
+  "toCreate": 30
+}

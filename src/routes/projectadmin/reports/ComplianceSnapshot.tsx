@@ -48,6 +48,8 @@ const ComplianceSnapshot: React.FC<{
 
     return (
         <div className="cs">
+            {/* Onboarding figures with their monthly chart beside them (stacked on narrow screens). */}
+            <div className={trend ? 'cs-pair' : undefined}>
             <MotionCard title="Onboarding compliance">
                 <div className="ds">
                     <div className="ds-summary">
@@ -92,6 +94,12 @@ const ComplianceSnapshot: React.FC<{
                     </div>
                 </div>
             </MotionCard>
+            {trend ? (
+                <MotionCard title="Onboarding documents by month">
+                    <div className="cs-trend">{trend}</div>
+                </MotionCard>
+            ) : null}
+            </div>
 
             <MotionCard title="Programme compliance">
                 <div className="ds">
@@ -130,8 +138,6 @@ const ComplianceSnapshot: React.FC<{
                     ))}
                 </div>
             </MotionCard>
-
-            {trend ? <MotionCard title="Onboarding documents by month">{trend}</MotionCard> : null}
         </div>
     )
 }

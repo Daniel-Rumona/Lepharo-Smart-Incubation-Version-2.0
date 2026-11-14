@@ -243,7 +243,7 @@ export function mapAssignedInterventionSnapshot(snapshot: { docs: Array<{ id: st
 
 export function normalizeAssigneeRole(value: unknown): AssigneeRole {
     const role = clean(value).toLowerCase()
-    return ['operations', 'hod', 'projectmanager'].includes(role) ? 'operations' : 'coordinator'
+    return ['operations', 'hod'].includes(role) ? 'operations' : 'coordinator'
 }
 
 function normalizeAssignmentType(value: unknown, groupKey: unknown) {

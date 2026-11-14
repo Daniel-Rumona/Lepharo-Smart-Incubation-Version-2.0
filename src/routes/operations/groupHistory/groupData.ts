@@ -27,6 +27,8 @@ export type SmeGroupRow = {
     email?: string
     photoUrl?: string
     stage?: string
+    /** The application's programme; requirements and rules are that programme's. */
+    programId: string
     programName?: string
     group: IncubationGroup
     history: GroupHistoryEntry[]

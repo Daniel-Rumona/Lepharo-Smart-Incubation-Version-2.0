@@ -5,7 +5,7 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import dayjs from 'dayjs'
 import { buildMovInterventionRows, buildMovInterventionLabel } from '@/docx/movBuilder'
 import { getAgreementTemplate, type AgreementTemplate } from '@/services/complianceResolver'
-import { resolveMovFacilitatorById } from '@/services/movService'
+import { movDeliveryFlagsFromAppointments, resolveMovFacilitatorById } from '@/services/movService'
 
 // ---------- fit to width ----------
 
@@ -595,29 +595,8 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
 
     const effectiveMov = {
         ...mov,
-        ...(() => {
-            const appointmentMethods = (Array.isArray(mov?.appointmentInterventions)
-                ? mov.appointmentInterventions
-                : [])
-                .map((row: any) => String(row?.deliveryMethod || row?.method || '').toLowerCase())
-
-            const hasStoredMethod = !!(
-                mov?.methodInPerson ||
-                mov?.methodOnline ||
-                mov?.methodTelephonic ||
-                mov?.methodOther
-            )
-
-            if (hasStoredMethod || !appointmentMethods.length) return {}
-
-            const has = (needle: string) => appointmentMethods.some((method: string) => method.includes(needle))
-
-            return {
-                methodInPerson: has('in_person') || has('in-person') || has('in person'),
-                methodOnline: has('online') || has('virtual'),
-                methodTelephonic: has('telephon')
-            }
-        })(),
+        // The delivery method is captured on the appointments; it wins over legacy stored flags.
+        ...(movDeliveryFlagsFromAppointments(mov?.appointmentInterventions) ?? {}),
         smmeNo:
             linkedApplicationData?.smmeNo ||
             linkedApplicationData?.smmENo ||

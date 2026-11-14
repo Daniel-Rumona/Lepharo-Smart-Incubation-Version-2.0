@@ -24,11 +24,11 @@ class ReportConversationTests(StaffWhatsAppTests):
         self.assertNotIn("Reports", self.send("hi", FakeGateway({**CENTRE_COORDINATOR, "reportAccess": False})).reply)
 
     def test_choosing_reports_offers_each_report(self):
-        response = self.send("lph:menu:top:4", gateway())  # Appointments, Find an SME, Record a session, Reports
+        response = self.send("lph:menu:top:5", gateway())  # Needs you, Appointments, Find an SME, Record a session, Reports
         self.assertEqual([b.id for b in response.interactive.buttons], ["lph:rpt:executive", "lph:rpt:national"])
 
     def test_a_single_report_goes_straight_to_the_month(self):
-        response = self.send("lph:menu:top:4", gateway(reports=REPORTS[:1]))
+        response = self.send("lph:menu:top:5", gateway(reports=REPORTS[:1]))
         self.assertIn("*Executive Report* - which month?", response.reply)
 
     def test_picking_a_report_then_a_month_queues_it(self):

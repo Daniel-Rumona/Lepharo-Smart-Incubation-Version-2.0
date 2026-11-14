@@ -3,7 +3,7 @@ import { NOT_SCORED, SECTION_ADAPTERS, SectionKey, YES_IS_GAP } from '@/routes/g
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 export type GapMappingEdge = {

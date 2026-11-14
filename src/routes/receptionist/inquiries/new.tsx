@@ -7,7 +7,7 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 const NewInquiry: React.FC = () => {
   const navigate = useNavigate()
   const { activeProgramId } = useActiveProgramId()
-  const backToList = () => navigate('/receptionist/inquiries')
+  const backToList = () => navigate('/inquiries')
 
   return (
     <div style={{ minHeight: '100vh', padding: '24px' }}>

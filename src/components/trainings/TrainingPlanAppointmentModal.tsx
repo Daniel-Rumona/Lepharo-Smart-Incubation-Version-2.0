@@ -308,7 +308,13 @@ export function TrainingPlanAppointmentModal({
             <Alert
               type="warning"
               showIcon
-              message={category ? `No one attending is in the ${category} category yet.` : "No SMEs are enrolled in this training yet."}
+              message={
+                !smes.length
+                  ? "No SMEs are enrolled in this training yet."
+                  : category
+                    ? `No one attending is in the ${category} category yet.`
+                    : "No one from the enrolled SMEs is set to attend yet. Set who attends under Training → SMEs → People."
+              }
             />
           )}
         </Form>

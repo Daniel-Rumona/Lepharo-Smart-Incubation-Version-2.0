@@ -42,11 +42,17 @@ export function useSMERiskRegisterData(programIdProp?: string) {
     const [assignments, setAssignments] = useState<AnyDoc[]>([])
     // Support an HOD closed, including services that were closed before any assignment existed.
     const [closures, setClosures] = useState<AnyDoc[]>([])
+    const [riskSnapshots, setRiskSnapshots] = useState<Map<string, AnyDoc>>(new Map())
+    const [smeUsers, setSmeUsers] = useState<AnyDoc[]>([])
     const [departments, setDepartments] = useState<AnyDoc[]>([])
     const [sessions, setSessions] = useState<AnyDoc[]>([])
     const [operationalChallenges, setOperationalChallenges] = useState<OperationalChallenge[]>([])
     const [reminderEmails, setReminderEmails] = useState<ReminderEmailLog[]>([])
     const [emailSuppressions, setEmailSuppressions] = useState<BounceStatus[]>([])
+    // Programmes (their required uploads) and each accepted SME's uploads, so documents
+    // count as they do on the Compliance page and in the digital twin.
+    const [programs, setPrograms] = useState<AnyDoc[]>([])
+    const [complianceUploads, setComplianceUploads] = useState<Map<string, AnyDoc[]>>(new Map())
 
     const currentDepartment = useMemo(() => {
         if (!user?.departmentId) return undefined
@@ -146,6 +152,8 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     reminderEmailsSnap,
                     emailSuppressionsSnap,
                     closuresSnap,
+                    snapshotsSnap,
+                    smeUsersSnap,
                 ] = await Promise.all([
                     getDocs(participantsQuery),
                     getDocs(applicationsQuery),
@@ -162,10 +170,37 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                             ? query(collection(db, 'interventionClosures'), where('programId', '==', resolvedProgramId))
                             : collection(db, 'interventionClosures')
                     ).catch(() => null),
+                    // The nightly early-warning snapshots supply the signals this page doesn't
+                    // load. Optional too: without them rows score from live data alone.
+                    getDocs(
+                        resolvedProgramId
+                            ? query(collection(db, 'smeRiskSnapshots'), where('programId', '==', resolvedProgramId))
+                            : collection(db, 'smeRiskSnapshots')
+                    ).catch(() => null),
+                    // SME logins, for the profile photo each SME sets (users/{uid}.photoURL).
+                    getDocs(query(collection(db, 'users'), where('role', '==', 'incubatee'))).catch(() => null),
+                ])
+
+                // A role that cannot read programmes or uploads still gets the register,
+                // with the legacy document reading for those SMEs.
+                const [programsSnap, uploadsByApplication] = await Promise.all([
+                    getDocs(collection(db, 'programs')).catch(() => null),
+                    Promise.all(
+                        applicationsSnap.docs
+                            .filter((d) => normalizeLower(d.data()?.applicationStatus) === 'accepted')
+                            .map(async (d) => {
+                                const uploads = await getDocs(collection(db, 'applications', d.id, 'complianceDocuments'))
+                                    .then((snap) => snap.docs.map((item) => ({ id: item.id, ...item.data() }) as AnyDoc))
+                                    .catch(() => [] as AnyDoc[])
+                                return [d.id, uploads] as const
+                            })
+                    ),
                 ])
 
                 if (cancelled) return
 
+                setPrograms(programsSnap ? programsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [])
+                setComplianceUploads(new Map(uploadsByApplication))
                 setParticipants(participantsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setApplications(applicationsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setDiagnosticPlans(diagnosticPlansSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
@@ -176,6 +211,8 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                         .filter((item) => normalizeLower(item?.status) === 'closed')
                 )
                 setDepartments(departmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
+                setRiskSnapshots(new Map((snapshotsSnap?.docs ?? []).map((d) => [d.id, d.data() as AnyDoc])))
+                setSmeUsers((smeUsersSnap?.docs ?? []).map((d) => ({ id: d.id, ...d.data() })))
                 setSessions(sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setOperationalChallenges(
                     challengesSnap.docs.map(
@@ -223,6 +260,7 @@ export function useSMERiskRegisterData(programIdProp?: string) {
         const assignmentsByParticipant = new Map<string, AnyDoc[]>()
 
         const departmentsById: Record<string, AnyDoc> = {}
+        const programsById = new Map(programs.map((program) => [String(program.id), program]))
 
         departments.forEach((dep) => {
             departmentsById[String(dep.id)] = dep
@@ -256,6 +294,27 @@ export function useSMERiskRegisterData(programIdProp?: string) {
             assignmentsByParticipant.get(pid)!.push(item)
         })
 
+        // An SME's photo: its own login's profile photo (linked by participantId or uid,
+        // never by email), else a logo or photo on the application or participant.
+        const photoByParticipant = new Map<string, string>()
+        const photoByUid = new Map<string, string>()
+        smeUsers.forEach((smeUser) => {
+            const photo = normalizeText(smeUser.photoURL || smeUser.photoUrl)
+            if (!photo) return
+            const uid = normalizeText(smeUser.uid) || String(smeUser.id)
+            photoByUid.set(uid, photo)
+            const pid = normalizeText(smeUser.participantId)
+            if (pid) photoByParticipant.set(pid, photo)
+        })
+        const photoFor = (participantId: string, participant?: AnyDoc, application?: AnyDoc) =>
+            photoByParticipant.get(participantId) ||
+            photoByUid.get(normalizeText(participant?.uid)) ||
+            [
+                application?.photoURL, application?.logoUrl, application?.logoURL, application?.companyLogoUrl,
+                participant?.photoURL, participant?.logoUrl
+            ].map(normalizeText).find(Boolean) ||
+            undefined
+
         const builtRows = applications
             .filter((app) => normalizeLower(app.applicationStatus) === 'accepted')
             .map((application) => {
@@ -271,16 +330,20 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                 const dp = diagnosticPlanByParticipantId.get(participantId)
                 const relatedAssignments = assignmentsByParticipant.get(participantId) ?? []
 
-                return buildRow({
+                const row = buildRow({
                     participant: linkedParticipant ?? {},
                     application,
                     diagnosticPlan: dp,
                     assignments: relatedAssignments,
                     closedInterventionIds: closedByParticipant.get(participantId),
+                    snapshot: riskSnapshots.get(participantId),
                     sessions,
                     departmentsById,
                     scopedDepartment,
+                    program: programsById.get(normalizeText(application.programId)) ?? null,
+                    complianceUploads: complianceUploads.get(application.id) ?? [],
                 })
+                return { ...row, photoUrl: photoFor(participantId, linkedParticipant, application) }
             })
             .filter(Boolean) as SMERow[]
 
@@ -291,9 +354,13 @@ export function useSMERiskRegisterData(programIdProp?: string) {
         diagnosticPlans,
         assignments,
         closures,
+        riskSnapshots,
+        smeUsers,
         departments,
         sessions,
         scopedDepartment,
+        programs,
+        complianceUploads,
     ])
 
     const getSMEChallenges = (participantId: string) =>

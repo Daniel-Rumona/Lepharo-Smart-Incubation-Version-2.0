@@ -7,6 +7,7 @@ from typing import Any, Literal, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from attention_list import asks_for_attention
 from lph_gateway import GatewayError, LphGateway
 from whatsapp_actions import AVAILABLE_ACTIONS, MUTATING_ACTIONS, READ_ACTIONS
 from whatsapp_menu import (
@@ -16,6 +17,7 @@ from whatsapp_menu import (
     is_greeting,
     is_programme_pick,
     is_programme_switch,
+    menu_items,
     programme_picker,
     resolve_choice,
     resolve_choice_id,
@@ -24,6 +26,7 @@ from whatsapp_menu import (
 )
 from whatsapp_uploads import handle_sme_upload_turn
 from whatsapp_coverage import handle_coverage_turn
+from whatsapp_mov_review import handle_mov_review_turn
 from whatsapp_reports import handle_report_turn
 from whatsapp_staff import (
     StaffReasoner,
@@ -704,6 +707,11 @@ def _handle_identity_turn(
         if coverage_turn is not None:
             return _remember(store, store_key, _turn_response(coverage_turn))
 
+        if group == "hod":
+            mov_turn = handle_mov_review_turn(message, phone, awaiting, gateway)
+            if mov_turn is not None:
+                return _remember(store, store_key, _turn_response(mov_turn))
+
         picked = document_pick(message, awaiting)
         if picked is not None:
             turn = send_sme_document(identity, phone, gateway, *picked, tapped=message.strip().startswith("lph:doc:"))
@@ -711,6 +719,9 @@ def _handle_identity_turn(
                 return _remember(store, store_key, _turn_response(turn))
 
     choice = resolve_choice_id(message, identity) or resolve_choice(message, identity, awaiting)
+    if choice is None and group == "coordinator" and asks_for_attention(message):
+        # "Which SMEs need me this week?" in their own words gets the same list as the menu option.
+        choice = next((item for item in menu_items(identity) if item.action == "tool:needs_you"), None)
     if choice is not None:
         return _remember(store, store_key, _turn_response(run_menu_action(choice, identity, phone, gateway)))
 

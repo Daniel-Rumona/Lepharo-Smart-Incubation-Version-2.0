@@ -236,7 +236,7 @@ const GAPAnalysisTable: React.FC = () => {
     const openGap = (record: any) => {
         if (!record?.id) return
         const search = record?.manuallyCreated && record?.appId ? `?appId=${record.appId}` : ''
-        navigate(`/operations/gap/${record.id}${search}`, {
+        navigate(`/gap/${record.id}${search}`, {
             state: record?.manuallyCreated ? { gapRecord: record } : undefined
         })
     }

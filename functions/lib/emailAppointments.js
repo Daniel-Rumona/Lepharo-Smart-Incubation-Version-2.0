@@ -24,10 +24,10 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onAppointmentSessionChangedNotifySmes = exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const syntheticData_1 = require("./syntheticData");
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailHelpers_1 = require("./emailHelpers");
 const emailShared_1 = require("./emailShared");
 const inAppNotifications_1 = require("./inAppNotifications");
@@ -286,7 +286,7 @@ function buildAppointmentCompletionEmail(opts) {
     ].join("\n");
     return { subject, html, text };
 }
-exports.appointmentCompletionNotifier = (0, scheduler_1.onSchedule)({
+exports.appointmentCompletionNotifier = (0, cronHeartbeat_1.scheduledJob)("appointmentCompletionNotifier", {
     region: "us-central1",
     schedule: "*/30 * * * *",
     timeZone: "Africa/Johannesburg",

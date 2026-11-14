@@ -133,7 +133,7 @@ exports.onInquiryCreatedNotifyStaff = (0, firestore_1.onDocumentWritten)({ regio
             const { subject, html, text } = buildNotificationEmail({
                 inquiry: after,
                 branchName,
-                detailUrl: `${base}/receptionist/inquiries/${event.params.inquiryId}`,
+                detailUrl: `${base}/inquiries/${event.params.inquiryId}`,
             });
             sends.push(transporter.sendMail({ from, to: receptionistEmails, subject, html, text }));
         }
@@ -155,7 +155,7 @@ exports.onInquiryCreatedNotifyStaff = (0, firestore_1.onDocumentWritten)({ regio
                 message: `New inquiry from ${submitter} at ${branchName}.`,
                 recipientIds: await (0, movRecipients_1.uidsForEmails)(receptionistEmails),
                 inquiryId,
-                link: `/receptionist/inquiries/${inquiryId}`,
+                link: `/inquiries/${inquiryId}`,
             }),
             (0, inAppNotifications_1.notifyInApp)({
                 type: "inquiry_received",

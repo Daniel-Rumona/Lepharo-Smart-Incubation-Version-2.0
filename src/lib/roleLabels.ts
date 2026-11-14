@@ -27,13 +27,10 @@ const STAFF_ROLE_KEYS = new Set([
     'projectadmin',
     'centercoordinator',
     'coordinator',
-    'consultant',
     'hr',
     'employee',
-    'auxiliary',
     'receptionist',
-    'receiptionist',
-    'projectmanager'
+    'receiptionist'
 ])
 
 export const isStaffRole = (role?: string): boolean =>

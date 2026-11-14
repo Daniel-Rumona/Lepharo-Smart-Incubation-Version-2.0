@@ -44,6 +44,7 @@ import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { countLeaveDays } from '@/routes/operations/hr/leave/types'
 
 const { Text } = Typography
 const { Option } = Select
@@ -88,14 +89,15 @@ const EmployeeLeave = () => {
     >([null, null])
     const [editReason, setEditReason] = useState('')
 
+    // Working days: weekends and public holidays aren't taken from the balance.
     const requestedDays =
         dateRange[0] && dateRange[1]
-            ? dateRange[1].diff(dateRange[0], 'day') + 1
+            ? countLeaveDays(dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD'))
             : 0
 
     const editRequestedDays =
         editDateRange[0] && editDateRange[1]
-            ? editDateRange[1].diff(editDateRange[0], 'day') + 1
+            ? countLeaveDays(editDateRange[0].format('YYYY-MM-DD'), editDateRange[1].format('YYYY-MM-DD'))
             : 0
 
     const requestMetrics = {
@@ -158,11 +160,8 @@ const EmployeeLeave = () => {
             .forEach(request => {
                 const type = String(request.type || '')
                 if (!result[type]) return
-                const recordedDays = Number(request.days)
-                const derivedDays = dayjs(request.to).diff(dayjs(request.from), 'day') + 1
-                result[type].used += Number.isFinite(recordedDays) && recordedDays > 0
-                    ? recordedDays
-                    : Math.max(derivedDays, 0)
+                // Counted from the dates: older requests stored calendar days.
+                result[type].used += countLeaveDays(request.from, request.to)
             })
         return result
     }, [leaveBalance, leaveRequests])
@@ -263,6 +262,11 @@ const EmployeeLeave = () => {
             return
         }
 
+        if (requestedDays === 0) {
+            message.error('These dates are all weekends or public holidays.')
+            return
+        }
+
         const balance = calculatedLeaveBalance[selectedLeaveType]
         if (balance.used + requestedDays > balance.total) {
             message.error(
@@ -321,7 +325,10 @@ const EmployeeLeave = () => {
         const balance = calculatedLeaveBalance?.[type]
         if (!balance) return 0
         const usedExcludingThis =
-            balance.used - (editingRequest?.type === type ? editingRequest.days || 0 : 0)
+            balance.used -
+            (editingRequest?.type === type && editingRequest?.status === 'approved'
+                ? countLeaveDays(editingRequest.from, editingRequest.to)
+                : 0)
         return balance.total - usedExcludingThis
     }
 
@@ -335,6 +342,11 @@ const EmployeeLeave = () => {
             !editReason.trim()
         ) {
             message.error('Please fill in all required fields.')
+            return
+        }
+
+        if (editRequestedDays === 0) {
+            message.error('These dates are all weekends or public holidays.')
             return
         }
 
@@ -455,7 +467,12 @@ const EmployeeLeave = () => {
             key: 'dates',
             render: (_: any, record: any) => `${formatLeaveDate(record.from)} to ${formatLeaveDate(record.to)}`
         },
-        { title: 'Days', dataIndex: 'days', key: 'days' },
+        {
+            title: 'Days',
+            key: 'days',
+            // Working days from the dates; older requests stored calendar days.
+            render: (_: any, request: any) => countLeaveDays(request.from, request.to)
+        },
         {
             title: 'Status',
             dataIndex: 'status',
@@ -830,7 +847,7 @@ const EmployeeLeave = () => {
                                 <div style={{ padding: 12, border: '1px solid #f0f0f0', borderRadius: 10 }}>
                                     <Text type='secondary'>Requested days</Text>
                                     <br />
-                                    <Text strong>{viewModal.data.days || 0} days</Text>
+                                    <Text strong>{countLeaveDays(viewModal.data.from, viewModal.data.to)} working days</Text>
                                 </div>
                             </Col>
                             <Col span={12}>

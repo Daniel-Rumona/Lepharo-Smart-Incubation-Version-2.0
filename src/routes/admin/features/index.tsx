@@ -58,6 +58,7 @@ import {
   TeamOutlined,
   ToolOutlined,
   UserOutlined,
+  ShareAltOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
 import {
@@ -87,6 +88,10 @@ import {
 } from "@/components/dashboards/metrics/MetricsGrid";
 import type { MetricTone } from "@/components/dashboards/metrics/MetricTile";
 import { featureGovernanceService } from "@/services/featureGovernanceService";
+import {
+  featureAccessFor,
+  isGovernanceOwnerEmail,
+} from "@/config/featureGovernanceAccess";
 import {
   FeatureGovernanceRecord,
   FeatureMeeting,
@@ -827,7 +832,16 @@ const normalizeChallenges = (
     }));
 };
 const FeatureGovernancePage: React.FC = () => {
-  const { user, loading: identityLoading } = useFullIdentity();
+  const { user, actor, loading: identityLoading } = useFullIdentity();
+  // Access follows the signed-in account (not "view as"), as firestore.rules does.
+  const isOwner = isGovernanceOwnerEmail(actor?.email);
+  const myUid = actor?.uid;
+  const accessOf = (record: FeatureGovernanceRecord) =>
+    featureAccessFor(record, myUid, isOwner);
+  const canEditRecord = (record: FeatureGovernanceRecord) =>
+    ["owner", "creator"].includes(accessOf(record));
+  const canUpdateRecord = (record: FeatureGovernanceRecord) =>
+    ["owner", "creator", "assignee"].includes(accessOf(record));
   const { token } = theme.useToken();
   const { isDark } = useColorMode();
   const sunkenPanel: React.CSSProperties = {
@@ -966,6 +980,91 @@ const FeatureGovernancePage: React.FC = () => {
   useEffect(() => {
     if (!identityLoading) load();
   }, [identityLoading]);
+
+  // System admins: the people a feature can be assigned or shared with, and the
+  // names behind assigneeIds / viewerIds.
+  const [admins, setAdmins] = useState<{ id: string; name: string; email: string }[]>([]);
+  useEffect(() => {
+    if (identityLoading) return;
+    getDocs(query(collection(db, "users"), where("role", "in", ["system_admin", "system admin"])))
+      .then((snap) =>
+        setAdmins(
+          snap.docs
+            .map((d) => {
+              const data = d.data() as any;
+              return {
+                id: d.id,
+                name: String(data.name || data.fullName || data.displayName || data.email || "Unnamed admin").trim(),
+                email: String(data.email || "").trim(),
+              };
+            })
+            .sort((a, b) => a.name.localeCompare(b.name))
+        )
+      )
+      .catch(() => setAdmins([]));
+  }, [identityLoading]);
+  const adminName = (id: string) => admins.find((a) => a.id === id)?.name || "Unknown admin";
+
+  const [sharing, setSharing] = useState<FeatureGovernanceRecord | null>(null);
+  const [shareAssignees, setShareAssignees] = useState<string[]>([]);
+  const [shareViewers, setShareViewers] = useState<string[]>([]);
+  const startSharing = (record: FeatureGovernanceRecord) => {
+    setSharing(record);
+    setShareAssignees(record.assigneeIds || []);
+    setShareViewers(record.viewerIds || []);
+  };
+  const saveSharing = async () => {
+    if (!sharing) return;
+    setSaving(true);
+    try {
+      await featureGovernanceService.setAccess(sharing, shareAssignees, shareViewers);
+      message.success("Access updated");
+      setSharing(null);
+      await load();
+    } catch (error) {
+      console.error(error);
+      message.error("Could not update who can see this feature");
+    } finally {
+      setSaving(false);
+    }
+  };
+  // The owner sees everything already, and whoever logged a record always sees it.
+  const shareOptions = (record: FeatureGovernanceRecord | null) =>
+    admins
+      .filter((a) => !isGovernanceOwnerEmail(a.email) && a.id !== record?.createdBy)
+      .map((a) => ({ value: a.id, label: a.email ? `${a.name} — ${a.email}` : a.name }));
+
+  /** Who logged the record, and how it reaches the person looking at it. */
+  const accessMarks = (record: FeatureGovernanceRecord, compact = false) => {
+    const access = accessOf(record);
+    const logged = record.createdBy === myUid ? "You" : record.createdByName || "Unknown";
+    return (
+      <Space size={[4, 4]} wrap>
+        <Tag bordered={false} icon={<UserOutlined />}>
+          Logged by {logged}
+        </Tag>
+        {access === "assignee" && <Tag color="processing" bordered={false}>Assigned to you</Tag>}
+        {access === "viewer" && <Tag bordered={false}>Shared with you · view only</Tag>}
+        {isOwner && !compact &&
+          (record.assigneeIds || []).map((id) => (
+            <Tag key={`a-${id}`} color="processing" bordered={false}>
+              Assigned: {adminName(id)}
+            </Tag>
+          ))}
+        {isOwner && !compact &&
+          (record.viewerIds || []).map((id) => (
+            <Tag key={`v-${id}`} bordered={false}>
+              Shared: {adminName(id)}
+            </Tag>
+          ))}
+        {isOwner && compact && (record.assigneeIds?.length || 0) + (record.viewerIds?.length || 0) > 0 && (
+          <Tag bordered={false}>
+            +{(record.assigneeIds?.length || 0) + (record.viewerIds?.length || 0)} with access
+          </Tag>
+        )}
+      </Space>
+    );
+  };
 
   // Names for the "Requested by" suggestions, loaded the first time the
   // feature form opens.
@@ -1588,8 +1687,8 @@ const FeatureGovernancePage: React.FC = () => {
             branchIds: branchIds.filter((id: string) => id !== "ALL"),
           },
           meetings: [],
-          createdBy: user.id,
-          createdByName: user.name,
+          createdBy: myUid || user?.id || "",
+          createdByName: actor?.name || user?.name || "",
         } as any);
         createdFeatureIds.push(created.id);
         relatedFeatureIds.push(created.id);
@@ -1749,8 +1848,8 @@ const FeatureGovernancePage: React.FC = () => {
             dayjs().format("YYYY-MM-DD"),
           imageUrls: imageUrls.filter(Boolean),
         },
-        createdBy: editing?.createdBy || user.id,
-        createdByName: editing?.createdByName || user.name,
+        createdBy: editing?.createdBy || myUid || user?.id || "",
+        createdByName: editing?.createdByName || actor?.name || user?.name || "",
       };
       if (editing) await featureGovernanceService.update(editing.id, payload);
       else await featureGovernanceService.create(payload);
@@ -1916,6 +2015,11 @@ const FeatureGovernancePage: React.FC = () => {
       ),
     },
     {
+      title: "Logged by",
+      key: "access",
+      render: (_: any, r: FeatureGovernanceRecord) => accessMarks(r, true),
+    },
+    {
       title: "Due / Completed",
       key: "dueDate",
       render: (_: any, r: FeatureGovernanceRecord) => {
@@ -1937,10 +2041,10 @@ const FeatureGovernancePage: React.FC = () => {
     {
       title: "",
       key: "actions",
-      width: 90,
+      width: 150,
       render: (_: any, r: FeatureGovernanceRecord) => (
         <Space>
-          {r.status !== "released" && (
+          {r.status !== "released" && canUpdateRecord(r) && (
             <Button
               shape="round"
               type="text"
@@ -1949,26 +2053,39 @@ const FeatureGovernancePage: React.FC = () => {
               onClick={() => startUpdate(r)}
             />
           )}
-          <Button
-            shape="round"
-            type="text"
-            title="Edit details"
-            icon={<EditOutlined />}
-            onClick={() => startEdit(r)}
-          />
-          <Popconfirm
-            title="Delete this record?"
-            onConfirm={() => remove(r.id)}
-            okButtonProps={{ shape: "round" }}
-            cancelButtonProps={{ shape: "round" }}
-          >
+          {isOwner && (
             <Button
               shape="round"
-              danger
               type="text"
-              icon={<DeleteOutlined />}
+              title="Assign and share"
+              icon={<ShareAltOutlined />}
+              onClick={() => startSharing(r)}
             />
-          </Popconfirm>
+          )}
+          {canEditRecord(r) && (
+            <>
+              <Button
+                shape="round"
+                type="text"
+                title="Edit details"
+                icon={<EditOutlined />}
+                onClick={() => startEdit(r)}
+              />
+              <Popconfirm
+                title="Delete this record?"
+                onConfirm={() => remove(r.id)}
+                okButtonProps={{ shape: "round" }}
+                cancelButtonProps={{ shape: "round" }}
+              >
+                <Button
+                  shape="round"
+                  danger
+                  type="text"
+                  icon={<DeleteOutlined />}
+                />
+              </Popconfirm>
+            </>
+          )}
         </Space>
       ),
     },
@@ -2636,31 +2753,44 @@ const FeatureGovernancePage: React.FC = () => {
                             </div>
                           </div>
                         )}
-                        <Row gutter={[12, 12]} style={{ marginTop: 22 }}>
-                          {item.status !== "released" && (
-                            <Col xs={24} sm={8}>
-                              <Button
-                                block
-                                shape="round"
-                                type="primary"
-                                icon={<RocketOutlined />}
-                                onClick={() => startUpdate(item)}
-                              >
-                                Update
-                              </Button>
-                            </Col>
-                          )}
-                          <Col xs={24} sm={item.status !== "released" ? 8 : 12}>
+                        <div style={{ marginTop: 18 }}>
+                          <Text type="secondary">Access</Text>
+                          <div style={{ marginTop: 8 }}>{accessMarks(item)}</div>
+                        </div>
+                        {/* Buttons follow what this person may do (config/featureGovernanceAccess.ts). */}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 22 }}>
+                          {item.status !== "released" && canUpdateRecord(item) && (
                             <Button
-                              block
+                              shape="round"
+                              type="primary"
+                              icon={<RocketOutlined />}
+                              onClick={() => startUpdate(item)}
+                              style={{ flex: "1 1 140px" }}
+                            >
+                              Update
+                            </Button>
+                          )}
+                          {isOwner && (
+                            <Button
+                              shape="round"
+                              icon={<ShareAltOutlined />}
+                              onClick={() => startSharing(item)}
+                              style={{ flex: "1 1 140px" }}
+                            >
+                              Assign and share
+                            </Button>
+                          )}
+                          {canEditRecord(item) && (
+                            <Button
                               shape="round"
                               icon={<EditOutlined />}
                               onClick={() => startEdit(item)}
+                              style={{ flex: "1 1 140px" }}
                             >
                               Edit
                             </Button>
-                          </Col>
-                          <Col xs={24} sm={item.status !== "released" ? 8 : 12}>
+                          )}
+                          {canEditRecord(item) && (
                             <Popconfirm
                               title="Delete this record?"
                               onConfirm={() => remove(item.id)}
@@ -2668,16 +2798,19 @@ const FeatureGovernancePage: React.FC = () => {
                               cancelButtonProps={{ shape: "round" }}
                             >
                               <Button
-                                block
                                 shape="round"
                                 danger
                                 icon={<DeleteOutlined />}
+                                style={{ flex: "1 1 140px" }}
                               >
                                 Delete
                               </Button>
                             </Popconfirm>
-                          </Col>
-                        </Row>
+                          )}
+                          {accessOf(item) === "viewer" && (
+                            <Text type="secondary">Shared with you to view; ask the owner to assign it if you need to change it.</Text>
+                          )}
+                        </div>
                       </>
                     );
                   })()}
@@ -3007,6 +3140,67 @@ const FeatureGovernancePage: React.FC = () => {
         startDate={reportRange.startDate}
         endDate={reportRange.endDate}
       />
+      <Modal
+        centered
+        width={520}
+        open={!!sharing}
+        title={sharing ? `Assign and share: ${sharing.title}` : "Assign and share"}
+        okText="Save access"
+        confirmLoading={saving}
+        okButtonProps={{ shape: "round", block: true }}
+        footer={okOnlyFooter}
+        onOk={saveSharing}
+        onCancel={() => setSharing(null)}
+      >
+        {sharing && (
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Text type="secondary">
+              Logged by {sharing.createdBy === myUid ? "you" : sharing.createdByName || "unknown"}, who always sees it.
+            </Text>
+            <div>
+              <Text strong>Assigned to</Text>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Can see it and update its status, progress and dates.
+                </Text>
+              </div>
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="Nobody"
+                value={shareAssignees}
+                onChange={(ids: string[]) => {
+                  setShareAssignees(ids);
+                  setShareViewers((current) => current.filter((id) => !ids.includes(id)));
+                }}
+                options={shareOptions(sharing)}
+                style={{ width: "100%", marginTop: 8 }}
+              />
+            </div>
+            <div>
+              <Text strong>Shared with</Text>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Can see it but not change it.
+                </Text>
+              </div>
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="Nobody"
+                value={shareViewers}
+                onChange={(ids: string[]) => setShareViewers(ids)}
+                options={shareOptions(sharing).filter((o) => !shareAssignees.includes(o.value))}
+                style={{ width: "100%", marginTop: 8 }}
+              />
+            </div>
+          </Space>
+        )}
+      </Modal>
       <Modal
         centered
         width={460}

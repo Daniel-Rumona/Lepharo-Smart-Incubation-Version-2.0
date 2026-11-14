@@ -65,7 +65,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const dayStart = (value: string) => Date.parse(`${value.slice(0, 10)}T00:00:00Z`);
 const daysBetween = (from: string, to: string) => Math.round((dayStart(to) - dayStart(from)) / DAY_MS);
 
-function compactStatus(signoff: Signoff = {}) {
+export function compactStatus(signoff: Signoff = {}) {
   if (signoff.hr && signoff.manager && signoff.employee) return "hr-checked";
   if (signoff.manager && signoff.employee) return "agreed";
   if (signoff.manager) return "awaiting-employee";
@@ -73,7 +73,7 @@ function compactStatus(signoff: Signoff = {}) {
   return "draft";
 }
 
-function reviewStage(review?: IpmReview | null) {
+export function reviewStage(review?: IpmReview | null) {
   if (!review) return "self";
   if (review.validation) return "validated";
   if (review.dispute && !review.dispute.resolution) return "disputed";

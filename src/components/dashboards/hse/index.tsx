@@ -36,6 +36,8 @@ export default function HSEDashboard() {
         <InterventionsDashboard
             title="HSE Dashboard"
             matchesDepartment={matchesDepartment}
+            sideCardsFirst
+            metricSubtitles={false}
             sideCards={
                 <SmeJobsProvider>
                     <HseJobsParticipantsCard dateRange={range} />

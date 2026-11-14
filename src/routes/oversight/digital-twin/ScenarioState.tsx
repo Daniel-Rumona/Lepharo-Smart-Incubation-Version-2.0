@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ProcessModel } from '@/services/digitalTwin/processTwin'
 import { useCentreStaffing } from './useCentreStaffing'
-import { buildCentreCapacity, recentFacilitators, type CentreStaffing } from '@/services/digitalTwin/centreCapacity'
+import { buildCentreCapacity, recentFacilitators, weeklyOpenHours, type CentreStaffing } from '@/services/digitalTwin/centreCapacity'
+import { parseScenarioIntent, type ScenarioIntent } from '@/services/digitalTwin/scenarioIntent'
+import { askScenarioIntent } from '@/services/digitalTwin/scenarioIntentApi'
 import { scenarioAssumptions as buildScenario, type Levers } from '@/services/digitalTwin/goalSeek'
 import { PILOT } from '@/services/digitalTwin/pilotCalibration'
 import { captureSimulation, DEFAULT_ASSUMPTIONS, observedInflow, simulate, type Assumptions, type SimulationResult, type SimulationSnapshot } from '@/services/digitalTwin/simulation'
@@ -54,6 +56,26 @@ function useScenarioState(model: ProcessModel, scope: string) {
             setRun({ snapshot, baselineAssumptions, scenarioAssumptions, baseline, scenario, inputsKey }); setError('')
         } catch (e) { setError(e instanceof Error ? e.message : 'Cannot run this scenario.'); setRun(null) }
     }
+    /**
+     * A sentence becomes lever settings ("add 2 centre coordinators"). Only the levers it mentions change; people are
+     * turned into hours using the centres' opening hours. The assistant reads it when it can; the built-in rules
+     * take over when it is unavailable. Shared by Projection's "Describe a change" and Ask the twin.
+     */
+    const applyChange = async (text: string): Promise<ScenarioIntent> => {
+        const openHours = centres.length ? centres.reduce((n, c) => n + weeklyOpenHours(c.hours), 0) / centres.length : 40
+        const context = { hoursPerCentreStaff: Math.round(openHours * share / 100 * 10) / 10, hoursPerMe: 40, hodWindows: assumptions.hodWindows }
+        let intent: ScenarioIntent
+        try { intent = await askScenarioIntent(text, context) } catch { intent = parseScenarioIntent(text, context) }
+        const l = intent.levers
+        if (l.hours !== undefined) setExtraHours(l.hours)
+        if (l.cc !== undefined) setExtraCc(l.cc)
+        if (l.me !== undefined) setExtraMe(l.me)
+        if (l.hod !== undefined) setScenarioWindows(l.hod)
+        if (l.intake !== undefined) setExtraSMEs(l.intake)
+        if (intent.weeks !== undefined) set('weeks', intent.weeks)
+        return intent
+    }
+
     // The model is instant, so the comparison follows the inputs. A short pause avoids recalculating on every slider tick.
     useEffect(() => { const timer = window.setTimeout(execute, reducedMotion() ? 0 : 160); return () => window.clearTimeout(timer) }, [inputsKey, snapshot]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -61,7 +83,7 @@ function useScenarioState(model: ProcessModel, scope: string) {
         snapshot, setSnapshot, smeCount, inflow, assumptions, setAssumptions, set,
         extraHours, setExtraHours, extraSMEs, setExtraSMEs, scenarioWindows, setScenarioWindows, extraCc, setExtraCc, extraMe, setExtraMe,
         run, setRun, error, setError, closedText, setClosedText, centreError, centres, centreOn, setCentreOn, share, setShare, edits, setEdits,
-        useCentre, centreKey, capacity, effective, changed, currentLevers, parsedClosed
+        useCentre, centreKey, capacity, effective, changed, currentLevers, parsedClosed, applyChange
     }
 }
 

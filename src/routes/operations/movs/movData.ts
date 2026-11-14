@@ -10,6 +10,7 @@ import {
     hasPreIncAgreementEvidence,
     isOnboardingMov,
     isSmeConfirmedMov,
+    movDeliveryFlagsFromAppointments,
     resolveMovAppointmentInterventions,
     resolveMovKpiNames
 } from '@/services/movService'
@@ -335,7 +336,6 @@ export async function enrichMov(mov: Mov, activeProgramId?: string | null): Prom
         ai = await getFirst((query as any)(...parts))
     }
 
-    const { methodInPerson, methodOnline, methodTelephonic, methodOther } = parseDeliveryFlags(ai, mov)
     let frequency: FrequencyUI | undefined
     if (isExplicitlyNonRecurring(ai)) frequency = 'as-needed'
     if (!frequency) frequency = parseFrequency(ai?.frequency) ?? (ai ? movFrequencyFrom(readSchedule(ai)) : undefined)
@@ -370,8 +370,11 @@ export async function enrichMov(mov: Mov, activeProgramId?: string | null): Prom
         !!rawPreIncMeta?.acceptedAt
     )
 
-    const [appointmentInterventions, kpiServiced, poe] = await Promise.all([
-        !stored.length && (mov.interventionId || ai?.interventionId)
+    const canResolveAppointments = !!(mov.interventionId || ai?.interventionId)
+    // Rows stored on older MOVs don't carry a delivery method; re-read the appointments for it.
+    const storedHasMethod = !!movDeliveryFlagsFromAppointments(stored)
+    const [resolvedAppointments, kpiServiced, poe] = await Promise.all([
+        canResolveAppointments && (!stored.length || !storedHasMethod)
             ? resolveMovAppointmentInterventions(db, ai?.id ? { ...ai, id: ai.id } : {
                 id: mov.assignedInterventionId || '',
                 participantId: beneficiaryId,
@@ -384,11 +387,20 @@ export async function enrichMov(mov: Mov, activeProgramId?: string | null): Prom
                 completedAt: mov.completedAt,
                 participantConfirmedAt: mov.smmeAcceptedAt || mov.smmeSignedAt,
                 assigneeCompletedAt: mov.facilitatorSignedAt
-            })
+            }).catch(() => [])
             : Promise.resolve(stored),
         resolveMovKpiNames(db, ai?.databaseInterventionId || mov.databaseInterventionId || mov.interventionId),
         resolveMovPoeData({ ...mov, preIncubationAgreement, preIncubationAgreementMeta }, ai)
     ])
+    // A stored list stays what the document shows; fresh rows only fill in the method.
+    const appointmentInterventions = stored.length ? stored : resolvedAppointments
+
+    // The delivery method is captured on the appointments; the assignment/MOV
+    // fields are only a fallback for MOVs whose appointments carry none.
+    const { methodInPerson, methodOnline, methodTelephonic, methodOther } =
+        movDeliveryFlagsFromAppointments(appointmentInterventions) ??
+        movDeliveryFlagsFromAppointments(resolvedAppointments) ??
+        parseDeliveryFlags(ai, mov)
 
     return {
         ...mov,

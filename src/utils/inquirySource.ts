@@ -28,7 +28,8 @@ type ChannelOption = {
 /** Channels staff can pick when logging an inquiry by hand. */
 export const MANUAL_CHANNELS: ChannelOption[] = [
     { value: 'Walk-in', label: 'Walk-in', mode: 'In person' },
-    { value: 'Event', label: 'Event', mode: 'In person' },
+    // Met at an outside event; someone who walks in for an event here is a walk-in (visit reason: event).
+    { value: 'Event', label: 'Met at an event', mode: 'In person' },
     { value: 'Phone', label: 'Phone call', mode: 'Remote' },
     { value: 'Email', label: 'Email', mode: 'Online' },
     { value: 'Website', label: 'Website', mode: 'Online' },

@@ -53,18 +53,22 @@ MENUS: dict[str, list[MenuItem]] = {
         MenuItem("Intervention status", "Progress across all SMEs", "tool:staff_overview:interventions"),
     ],
     "director": [
-        MenuItem("Feature governance", "Pipeline, meetings and open challenges", "tool:governance_summary"),
+        # Feature governance is for system administrators only.
+        MenuItem("Performance", "Where staff performance stands, and what waits on you", "tool:performance_summary"),
         MenuItem("User stats", "How many users, by role, and SMEs on the programme", "tool:staff_overview:users"),
         MenuItem("Appointments", "What's coming up across the organisation", "tool:my_appointments"),
         MenuItem("Interventions", "Status across all SMEs", "tool:staff_overview:interventions"),
     ],
     "hod": [
+        MenuItem("MOVs to approve", "Approve or query your department's MOVs", "tool:mov_review"),
         MenuItem("Interventions", "Status across my SMEs", "tool:staff_overview:interventions"),
         MenuItem("Appointments", "What's coming up, or set one up", f"submenu:{_APPOINTMENTS_SUBMENU}"),
         MenuItem("Find an SME", "Look up an SME and their interventions", "guide:find_sme"),
-        MenuItem("Record a session", "Record coverage for a session you ran", "tool:coverage_pending"),
+        # No "Record a session": HODs assign interventions and verify MOVs; they rarely deliver sessions.
     ],
+    # Centre coordinators (projectadmin) and coordinators share this menu; whatsapp_needs_you scopes by the real role.
     "coordinator": [
+        MenuItem("Needs you this week", "SMEs to focus on, with a next step for each", "tool:needs_you"),
         MenuItem("Appointments", "What's coming up, or set one up", f"submenu:{_APPOINTMENTS_SUBMENU}"),
         MenuItem("Find an SME", "Look up an SME and their interventions", "guide:find_sme"),
         MenuItem("Record a session", "Record coverage for a session you ran", "tool:coverage_pending"),

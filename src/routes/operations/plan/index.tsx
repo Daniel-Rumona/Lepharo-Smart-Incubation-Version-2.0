@@ -1694,7 +1694,7 @@ const DiagnosticPlanConfirmations: React.FC = () => {
         }
     }
 
-    const BUILD_ROUTE = '/operations/diagnostic-plan'
+    const BUILD_ROUTE = '/plan/build'
 
     const goBuild = useCallback(
         (participantId: string) => {

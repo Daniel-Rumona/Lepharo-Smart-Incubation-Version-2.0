@@ -1,22 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, AutoComplete, Button, Checkbox, Input, Modal, Progress, Segmented, Select, Steps, Upload, message } from 'antd'
+import { Alert, Button, Checkbox, Modal, Progress, Segmented, Select, Steps, Upload, message } from 'antd'
 import { CheckCircleFilled, FileExcelOutlined, InboxOutlined, WarningFilled } from '@ant-design/icons'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { createSme, genderFromSouthAfricanID, inviteSme, type SmeInput } from '@/routes/operations/participants/new/smeRecords'
-import { StatusPill } from '@/routes/operations/movs/movParts'
 import '@/routes/operations/movs/movs.css'
 import {
     FIELD_LABELS,
     ISSUE_LABELS,
-    SME_STATUSES,
     collectSmes,
     matchBranch,
     parseWorkbook,
     setColumnField,
     type FieldKey,
     type ImportedSme,
-    type IncubationGroup,
     type ParsedSheet,
     type SheetRole
 } from './workbook'
@@ -42,7 +39,15 @@ const INTAKE_TEXT: Record<string, string> = {
     migrated: 'This programme is being moved in from before the system'
 }
 
-const GROUPS: IncubationGroup[] = ['A', 'B', 'C', 'Graduated']
+/** What importing a sheet sets on its SMEs, worked out from the sheet name. */
+const roleText = (role: SheetRole) =>
+    role.kind === 'group'
+        ? `Sets ${role.group === 'Graduated' ? 'Graduated' : `Group ${role.group}`}`
+        : role.kind === 'status'
+            ? `Sets status: ${role.status}`
+            : role.kind === 'label'
+                ? `Labelled “${role.label}”`
+                : 'Full list'
 
 const chunk = <T,>(items: T[], size: number) =>
     Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, i * size + size))
@@ -141,7 +146,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
         }
     }
 
-    const usedSheets = sheets.filter(s => s.rows.length && s.role.kind !== 'skip')
+    const usedSheets = sheets.filter(s => s.rows.length && s.include)
     const smes = useMemo(() => collectSmes(sheets), [sheets])
 
     // Offices named in the file, matched to branches where it's clear.
@@ -220,7 +225,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
             companyName: sme.companyName,
             registrationNumber: sme.registrationNumber,
             sector: sme.sector,
-            natureOfBusiness: sme.natureOfBusiness || sme.productsServices,
+            natureOfBusiness: sme.natureOfBusiness,
             beeLevel: sme.beeLevel,
             directors: sme.directors.map((name, i) => ({
                 name,
@@ -246,7 +251,6 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
                 labels: sme.labels,
                 office: sme.office,
                 ward: sme.ward,
-                productsServices: sme.productsServices,
                 workshopAddress: sme.workshopAddress,
                 disabilityOwnedPercent: sme.disabilityOwnedPercent,
                 preAssessmentForm: sme.preAssessment,
@@ -297,7 +301,6 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
     }
 
     const stepIndex = { file: 0, sheets: 1, columns: 2, review: 3, importing: 3, done: 3 }[step]
-    const unclearSheets = usedSheets.filter(s => s.roleIsGuess).length
 
     const footer =
         step === 'sheets' ? (
@@ -391,95 +394,28 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
                         <FileExcelOutlined /> <strong>{fileName}</strong>
                         <span className='imp-muted'>
                             {' '}
-                            · Tell us what each sheet is. An SME on several sheets is imported once.
-                            {unclearSheets > 0 && ` ${unclearSheets} sheet${unclearSheets === 1 ? '' : 's'} need${unclearSheets === 1 ? 's' : ''} a check.`}
+                            · Untick any sheet you don’t want imported. An SME on several sheets is imported once.
                         </span>
                     </div>
                     <div className='imp-list'>
                         {sheets
                             .filter(s => s.rows.length)
                             .map(s => (
-                                <div key={s.name} className={`imp-sheet${s.role.kind === 'skip' ? ' is-skipped' : ''}`}>
+                                <label key={s.name} className={`imp-sheet${s.include ? '' : ' is-skipped'}`}>
+                                    <Checkbox
+                                        checked={s.include}
+                                        aria-label={`Import ${s.name}`}
+                                        onChange={e => setSheets(all => all.map(x => (x.name === s.name ? { ...x, include: e.target.checked } : x)))}
+                                    />
                                     <div className='imp-sheet-main'>
                                         <div className='imp-sheet-name'>
                                             {s.name}
                                             <span className='imp-count'>{s.rows.length} SME{s.rows.length === 1 ? '' : 's'}</span>
-                                            {s.roleIsGuess && <StatusPill tone='warning'>Check this</StatusPill>}
                                         </div>
-                                        {s.title && <div className='imp-muted imp-sheet-title'>{s.title}</div>}
+                                        <div className='imp-muted imp-sheet-title'>{roleText(s.role)}</div>
                                     </div>
-                                    <div className='imp-sheet-role'>
-                                        <Segmented
-                                            size='small'
-                                            value={s.role.kind}
-                                            onChange={kind => {
-                                                const role: SheetRole =
-                                                    kind === 'group'
-                                                        ? { kind: 'group', group: 'B' }
-                                                        : kind === 'status'
-                                                            ? { kind: 'status', status: 'Dormant' }
-                                                        : kind === 'label'
-                                                            ? { kind: 'label', label: s.name.trim() }
-                                                            : { kind: kind as 'main' | 'skip' }
-                                                setSheets(all => all.map(x => (x.name === s.name ? { ...x, role, roleIsGuess: false } : x)))
-                                            }}
-                                            options={[
-                                                { value: 'main', label: 'All SMEs' },
-                                                { value: 'group', label: 'A group' },
-                                                { value: 'status', label: 'A status' },
-                                                { value: 'label', label: 'A label' },
-                                                { value: 'skip', label: 'Skip' }
-                                            ]}
-                                        />
-                                        {s.role.kind === 'group' && (
-                                            <Segmented
-                                                size='small'
-                                                value={s.role.group}
-                                                onChange={group =>
-                                                    setSheets(all =>
-                                                        all.map(x => (x.name === s.name ? { ...x, role: { kind: 'group', group: group as IncubationGroup }, roleIsGuess: false } : x))
-                                                    )
-                                                }
-                                                options={GROUPS.map(g => ({ value: g, label: g === 'Graduated' ? 'Graduated' : `Group ${g}` }))}
-                                            />
-                                        )}
-                                        {s.role.kind === 'status' && (
-                                            <AutoComplete
-                                                size='small'
-                                                className='imp-status-input'
-                                                value={s.role.status}
-                                                aria-label={`Status for SMEs on ${s.name}`}
-                                                placeholder='e.g. Dormant'
-                                                options={SME_STATUSES.map(v => ({ value: v }))}
-                                                filterOption={false}
-                                                onChange={value =>
-                                                    setSheets(all =>
-                                                        all.map(x => (x.name === s.name ? { ...x, role: { kind: 'status', status: String(value) }, roleIsGuess: false } : x))
-                                                    )
-                                                }
-                                            />
-                                        )}
-                                        {s.role.kind === 'label' && (
-                                            <Input
-                                                size='small'
-                                                value={s.role.label}
-                                                placeholder='e.g. Dormant, Mining'
-                                                aria-label={`Label for SMEs on ${s.name}`}
-                                                onChange={e =>
-                                                    setSheets(all =>
-                                                        all.map(x => (x.name === s.name ? { ...x, role: { kind: 'label', label: e.target.value }, roleIsGuess: false } : x))
-                                                    )
-                                                }
-                                            />
-                                        )}
-                                    </div>
-                                </div>
+                                </label>
                             ))}
-                    </div>
-                    <div className='imp-muted imp-help'>
-                        <strong>All SMEs</strong>: the sheet lists SMEs to import. <strong>A group</strong>: these SMEs are in Group B, C, …
-                        <strong> A status</strong>: where they are (Soft incubation, Dormant, Potential exit, Exited).
-                        <strong> A label</strong>: any other category (Mining, a funder) saved on each SME. <strong>Skip</strong>: not imported.
                     </div>
                 </div>
             )}

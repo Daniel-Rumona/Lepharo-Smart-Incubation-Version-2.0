@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { APP_BASE_URL, db, sendStatusChangeNotification } from "./emailShared";
 import {
   checkInDue,
@@ -44,7 +44,7 @@ const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "no date");
 // There is no roadmap page yet, so links open the implementation-plan hub
 // (the plan the roadmap was drafted from), which HODs and project admins both
 // have in their nav. Point this at the roadmap page once one exists.
-const ROADMAP_PATH = "/operations/documentation";
+const ROADMAP_PATH = "/documentation";
 const roadmapUrl = () => `${APP_BASE_URL.replace(/\/$/, "")}${ROADMAP_PATH}`;
 
 interface Recipient { uid: string; email: string }
@@ -117,7 +117,7 @@ async function notify(
 
 const STAGE_LABEL: Record<ReminderStage, string> = { upcoming: "Due soon", due: "Due today", overdue: "Overdue" };
 
-export const planRoadmapCheckInCron = onSchedule(
+export const planRoadmapCheckInCron = scheduledJob("planRoadmapCheckInCron",
   {
     region: "us-central1",
     schedule: "15 7 * * *",

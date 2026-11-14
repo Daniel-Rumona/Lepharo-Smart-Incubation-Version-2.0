@@ -1,7 +1,6 @@
 import * as logger from "firebase-functions/logger";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { admin, db } from "./firebase";
-import { BREVO_EGRESS } from "./config";
 import { notifyInApp, uidForParticipant } from "./inAppNotifications";
 import { deliverComplianceReminder } from "./emailCampaigns";
 import { outstandingComplianceForParticipant } from "./complianceExpiry";
@@ -459,7 +458,7 @@ export const agentProposeAction = onCall(
 );
 
 export const agentConfirmAction = onCall(
-  { ...BREVO_EGRESS, region: "us-central1", cors: CALLABLE_CORS, timeoutSeconds: 300 },
+  { region: "us-central1", cors: CALLABLE_CORS, timeoutSeconds: 300 },
   async (request) => {
     const { uid, email } = requireAuth(request.auth);
     const proposalId = clean(request.data?.proposalId);

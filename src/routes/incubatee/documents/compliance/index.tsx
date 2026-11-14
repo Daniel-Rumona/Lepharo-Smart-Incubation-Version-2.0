@@ -1254,7 +1254,7 @@ export const ComplianceDocuments: React.FC = () => {
                     style={{ marginBottom: 12 }}
                 />
             )}
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12 }} data-guide='sme-compliance-summary'>
                 <MetricsGrid
                     metrics={[
                         {

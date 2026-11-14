@@ -106,19 +106,20 @@ class StaffWhatsAppTests(unittest.TestCase):
 
     def test_guide_prompt_is_saved_so_the_answer_keeps_its_context(self):
         gateway = FakeGateway(HOD)
-        self.send("lph:menu:top:3", gateway)  # Find an SME
+        self.send("lph:menu:top:4", gateway)  # Find an SME
         saved = [fields["history"] for action, fields in gateway.calls if action == "agent_state_set"]
         self.assertEqual(saved[-1][0], {"role": "user", "text": "Find an SME"})
         self.assertIn("SME's name", saved[-1][1]["text"])
 
     def test_user_stats_from_menu(self):
         gateway = FakeGateway(ADMIN, {"staff_overview": {
-            "users": {"total": 12, "byRole": {"system_admin": 2, "operations": 3, "consultant": 4, "employee": 3}},
+            "users": {"total": 12, "byRole": {"system_admin": 2, "operations": 3, "coordinator": 4, "employee": 3}},
             "participants": 40, "assignments": {"total": 9, "byStatus": {}}, "upcomingSessions": 2,
         }})
         reply = self.send("2", gateway, awaiting="menu").reply
         self.assertIn("12 users", reply)
-        self.assertIn("Employees: 7", reply)
+        self.assertIn("Employees: 3", reply)
+        self.assertIn("Project coordinators: 4", reply)
         self.assertIn("40 SMEs", reply)
 
     def test_pipeline_summary_from_menu(self):
@@ -458,7 +459,7 @@ class DocumentTests(StaffWhatsAppTests):
         self.assertNotIn("SME documents", self.send("hi", FakeGateway(RECEPTION)).reply)
 
     def test_documents_menu_option_asks_for_the_sme(self):
-        response = self.send("lph:menu:top:5", FakeGateway(HOD_DOCS))  # after "Record a session"
+        response = self.send("lph:menu:top:5", FakeGateway(HOD_DOCS))  # after "Find an SME"
         self.assertIn("Which SME's documents", response.reply)
 
 
@@ -563,7 +564,7 @@ class ProgrammeTests(StaffWhatsAppTests):
     def test_overview_shows_the_programme(self):
         overview = {"scope": "department", "departmentName": "ROM", "programme": "SEDFA", "participants": 3,
                     "assignments": {"total": 4, "byStatus": {"assigned": 4}}, "upcomingSessions": 0}
-        response = self.send("lph:menu:top:1", self.gateway(needs_choice=False, current=PROGRAMMES[1], staff_overview=overview))
+        response = self.send("lph:menu:top:2", self.gateway(needs_choice=False, current=PROGRAMMES[1], staff_overview=overview))  # Interventions
         self.assertIn("*Interventions - ROM*", response.reply)
         self.assertIn("SEDFA", response.reply)
         self.assertIn("Ready to schedule: 4", response.reply)

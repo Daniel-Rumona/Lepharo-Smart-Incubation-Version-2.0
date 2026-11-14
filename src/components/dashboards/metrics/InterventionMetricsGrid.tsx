@@ -23,9 +23,8 @@ type Props = {
     onSelect?: (key: InterventionMetricKey) => void
     /**
      * Describes the active reporting window, e.g. "This month". Only the
-     * assignment-derived tiles are period-scoped — Required is a standing
-     * program target and says so, otherwise a narrow window makes it read as
-     * though the target itself shrank.
+     * assignment-derived tiles are period-scoped; Required is the programme
+     * target and is not filtered by the window.
      */
     periodLabel?: string
 }
@@ -50,8 +49,7 @@ export const buildInterventionDashboardMetrics = (
             icon: <FileDoneOutlined style={{ fontSize: 20 }} />,
             tone: 'accent',
             title: 'Required',
-            value: displayValue(metrics.totalRequired, loading),
-            subtitle: 'Standing program target'
+            value: displayValue(metrics.totalRequired, loading)
         },
         {
             key: 'assigned',

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Avatar, Button, Card, Collapse, List, Modal, Empty, Input, Result, Segmented, Select, Space, Spin, Table, Tag, Typography } from 'antd'
-import { ArrowLeftOutlined, ArrowRightOutlined, CalendarOutlined, CheckCircleOutlined, ExperimentOutlined, FundProjectionScreenOutlined, LoginOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, CalendarOutlined, CheckCircleOutlined, ExperimentOutlined, FundProjectionScreenOutlined, LoginOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { doc, getDoc } from 'firebase/firestore'
 import { useSearchParams } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
@@ -19,6 +19,8 @@ import { TwinOverview } from './TwinOverview'
 import { HistoryPlayback } from './HistoryPlayback'
 import { ScenarioPanel } from './ScenarioPanel'
 import { ScenarioProvider } from './ScenarioState'
+import { AskTheTwin } from './AskTheTwin'
+import { buildStageFacts } from '@/services/digitalTwin/twinAsk'
 import { usePageGuides, type PageGuideRegistration } from '@/components/guide-me'
 import { buildTwinGuides } from './twinGuides'
 import './process-twin.css'
@@ -85,6 +87,11 @@ export default function ProcessTwinPage() {
     const [selected, setSelected] = useState<string | null>(null), [detailKey, setDetailKey] = useState<string | null>(null), [search, setSearch] = useState('')
     useEffect(() => { setSelected(null); setDetailKey(null); setSearch(''); setListPage(1) }, [activeProgramId, branch, department])
     const groups = useMemo(() => processGroups(model, clock), [model, clock])
+    // Ask the twin: the facts it answers from, and the teams an answer lights up on the scene.
+    const stageFacts = useMemo(() => buildStageFacts(groups, clock), [groups, clock])
+    const smesWaiting = useMemo(() => groups.filter(g => g.id === 'confirmation' || g.id === 'prepare' || g.id === 'response').reduce((n, g) => n + g.items.length, 0), [groups])
+    const [highlight, setHighlight] = useState<string[]>([])
+    const openStage = useCallback((key: string) => { setDetailKey(null); setSelected(key); setSearch(''); setListPage(1) }, [])
     const stage = groups.find(g => g.id === selected)
     const detail = model.items.find(i => i.key === detailKey)
     const details = detail ? model.assignments.find(a => a.id === detail.assignmentId) : undefined
@@ -100,6 +107,18 @@ export default function ProcessTwinPage() {
     const inspect = (id: string) => { setDirection(1); setDetailKey('assignedInterventions/' + id) }
     const scopeText = [program?.name || program?.programName || 'Programme', branch ? (branches.find(b => b.value === branch)?.label || 'One centre') : 'All centres', department === 'all' ? 'All departments' : nameOf(department)].join('  ·  ')
     const scopeLabel = [program?.name || program?.programName || 'Programme', branch || 'All centres', department === 'all' ? department : nameOf(department)].join(' / ')
+    const statusBar = <div className="twin-bar twin-bar-overlay">
+        <div className="twin-status" aria-label="Data status">
+            <span className="twin-chip"><i className={data.cached ? 'cached' : ''} />{data.cached ? 'Cached, may be stale' : 'Live records'}</span>
+            {model.syntheticCount > 0 && <span className="twin-chip synthetic">Synthetic data</span>}
+            <span className="twin-chip plain">Updated {data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+            {(model.issues.length > 0 || model.unknownAge > 0) && <button type="button" className="twin-chip warn" onClick={() => setQualityOpen(true)}>{model.issues.length + model.unknownAge} records need attention</button>}
+        </div>
+        <div className="twin-filters">
+            {!access.centreOnly && branches.length > 1 && <Select aria-label="Twin centre" value={branch} onChange={value => change('branch', value)} options={[{ value: '', label: 'All centres' }, ...branches]} />}
+            <Select aria-label="Twin department" value={department} onChange={value => change('department', value)} options={[{ value: 'all', label: 'All departments' }, ...departments]} />
+        </div>
+    </div>
     if (identityLoading) return <Spin><div style={{ height: 120 }} /></Spin>
     if (!access.allowed) return <Result status="403" title="Intervention Twin is not available for this account" subTitle="Access requires a project admin with an assigned centre, ROM, M&E or system administrator." />
     return <div className="process-twin">
@@ -110,26 +129,21 @@ export default function ProcessTwinPage() {
             {data.error && <Alert type="error" showIcon message={data.error} />}
             {program && data.loading && !data.error && <Spin tip="Connecting process records"><div style={{ height: 120 }} /></Spin>}
             {ready && <>
-                {view !== 'overview' && view !== 'scenarios' && <div className="twin-bar">
-                    <Button shape="round" icon={<ArrowLeftOutlined />} onClick={() => setView('overview')}>Overview</Button>
-                    <strong className="twin-bar-title">{{ current: 'Current state', history: 'History', scenarios: 'Scenarios' }[view]}</strong>
-                    <div className="twin-status" aria-label="Data status">
-                        <span className="twin-chip"><i className={data.cached ? 'cached' : ''} />{data.cached ? 'Cached, may be stale' : 'Live records'}</span>
-                        {model.syntheticCount > 0 && <span className="twin-chip synthetic">Synthetic data</span>}
-                        <span className="twin-chip plain">Updated {data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
-                        {(model.issues.length > 0 || model.unknownAge > 0) && <button type="button" className="twin-chip warn" onClick={() => setQualityOpen(true)}>{model.issues.length + model.unknownAge} records need attention</button>}
-                    </div>
-                    <div className="twin-filters">
-                        {!access.centreOnly && branches.length > 1 && <Select aria-label="Twin centre" value={branch} onChange={value => change('branch', value)} options={[{ value: '', label: 'All centres' }, ...branches]} />}
-                        <Select aria-label="Twin department" value={department} onChange={value => change('department', value)} options={[{ value: 'all', label: 'All departments' }, ...departments]} />
-                    </div>
-                </div>}
                 <div key={[identityKey, branch, department].join(':')}>
                     <ScenarioProvider model={model} scope={scopeLabel}>
-                    <div hidden={view !== 'overview' && view !== 'scenarios'}><TwinOverview model={model} clock={clock} onInspect={key => { setSelected(null); setDirection(1); setDetailKey(key) }} onNavigate={setView} /></div>
-                    <div hidden={view !== 'current'}><JourneyMap model={model} clock={clock} onSelect={id => { setSelected(id); setSearch(''); setListPage(1) }} />
-                    </div>
-                    <div hidden={view !== 'history'}><HistoryPlayback model={model} authored={data.sources.syntheticHistory} active={view === 'history'} /></div>
+                    <TwinOverview model={model} clock={clock} onInspect={key => { setSelected(null); setDirection(1); setDetailKey(key) }} onNavigate={setView}
+                        onOpenStage={openStage} highlight={highlight}
+                        renderSummary={projection => <AskTheTwin projection={projection} stages={stageFacts} scope={scopeText} smesWaiting={smesWaiting} onHighlight={setHighlight} onOpenStage={openStage} />} />
+                    <Modal className="sc-settings-modal twin-view-modal" open={view === 'current'} onCancel={() => setView('overview')} footer={null} width={1180} centered destroyOnClose={false}
+                        title={<div className="sc-modal-title"><div><strong>Current state</strong><span>Every stage and what is waiting in it. Open a stage to see its records.</span></div></div>}>
+                        {statusBar}
+                        <JourneyMap model={model} clock={clock} onSelect={openStage} />
+                    </Modal>
+                    <Modal className="sc-settings-modal twin-view-modal" open={view === 'history'} onCancel={() => setView('overview')} footer={null} width={1180} centered destroyOnClose={false}
+                        title={<div className="sc-modal-title"><div><strong>Past weeks</strong><span>Play back how work moved through the programme.</span></div></div>}>
+                        {statusBar}
+                        <HistoryPlayback model={model} authored={data.sources.syntheticHistory} active={view === 'history'} />
+                    </Modal>
                     <Modal className="sc-settings-modal twin-projection-modal" open={view === 'scenarios'} onCancel={() => setView('overview')} footer={null} width={1180} centered destroyOnClose={false}
                         title={<div className="sc-modal-title"><div><strong>Projection</strong><span>Turn the dials and watch the backlog change. The dials are the same ones on the scene.</span></div></div>}>
                         <ScenarioPanel model={model} scope={scopeLabel} />

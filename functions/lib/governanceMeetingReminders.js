@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.governanceMeetingReminderCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 const inAppNotifications_1 = require("./inAppNotifications");
 const TIME_ZONE = "Africa/Johannesburg";
@@ -122,7 +122,7 @@ async function sendReminder(schedule, meetingId, date, isFollowUp) {
  * day, emails the organiser 30 minutes after the start time asking whether it
  * was held, and nudges once a day (up to 3 times) while it stays unanswered.
  */
-exports.governanceMeetingReminderCron = (0, scheduler_1.onSchedule)({
+exports.governanceMeetingReminderCron = (0, cronHeartbeat_1.scheduledJob)("governanceMeetingReminderCron", {
     region: "us-central1",
     schedule: "*/15 * * * *",
     timeZone: TIME_ZONE,

@@ -23,15 +23,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.complianceExpiryReminderCron = exports.loadComplianceContext = exports.assessComplianceDocuments = exports.outstandingComplianceForParticipant = void 0;
+exports.complianceExpiryReminderCron = exports.loadComplianceContext = exports.assessComplianceDocuments = exports.requirementStates = exports.participantComplianceRecords = exports.outstandingComplianceForParticipant = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const crypto = __importStar(require("crypto"));
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const brevoClient_1 = require("./brevoClient");
 const complianceExpiryInApp_1 = require("./complianceExpiryInApp");
-const config_1 = require("./config");
 const departmentRoles_1 = require("./departmentRoles");
 const EXPIRING_SOON_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -225,6 +224,25 @@ function findDueDocuments(documents, now, requirements) {
  * "send compliance reminder" action.
  */
 async function outstandingComplianceForParticipant(participantId, now = new Date()) {
+    const records = await participantComplianceRecords(participantId);
+    if (!records.application)
+        return { participant: records.participant, application: null, programId: null, programName: "", items: [] };
+    const { items } = assessComplianceDocuments(records.documents, records.requirements, now);
+    return {
+        participant: records.participant,
+        application: { id: records.application.id, ...records.application.data },
+        programId: records.programId,
+        programName: records.programName,
+        items,
+    };
+}
+exports.outstandingComplianceForParticipant = outstandingComplianceForParticipant;
+/**
+ * One SME's accepted application, its programme's upload requirements (with the legacy
+ * requiredDocs fallback) and every upload, read where the compliance pages read them: the
+ * participant's or application's embedded array, and the application's subcollection.
+ */
+async function participantComplianceRecords(participantId) {
     const [participantSnapshot, applicationsSnapshot] = await Promise.all([
         emailShared_1.db.collection("participants").doc(participantId).get(),
         emailShared_1.db.collection("applications").where("participantId", "==", participantId).get(),
@@ -232,8 +250,9 @@ async function outstandingComplianceForParticipant(participantId, now = new Date
     const participant = participantSnapshot.exists ? participantSnapshot.data() : {};
     const application = applicationsSnapshot.docs
         .find(item => lower(item.data().applicationStatus) === "accepted");
-    if (!application)
-        return { participant, application: null, programId: null, programName: "", items: [] };
+    if (!application) {
+        return { participant, application: null, programId: null, programName: "", requirements: [], documents: [] };
+    }
     const data = application.data();
     const programId = clean(data.programId);
     const [programSnapshot, legacySnapshot, subcollection] = await Promise.all([
@@ -262,10 +281,43 @@ async function outstandingComplianceForParticipant(participantId, now = new Date
         ...embedded,
         ...subcollection.docs.map(item => ({ id: item.id, ...item.data(), _subcollection: true })),
     ];
-    const { items } = assessComplianceDocuments(documents, requirements, now);
-    return { participant, application: { id: application.id, ...data }, programId, programName: clean(program?.name || program?.title), items };
+    return {
+        participant,
+        application: { id: application.id, ref: application.ref, data },
+        programId,
+        programName: clean(program?.name || program?.title),
+        requirements,
+        documents,
+    };
 }
-exports.outstandingComplianceForParticipant = outstandingComplianceForParticipant;
+exports.participantComplianceRecords = participantComplianceRecords;
+/** The newest upload for a requirement, matched on its key or its title; on a tie the subcollection copy wins. */
+function latestDocumentFor(documents, requirement) {
+    return documents
+        .filter(item => !item?.agreementId && (documentKey(item) === requirement.key ||
+        (requirement.title && normalizeKey(item?.type || item?.documentName || item?.title) === normalizeKey(requirement.title))))
+        .sort((a, b) => documentTime(b) - documentTime(a) ||
+        (b._subcollection ? 1 : 0) - (a._subcollection ? 1 : 0))[0] || null;
+}
+/** Each upload requirement with its newest upload and where it stands, for the WhatsApp assistant. */
+function requirementStates(documents, requirements, now = new Date()) {
+    return requirements.map(requirement => {
+        const latest = latestDocumentFor(documents, requirement);
+        const base = { key: requirement.key, title: requirement.title || requirement.key, expiryMonths: requirement.expiryMonths };
+        if (!latest || lower(latest.status) === "missing" || !clean(latest.url)) {
+            return { ...base, status: "missing", expires: null, document: null };
+        }
+        const expires = effectiveExpiry(latest, requirement);
+        const days = expires ? Math.ceil((startOfDay(expires).getTime() - startOfDay(now).getTime()) / DAY_MS) : null;
+        let status = lower(latest.status) || "pending";
+        if (days !== null && days < 0)
+            status = "expired";
+        else if (status === "valid" && days !== null && days <= EXPIRING_SOON_DAYS)
+            status = "expiring-soon";
+        return { ...base, status, expires, document: latest };
+    });
+}
+exports.requirementStates = requirementStates;
 /** Counts and reminder lines for one SME's documents against its programme's requirements. */
 function assessComplianceDocuments(documents, requirements, now) {
     const counts = { missing: 0, queried: 0, rejected: 0, expired: 0 };
@@ -404,8 +456,7 @@ function buildReminderContent(application, due) {
         ].join("\n"),
     };
 }
-exports.complianceExpiryReminderCron = (0, scheduler_1.onSchedule)({
-    ...config_1.BREVO_EGRESS,
+exports.complianceExpiryReminderCron = (0, cronHeartbeat_1.scheduledJob)("complianceExpiryReminderCron", {
     region: "us-central1",
     schedule: "0 7 * * *",
     timeZone: "Africa/Johannesburg",

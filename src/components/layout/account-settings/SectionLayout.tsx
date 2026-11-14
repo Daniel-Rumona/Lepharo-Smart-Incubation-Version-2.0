@@ -8,6 +8,8 @@ export type AccountUser = {
     role?: string
     photoURL?: string | null
     signatureURL?: string | null
+    phone?: string
+    phoneNumber?: string
     [key: string]: unknown
 }
 

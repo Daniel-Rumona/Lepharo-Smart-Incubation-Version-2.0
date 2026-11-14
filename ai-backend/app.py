@@ -30,6 +30,10 @@ from google.genai import types as genai_types
 from schema_registry import FIRESTORE_SCHEMA
 from firestore_tools import (
     db,
+    department_lineage,
+    get_department_role,
+    get_department_roles,
+    get_departments,
     get_participant_by_email,
     get_participant_by_uid,
     get_assigned_interventions_by_participant,
@@ -89,6 +93,7 @@ from reply_style import reply_style_directive
 from chat_steps import UNDERSTANDING, WRITING, StepReporter, stream_events
 from answer_cards import CARDS_MARKER, cards_directive, sanitize_cards
 from watch_draft import WATCH_MARKER, WATCH_ROLES, sanitize_watch, watch_directive
+from tool_select import select_tools
 from chaser_draft import CHASER_MARKER, CHASER_ROLES, chaser_directive, sanitize_chaser
 from attention_list import asks_for_attention, load_attention, visibility_for as attention_visibility
 from sme_lookup import load_sme_names, named_sme_records
@@ -111,6 +116,7 @@ from session_copilot import (
 )
 from lph_gateway import LphGateway
 from whatsapp_staff import GeminiStaffReasoner
+import whatsapp_needs_you
 import whatsapp_uploads
 from whatsapp import (
     GeminiWhatsAppReasoner,
@@ -139,6 +145,9 @@ def _verify_whatsapp_upload(application_id: str, document_id: str) -> None:
 whatsapp_uploads.VERIFY_UPLOAD = lambda application_id, document_id: threading.Thread(
     target=_verify_whatsapp_upload, args=(application_id, document_id), daemon=True
 ).start()
+
+# "Needs you this week" on WhatsApp reads the same sources as the web assistant's list.
+whatsapp_needs_you.LOAD_ATTENTION = lambda visibility: load_attention(db, visibility)
 
 JSON_BODY_PATHS = {
     "/chat",
@@ -794,37 +803,6 @@ def _authorised_tools(user: UserContext) -> set[str]:
     return OWN_DATA_TOOLS
 
 
-# Topic keyword -> substring(s) that must appear in a candidate tool's name.
-# Keyword-based, not an LLM call: this used to cost a full Gemini request per
-# message just to shortlist tool names, which is wasteful given free-tier
-# quota is 20 requests/day (and this ran on every single message).
-TOOL_TOPIC_RULES: list[tuple[re.Pattern, tuple[str, ...]]] = [
-    (re.compile(r"\bparticipants?\b|\bsmmes?\b|\bsmes?\b|\bincubatees?\b|\bbeneficiar|\bdemographic|\bownership|\byouth.?owned|\bfemale.?owned|\bblack.?owned|\bbee\b|\bprofile\b", re.I), ("participant",)),
-    (re.compile(r"\bapplications?\b|\bapplicants?\b|\bapplied\b|\baccepted\b", re.I), ("application",)),
-    (re.compile(r"\bintervention|\bworkshop|\btraining|\boverdue\b|\bworkload\b|\bcompletion\b|\bcompleted\b|\bin progress\b", re.I), ("intervention",)),
-    (re.compile(r"\bappointments?\b|\bsessions?\b|\bmeetings?\b|\bschedul|\bcalendar\b", re.I), ("appointment",)),
-    (re.compile(r"\bcompliance\b|\boutstanding document", re.I), ("compliance",)),
-    (re.compile(r"\bmovs?\b|means of verification", re.I), ("mov",)),
-    (re.compile(r"\bdiagnostic\b|\bgrowth plan\b|\bdevelopment(al)? plan\b", re.I), ("diagnostic",)),
-    (re.compile(r"\binquir|\benquir|\bquer(y|ies)\b", re.I), ("inquir",)),
-    (re.compile(r"\bintake\b|\bsubmissions?\b", re.I), ("intake",)),
-    (re.compile(r"\btimesheets?\b|\bclock.?(in|out)|\bhours worked\b|\battendance\b", re.I), ("clock", "time_record", "timesheet")),
-    (re.compile(r"\bleave\b|\bpto\b|\bvacation\b|\btime off\b|\bsick(\s|-)?leave\b|\bannual leave\b|\bon leave\b", re.I), ("leave",)),
-    (re.compile(r"\bkpis?\b|\bkey performance\b|\btargets?\b", re.I), ("kpi",)),
-    (re.compile(r"\bmonthly\b|\btrend\b|\bover time\b|\bper month\b|\bchart\b|\bgraph\b|\bplot\b|\bspline\b|\bdonut\b", re.I), ("monthly",)),
-    (re.compile(r"\bcatalog|\bservices? (offered|catalog)\b", re.I), ("catalog", "interventions_catalog")),
-    (re.compile(r"\bdepartments?\b|\bhod\b", re.I), ("department",)),
-    (re.compile(r"\bprogram(me)?s?\b|\bbranch\b", re.I), ("program",)),
-    (re.compile(r"\bimpact\b|\bworking\b|\bworked\b|\beffective|\blift\b|\bpaying off\b|\bmade a difference\b|\brevenue (growth|change|increase)|\bjobs? (created|creation|growth|added)|\bheadcount\b|\bemployment\b", re.I), ("impact",)),
-    (re.compile(r"\bbrief me\b|\bcatch me up\b|\bwhat happened\b|\brecap\b|\brecent activity\b|\bwhat'?s new\b|\btoday'?s? activity\b|\bsince (i|we) last\b|\bwhat needs my attention\b", re.I), ("recent_activity",)),
-]
-
-SELF_SCOPE_PATTERN = re.compile(r"\bmy\b|\bmine\b|\bassigned to me\b|\bi have\b|\bi am\b", re.I)
-DEPARTMENT_SCOPE_PATTERN = re.compile(r"\bdepartment\b|\bmy team\b", re.I)
-ORG_WIDE_SCOPE_PATTERN = re.compile(r"\ball program|\bacross the organi[sz]ation\b|\borg.?wide\b|\bwhole company\b|\bevery program", re.I)
-SCOPE_SUFFIXES = ("_by_program", "_by_department", "_by_assignee", "_by_participant", "_by_email", "_by_user")
-
-
 def _risk_snapshot(participant_id: str) -> dict[str, Any] | None:
     snapshot = db.collection("smeRiskSnapshots").document(participant_id).get()
     if not snapshot.exists:
@@ -844,6 +822,33 @@ NAMED_SME_FETCHERS = {
 }
 
 
+# Departments that oversee every SME rather than delivering to some (departmentRoles keys).
+OVERSIGHT_DEPARTMENT_ROLES = ("rom", "monitoring")
+
+
+def _hod_department_ids(user: UserContext, role: str) -> list[str] | None:
+    """A head of department's department and every department under it, for scoping their
+    "needs you" list. None for everyone else, and for the main, ROM and M&E departments, which
+    oversee all SMEs."""
+    if role != "operations" or not user.departmentId or user.isMainDepartment:
+        return None
+    departments = get_departments(500)
+    if get_department_role(user.departmentId, get_department_roles(), departments) in OVERSIGHT_DEPARTMENT_ROLES:
+        return None
+    return [
+        str(item.get("id"))
+        for item in departments
+        if item.get("id") and user.departmentId in department_lineage(str(item.get("id")), departments)
+    ] or [user.departmentId]
+
+
+def _chases_own_department_only(user: UserContext, role: str) -> bool:
+    """A head of department outside ROM and M&E: their chasers cover their own department's queried MOVs."""
+    if role != "operations" or not user.departmentId:
+        return False
+    return get_department_role(user.departmentId, get_department_roles(), get_departments(500)) not in OVERSIGHT_DEPARTMENT_ROLES
+
+
 def _named_sme_scope(allowed_tools: set[str], selected_programme: str | None, programme_scope: list[str] | None):
     """Which SMEs a question may name: None for all, a list of programmes, or False for none.
     The same limits as the SME list tools the person already has."""
@@ -856,49 +861,6 @@ def _named_sme_scope(allowed_tools: set[str], selected_programme: str | None, pr
     if may_list_programme and programme_scope:
         return list(programme_scope)
     return False
-
-
-def _select_tools(
-    question: str,
-    allowed_tools: set[str],
-    page_tools: list[str],
-) -> list[str]:
-    if not allowed_tools:
-        return []
-
-    scores: dict[str, int] = {name: 0 for name in allowed_tools}
-
-    for pattern, substrings in TOOL_TOPIC_RULES:
-        if not pattern.search(question):
-            continue
-        for name in allowed_tools:
-            if any(substring in name for substring in substrings):
-                scores[name] += 2
-
-    if SELF_SCOPE_PATTERN.search(question):
-        for name in allowed_tools:
-            if name.endswith(("_by_assignee", "_by_email", "_by_participant", "_by_user")):
-                scores[name] += 1
-
-    if DEPARTMENT_SCOPE_PATTERN.search(question):
-        for name in allowed_tools:
-            if name.endswith("_by_department"):
-                scores[name] += 1
-
-    if ORG_WIDE_SCOPE_PATTERN.search(question):
-        for name in allowed_tools:
-            if not name.endswith(SCOPE_SUFFIXES):
-                scores[name] += 1
-
-    for name in page_tools:
-        if name in scores:
-            scores[name] += 3
-
-    ranked = sorted((name for name, value in scores.items() if value > 0), key=lambda n: -scores[n])
-    if ranked:
-        return ranked[:6]
-
-    return [name for name in page_tools if name in allowed_tools][:6]
 
 
 def _as_sast(value: Any) -> datetime | None:
@@ -1832,7 +1794,7 @@ def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepRepor
         programme_tools=PROGRAM_DATA_TOOLS,
     )
     step(UNDERSTANDING)
-    selected_tools = _select_tools(
+    selected_tools = select_tools(
         question,
         allowed_tools,
         backend_page_context.get("tools") or [],
@@ -1884,8 +1846,16 @@ def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepRepor
             tool_results["named_smes"] = {"ok": True, "data": named, "detailsArePreview": False}
     # "Which SMEs need me this week?": one ranked list across risk, evidence, deliveries and sessions.
     attention = None
-    attention_scope = attention_visibility(role, user.uid or "", [selected_programme] if selected_programme else programme_scope)
-    if attention_scope and asks_for_attention(question):
+    attention_scope = None
+    if asks_for_attention(question):
+        hod_departments = _hod_department_ids(user, role)
+        attention_scope = attention_visibility(
+            role,
+            user.uid or "",
+            [selected_programme] if selected_programme else (None if hod_departments else programme_scope),
+            hod_departments,
+        )
+    if attention_scope:
         step("Ranking the SMEs that need you")
         try:
             attention = load_attention(db, attention_scope)
@@ -1938,6 +1908,9 @@ def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepRepor
         else ""
     )
     allowed_proposals = allowed_proposals_for(role) if not payload.chartOnly else set()
+    if not user.departmentId:
+        # Tasks are filed under the creator's department; agentProposeAction refuses them without one.
+        allowed_proposals.discard("create_task")
     show_me_directive = (
         f"""
     - The live frontend page context's "availableRoutes" lists the pages this user can open (route,
@@ -2103,7 +2076,7 @@ def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepRepor
     {proposal_directive(allowed_proposals)}
     {cards_directive()}
     {watch_directive() if role in WATCH_ROLES else ''}
-    {chaser_directive() if role in CHASER_ROLES else ''}
+    {chaser_directive(_chases_own_department_only(user, role)) if role in CHASER_ROLES else ''}
 
     {('- ' + scope_note) if scope_note else ''}
 
@@ -2195,6 +2168,9 @@ def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepRepor
     safe_watch = sanitize_watch(marker_json.get(WATCH_MARKER)) if role in WATCH_ROLES else None
     # Likewise a drafted chaser: nothing is sent until they press Start chasing.
     safe_chaser = sanitize_chaser(marker_json.get(CHASER_MARKER)) if role in CHASER_ROLES else None
+    if safe_chaser:
+        # A chaser is how a "get these approved by Friday" request is acted on, not a task proposal.
+        safe_proposal = None
     if safe_proposal:
         # One way to act per reply: a ready proposal replaces the open-the-form flow.
         safe_action = None

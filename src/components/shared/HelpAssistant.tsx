@@ -18,6 +18,8 @@ import {
     SendOutlined
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { askAssistant } from '@/services/aiAssistantService'
 import {
@@ -154,6 +156,8 @@ export const HelpAssistant: React.FC = () => {
                     participantId
                 },
                 pageContext: {
+                    // Tells the assistant this is the small help window, so it answers briefly.
+                    surface: 'help',
                     availableGuides: ASSISTANT_GUIDE_CATALOG
                 },
                 history,
@@ -231,6 +235,38 @@ export const HelpAssistant: React.FC = () => {
     return (
         <>
             <style>{`
+                /* Replies arrive as Markdown; sized for a chat bubble, not a page. */
+                .help-md {
+                    font-size: 14px;
+                    line-height: 1.55;
+                    overflow-wrap: anywhere;
+                }
+                .help-md > :first-child { margin-top: 0; }
+                .help-md > :last-child { margin-bottom: 0; }
+                .help-md p { margin: 0 0 8px; }
+                .help-md ul, .help-md ol { margin: 0 0 8px; padding-left: 20px; }
+                .help-md li { margin: 2px 0; }
+                .help-md li > p { margin: 0; }
+                .help-md strong { font-weight: 650; }
+                .help-md a { color: ${token.colorPrimary}; text-decoration: underline; }
+                .help-md h1, .help-md h2, .help-md h3, .help-md h4 {
+                    margin: 4px 0 6px;
+                    font-size: 14px;
+                    font-weight: 650;
+                }
+                .help-md code {
+                    padding: 1px 5px;
+                    border-radius: 6px;
+                    font-size: 12.5px;
+                    background: ${token.colorFillSecondary};
+                }
+                .help-md table { border-collapse: collapse; margin: 0 0 8px; font-size: 13px; }
+                .help-md th, .help-md td {
+                    padding: 4px 8px;
+                    border: 1px solid ${token.colorBorderSecondary};
+                    text-align: left;
+                }
+
                 @keyframes helpTypingBounce {
                     0%, 80%, 100% {
                         transform: translateY(0);
@@ -279,6 +315,7 @@ export const HelpAssistant: React.FC = () => {
             `}</style>
 
             <FloatButton
+                className="help-assistant-fab"
                 type="primary"
                 icon={
                     <QuestionCircleOutlined />
@@ -377,13 +414,25 @@ export const HelpAssistant: React.FC = () => {
                                                 : `1px solid ${token.colorBorderSecondary}`
                                         }}
                                     >
-                                        <Text
-                                            style={{
-                                                color: 'inherit'
-                                            }}
-                                        >
-                                            {message.text}
-                                        </Text>
+                                        {isUser ? (
+                                            <Text style={{ color: 'inherit', whiteSpace: 'pre-wrap' }}>
+                                                {message.text}
+                                            </Text>
+                                        ) : (
+                                            <div className="help-md">
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        // Links leave the help window, so open them beside the app.
+                                                        a: ({ node: _node, ...props }) => (
+                                                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                                                        )
+                                                    }}
+                                                >
+                                                    {message.text}
+                                                </ReactMarkdown>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {message.guide && (
@@ -400,7 +449,7 @@ export const HelpAssistant: React.FC = () => {
                                                 color: token.colorPrimaryText
                                             }}
                                         >
-                                            Guide Me
+                                            Show me: {message.guide.pageTitle}
                                         </Button>
                                     )}
                                 </div>

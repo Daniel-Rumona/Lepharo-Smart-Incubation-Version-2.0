@@ -2,7 +2,7 @@ import { getAuth } from 'firebase/auth'
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 export type AiFeedbackAction = 'accepted' | 'edited' | 'declined'

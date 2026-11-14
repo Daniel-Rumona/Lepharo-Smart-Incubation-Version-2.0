@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.planRoadmapCheckInCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 const planRoadmapLogic_1 = require("./planRoadmapLogic");
 // Tracks HODs against their published implementation-plan roadmap
@@ -57,7 +57,7 @@ const fmt = (d) => (d ? d.toISOString().slice(0, 10) : "no date");
 // There is no roadmap page yet, so links open the implementation-plan hub
 // (the plan the roadmap was drafted from), which HODs and project admins both
 // have in their nav. Point this at the roadmap page once one exists.
-const ROADMAP_PATH = "/operations/documentation";
+const ROADMAP_PATH = "/documentation";
 const roadmapUrl = () => `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}${ROADMAP_PATH}`;
 // "operations" is this system's HOD/department-manager role.
 async function resolveHods(departmentId) {
@@ -117,7 +117,7 @@ async function notify(recipients, type, subject, message, bodyHtml, bodyText, ro
     });
 }
 const STAGE_LABEL = { upcoming: "Due soon", due: "Due today", overdue: "Overdue" };
-exports.planRoadmapCheckInCron = (0, scheduler_1.onSchedule)({
+exports.planRoadmapCheckInCron = (0, cronHeartbeat_1.scheduledJob)("planRoadmapCheckInCron", {
     region: "us-central1",
     schedule: "15 7 * * *",
     timeZone: "Africa/Johannesburg",

@@ -121,7 +121,6 @@ import { CoordinatorDashboard } from "@/routes/coordinator/CoordinatorDashboard"
 import AllocatedInterventions from "@/routes/shared/allocated";
 import { FeedbackWorkspace } from "@/routes/coordinator/feedback/FeedbackWorkspace";
 import { CoordinatorAnalytics } from "@/routes/coordinator/analytics";
-import MarketLinkageManager from "./routes/coordinator/interventions/linkages";
 import WellnessResponsesPage from "./routes/coordinator/interventions/pdswellness";
 import CoordinatorTasksAndAppointments from "./components/tasks/CoordinatorTaskUpdate";
 
@@ -475,10 +474,6 @@ const App = () => {
                                                         <Route
                                                             path="feedback"
                                                             element={<FeedbackWorkspace />}
-                                                        />
-                                                        <Route
-                                                            path="interventions/Linkages"
-                                                            element={<MarketLinkageManager />}
                                                         />
                                                         <Route
                                                             path="interventions/wellness"

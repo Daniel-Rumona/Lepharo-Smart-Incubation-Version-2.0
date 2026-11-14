@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Card, Empty, List, Space, Tag, Tooltip, Typography } from 'antd'
+import { Button, Empty, List, Space, Tag, Tooltip, Typography } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, OpenAIOutlined, WarningOutlined } from '@ant-design/icons'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { auth, db } from '@/firebase'
 import { useChatSession } from '@/routes/chat/ChatSessionContext'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 const { Text } = Typography
 
@@ -112,7 +113,7 @@ export default function EarlyWarningPanel({ scope, programId, limit = 8 }: Props
     const updated = rows.find(row => row.computedAt)?.computedAt
 
     return (
-        <Card
+        <MotionCard
             title={
                 <Space>
                     <WarningOutlined style={{ color: LEVEL_COLOR.High }} />
@@ -179,6 +180,6 @@ export default function EarlyWarningPanel({ scope, programId, limit = 8 }: Props
                     )}
                 />
             )}
-        </Card>
+        </MotionCard>
     )
 }

@@ -156,12 +156,30 @@ dry run by default, `--apply --confirm=migrate-intervention-recurrence`, report 
 - Run order per project: deploy Phases 1–2, dry run, review the report, then `--apply`.
 
 ### Phase 4: remove the legacy fallback
+Partly done 2026-11-01. Done now: the unimported copy of the assignments page was already removed (commit
+51ff898), and `InterventionFrequency`, `INTERVENTION_FREQUENCIES` and `Assignment.frequency` are gone from
+`types/intervetion.ts`. Kept on purpose: `InterventionFrequency` in `types/mov.ts` describes the old MOV
+`frequencyOfIntervention` field, which the export still reads. **Waiting on production:** the legacy branches in
+`readSchedule` (and `LEGACY_SCHEDULE_FIELDS` handling) stay until `lph-smart-inc` is migrated and a re-run of
+the dry run plans nothing; removing them before then would stop the app reading production schedules.
+
 After production is migrated and a re-run of the dry run plans nothing: drop the legacy branches from
 `readSchedule`, delete `src/routes/deliverables/live-compulsory-assignments/index.tsx` (an unimported
 copy of the assignments page), and the stale `InterventionFrequency` types in `types/intervetion.ts`
 and `types/mov.ts`.
 
 ### Phase 5: use it in the SME Risk Register
+Built 2026-11-01. `expectedServiceIntervalDays(assignments, now, closedInterventionIds?)` in
+`functions/src/smeRiskLogic.ts` gives the shortest interval among an SME's recent (last 180 days) recurring
+assignments, skipping closed, cancelled and HOD-closed support. `computeRiskScore` takes it as
+`expectedServiceIntervalDays` and counts inactivity in missed cycles (1, 3, 6 cycles: 45, 65, 80 points); without
+it a 30-day cycle is assumed, which is exactly the old 30/90/180-day rule. Both the register (`buildRow`, from
+the assignments it counts) and the nightly job (`deriveRiskInputs`) pass it, so they still agree. The register
+shows "expected every N days" in the detail modal, the attention column and the outlook suggestion.
+An assignment's `strict` is not used: a missing value was always stored as false, so it says nothing there.
+On test data only one SME's score moves (weekly support, 22 days: 97 to 100, Critical either way); monthly
+schedules score as before. `functions/lib` is not rebuilt here; the functions predeploy runs the build.
+
 `expectedIntervalDays(schedule)` gives each SME's expected gap between services (shortest among their
 active recurring assignments). The risk score's inactivity term becomes days since last service ÷
 expected gap, with the fixed 30/90/180-day thresholds as the fallback for ad-hoc and unassigned SMEs.

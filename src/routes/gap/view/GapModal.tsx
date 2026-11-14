@@ -25,7 +25,7 @@ export type GapAnalysisViewModalProps = {
  * Thin modal shell around GapDetail, for places that view a GAP without leaving
  * their own context (compliance documents, the incubatee drawer).
  *
- * The canonical surface is the full page at /operations/gap/:id — prefer that
+ * The canonical surface is the full page at /gap/:id — prefer that
  * from the GAP list. All content, actions and the confirm flow live in GapDetail
  * so the two surfaces cannot drift apart.
  */

@@ -785,7 +785,7 @@ export const OperationsDashboard: React.FC = () => {
 
         setRemindingQueryId(queryItem.id)
         try {
-            const role = String(queryItem.resolver?.role || 'consultant').trim()
+            const role = String(queryItem.resolver?.role || 'coordinator').trim()
             const reminder = { sentAt: Timestamp.now(), sentById: String(user?.uid || user?.id || '') || null }
             await Promise.all([
                 sendNotification({

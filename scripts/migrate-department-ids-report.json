@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-10-23T13:22:48.615Z",
+  "mode": "dry-run",
+  "counts": {
+    "interventions": 85,
+    "assignedInterventions": 325,
+    "movDocuments": 246,
+    "applications": 64,
+    "diagnosticPlans": 64,
+    "kpiTargets departmentId backfilled": 61,
+    "kpiDefinitions leadDepartmentId backfilled": 6,
+    "inquiries departmentId backfilled": 235,
+    "workflowQueries raiser departmentId backfilled": 4,
+    "departments code removed": 1
+  },
+  "needsManualReview": [
+    {
+      "where": "interventions/AUiE43HHAiKbM7rJw7rL",
+      "why": "department unresolved",
+      "area": null
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { getAuth } from 'firebase/auth'
  */
 export const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 /** Mirrors MAX_OUTLINE_DOCUMENTS / MAX_SURVEY_FILE_BYTES in ai-backend/app.py. */

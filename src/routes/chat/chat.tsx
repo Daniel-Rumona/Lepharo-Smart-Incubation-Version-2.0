@@ -8,14 +8,16 @@ import React, {
 import {
     Avatar,
     Button,
+    Dropdown,
     Grid,
     Input,
+    Modal,
     Spin,
     Typography
 } from 'antd'
-import { ArrowLeftOutlined, AudioOutlined, CalendarOutlined, CompassOutlined, FormOutlined, HistoryOutlined, OpenAIOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, AudioOutlined, CalendarOutlined, CheckOutlined, CompassOutlined, EyeOutlined, FieldTimeOutlined, FormOutlined, HistoryOutlined, OpenAIOutlined, PlayCircleOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -28,6 +30,13 @@ import {
     useAgentReportPlayback
 } from '@/routes/chat/AgentReportPlayback'
 import { ChartSpecRenderer } from '@/components/ai/ChartSpecRenderer'
+import { AnswerCards } from '@/components/assistant/AnswerCards'
+import { AssistantChips } from '@/components/assistant/AssistantChips'
+import { WatchCard } from '@/components/assistant/WatchCard'
+import { ChaserCard } from '@/components/assistant/ChaserCard'
+import { ChasersList } from '@/components/assistant/ChasersList'
+import { AttentionList } from '@/components/assistant/AttentionList'
+import { isStaffRole } from '@/lib/roleLabels'
 import { ConversationMode } from '@/routes/chat/ConversationMode'
 import { ChatHistoryModal } from '@/routes/chat/ChatHistoryModal'
 import ScheduleAppointmentFlow, { type BookedSummary } from '@/routes/chat/actions/ScheduleAppointmentFlow'
@@ -250,7 +259,7 @@ const roleBasedQuestions = (user: Record<string, any> | null, departmentRole: De
 
     if (role === 'receptionist') {
         return [
-            'Show my submitted inquiries',
+            'Show new inquiries for my centre',
             'Which programmes are currently active?',
             'Show upcoming appointments for my centre',
             'Summarise activity in the selected programme'
@@ -291,13 +300,57 @@ const TypingIndicator = () => (
     </div>
 )
 
+const VISIBLE_STEPS = 3
+
+/**
+ * What the assistant is doing, as it does it: finished steps get a tick, the current one
+ * shimmers. Only the last few show. Until the first step arrives (or when the backend
+ * can't stream them) the familiar dots stay.
+ */
+const StepTrail: React.FC<{ steps: string[] }> = ({ steps }) => {
+    if (!steps.length) return <TypingIndicator />
+    const hidden = Math.max(0, steps.length - VISIBLE_STEPS)
+    const shown = steps.slice(hidden)
+    return (
+        <div className='chat-steps' aria-live='polite'>
+            {hidden ? <span className='chat-step chat-step-earlier'>{hidden} earlier step{hidden === 1 ? '' : 's'}</span> : null}
+            {shown.map((step, index) => {
+                const current = index === shown.length - 1
+                return (
+                    <span key={step} className={current ? 'chat-step chat-step-now' : 'chat-step chat-step-done'}>
+                        {current ? <i className='chat-step-pulse' aria-hidden='true' /> : <CheckOutlined aria-hidden='true' />}
+                        {current ? `${step}…` : step}
+                    </span>
+                )
+            })}
+        </div>
+    )
+}
+
+// Watches start from the person's own words; the example fills the composer for them to edit.
+// Roles in step with functions/src/watchesLogic.ts visibilityFor.
+// Receptionists run the front desk, so nothing a watch follows is theirs to act on.
+const WATCH_ROLES = new Set(['director', 'operations', 'system_admin', 'projectadmin', 'funder', 'coordinator'])
+const WATCH_EXAMPLE = 'Tell me when any SME goes High risk with no session booked'
+const WATCH_EXAMPLE_EDITABLE = 'any SME'
+// Funders follow impact rather than SME risk.
+const IMPACT_WATCH_EXAMPLE = 'Tell me when the impact of any intervention is ready to report'
+const IMPACT_WATCH_EXAMPLE_EDITABLE = 'any intervention'
+const CHASER_EXAMPLE = 'Chase the MOVs waiting for HOD approval so they are approved by Friday'
+const CHASER_EXAMPLE_EDITABLE = 'waiting for HOD approval'
+// Heads of department outside ROM and M&E chase their own department's queried MOVs (chasersLogic.scopeToDepartment).
+const DEPARTMENT_CHASER_EXAMPLE = 'Chase the queried MOVs in my department so they are fixed by Friday'
+const DEPARTMENT_CHASER_EXAMPLE_EDITABLE = 'by Friday'
+// The ranked "needs you" list (ai-backend/attention_list.py): the people who act on SMEs, so not funders.
+const ATTENTION_QUESTION = 'Which SMEs need me this week?'
+
 const Chat: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
     const {
-        messages, isTyping, error, startMessage, startNewChat, isResuming, refreshHistory,
+        messages, isTyping, steps, error, startMessage, startNewChat, isResuming, refreshHistory,
         pendingAction, clearPendingAction, appendLocalMessage, showMe, openGuide, activeSessionId
     } = useChatSession()
-    const state = { messages, isTyping, error }
+    const state = { messages, isTyping, error, steps }
     const [input, setInput] = useState('')
     const [conversationMode, setConversationMode] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
@@ -307,6 +360,9 @@ const Chat: React.FC = () => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
     const canScheduleAppointments = normaliseIdentityValue(user?.role) === 'coordinator'
+    const canWatch = WATCH_ROLES.has(normaliseIdentityValue(user?.role).replace(/[\s-]+/g, '_'))
+    const isFunder = normaliseIdentityValue(user?.role) === 'funder'
+    const canAskAttention = canWatch && !isFunder
 
     const openScheduler = (smeHint?: string | null) => {
         setScheduleHint(smeHint || null)
@@ -336,6 +392,19 @@ const Chat: React.FC = () => {
     const { isDark } = useColorMode()
     const { roleOf } = useDepartmentRoles()
     const departmentRole = roleOf(user?.departmentId)
+    // Chasers nudge through the Control Tower's reminder (movReminders.canRemind): those people, and every
+    // head of department, who outside ROM and M&E chases only their own department's queried MOVs.
+    const role = normaliseIdentityValue(user?.role).replace(/[\s-]+/g, '_')
+    const canChase = role === 'system_admin' || role === 'projectadmin' || role === 'operations'
+    const chasesOwnDepartment = role === 'operations' && departmentRole !== 'rom' && departmentRole !== 'monitoring'
+    // A chaser notification links to /chat?open=chasers: show the list whatever is on screen.
+    const [searchParams, setSearchParams] = useSearchParams()
+    const chasersOpen = searchParams.get('open') === 'chasers'
+    const closeChasers = () => {
+        const next = new URLSearchParams(searchParams)
+        next.delete('open')
+        setSearchParams(next, { replace: true })
+    }
     const reportKind = useMemo(
         () => getAgentReportKind(user, departmentRole),
         [user?.role, departmentRole]
@@ -406,9 +475,55 @@ const Chat: React.FC = () => {
 
     const onSubmit = () => submitMessage(input)
 
+    /** Puts text in the composer with the part to change selected, instead of sending it. */
+    const fillComposer = (text: string, editable?: string) => {
+        setInput(text)
+        window.setTimeout(() => {
+            const field = document.querySelector<HTMLTextAreaElement>('.chat-empty-composer textarea, .chat-composer-panel textarea')
+            if (!field) return
+            field.focus()
+            const start = editable ? text.indexOf(editable) : -1
+            if (start >= 0) field.setSelectionRange(start, start + (editable || '').length)
+            else field.setSelectionRange(text.length, text.length)
+        }, 0)
+    }
+
+    // Things to set up rather than questions to ask: behind the composer's "+", only those this role can use.
+    // A watch or chaser starts from the person's own words, so those fill the box with an example to edit.
+    const composerActions = [
+        canScheduleAppointments && {
+            key: 'appointment', icon: <CalendarOutlined />, label: 'Set up an appointment',
+            onClick: () => openScheduler()
+        },
+        canWatch && {
+            key: 'watch', icon: <EyeOutlined />, label: 'Set up a watch',
+            onClick: () => isFunder
+                ? fillComposer(IMPACT_WATCH_EXAMPLE, IMPACT_WATCH_EXAMPLE_EDITABLE)
+                : fillComposer(WATCH_EXAMPLE, WATCH_EXAMPLE_EDITABLE)
+        },
+        canChase && {
+            key: 'chaser', icon: <FieldTimeOutlined />, label: 'Start a chaser',
+            onClick: () => chasesOwnDepartment
+                ? fillComposer(DEPARTMENT_CHASER_EXAMPLE, DEPARTMENT_CHASER_EXAMPLE_EDITABLE)
+                : fillComposer(CHASER_EXAMPLE, CHASER_EXAMPLE_EDITABLE)
+        }
+    ].filter(Boolean) as { key: string; icon: React.ReactNode; label: string; onClick: () => void }[]
+
     const renderComposer = (docked = false) => (
         <div className={`chat-composer-panel ${docked ? 'chat-composer-panel-docked' : ''}`}>
             <div className='chat-input-wrap'>
+                {composerActions.length > 0 && (
+                    <Dropdown
+                        trigger={['click']}
+                        placement='topLeft'
+                        disabled={state.isTyping || !user}
+                        menu={{ items: composerActions.map(({ key, icon, label }) => ({ key, icon, label })), onClick: ({ key }) => composerActions.find(item => item.key === key)?.onClick() }}
+                    >
+                        <button type='button' className='chat-voice-button chat-plus-button' aria-label='Set something up' title='Set something up'>
+                            <PlusOutlined />
+                        </button>
+                    </Dropdown>
+                )}
                 <button
                     type='button'
                     className='chat-voice-button'
@@ -844,6 +959,50 @@ const Chat: React.FC = () => {
         }
         .chat-typing span:nth-child(2) { animation-delay: .15s; }
         .chat-typing span:nth-child(3) { animation-delay: .3s; }
+        .chat-steps {
+          display: inline-grid;
+          gap: 5px;
+          padding: 10px 14px;
+          border-radius: 16px;
+          border-top-left-radius: 5px;
+          background: var(--app-surface-sunken);
+          font-size: 13px;
+          min-width: 180px;
+        }
+        .chat-step {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          line-height: 1.4;
+          animation: chatStepIn .28s ease-out both;
+        }
+        .chat-step-done { color: var(--app-text-subtle); }
+        .chat-step-done .anticon { font-size: 11px; color: var(--app-accent); }
+        .chat-step-earlier { color: var(--app-text-subtle); font-size: 12px; opacity: .75; }
+        .chat-step-now {
+          font-weight: 500;
+          color: transparent;
+          background: linear-gradient(90deg, var(--app-text) 0%, var(--app-text) 35%, var(--app-text-subtle) 50%, var(--app-text) 65%, var(--app-text) 100%);
+          background-size: 250% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          animation: chatStepIn .28s ease-out both, chatShimmer 1.8s linear infinite;
+        }
+        .chat-step-pulse {
+          width: 8px;
+          height: 8px;
+          flex: none;
+          border-radius: 50%;
+          background: var(--app-accent);
+          animation: chatPulseDot 1.2s ease-in-out infinite;
+        }
+        @keyframes chatStepIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+        @keyframes chatShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+        @keyframes chatPulseDot { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) {
+          .chat-step, .chat-step-pulse { animation: none; }
+          .chat-step-now { animation: none; color: var(--app-text); background: none; }
+        }
         @keyframes chatPulse {
           0%, 60%, 100% { transform: translateY(0); opacity: .4; }
           30% { transform: translateY(-4px); opacity: 1; }
@@ -914,6 +1073,12 @@ const Chat: React.FC = () => {
           color: var(--app-accent);
           background: var(--app-accent-soft);
           outline: none;
+        }
+        /* The + sits close to the microphone: they read as one group of tools. */
+        .chat-plus-button {
+          flex-basis: 30px;
+          width: 30px;
+          margin-right: -6px;
         }
         .chat-send-button {
           width: 36px !important;
@@ -1122,6 +1287,17 @@ const Chat: React.FC = () => {
                                 <span className='chat-typewriter-cursor' aria-hidden='true' />
                             </div>
 
+                            {/* Morning brief, watches and chasers, as chips: for staff, and for anyone who can set a watch or chaser
+                                (system admins and funders are not HR staff). */}
+                            {user?.uid && (isStaffRole(user.role) || canWatch || canChase) ? (
+                                <AssistantChips
+                                    uid={user.uid}
+                                    digestOn={(user as any).dailyDigest?.enabled === true}
+                                    onAsk={question => { startMessage(question) }}
+                                    canChase={canChase}
+                                />
+                            ) : null}
+
                             {reportKind && isFriday && (
                                 <div className='chat-report-banner'>
                                     <div>
@@ -1142,14 +1318,7 @@ const Chat: React.FC = () => {
                                         <span className='chat-suggestion-report-cta'>Play</span>
                                     </button>
                                 )}
-                                {canScheduleAppointments && (
-                                    <button type='button' className='chat-suggestion chat-suggestion-report' onClick={() => openScheduler()}>
-                                        <span className='chat-suggestion-report-icon' aria-hidden='true'><CalendarOutlined /></span>
-                                        <span className='chat-suggestion-report-label'>Set up an appointment</span>
-                                        <span className='chat-suggestion-report-cta'>Book</span>
-                                    </button>
-                                )}
-                                {suggestedQuestions.map(question => (
+                                {(canAskAttention ? [ATTENTION_QUESTION, ...suggestedQuestions.filter(question => question !== ATTENTION_QUESTION)].slice(0, 3) : suggestedQuestions).map(question => (
                                     <button
                                         key={question}
                                         type='button'
@@ -1168,7 +1337,7 @@ const Chat: React.FC = () => {
                         </div>
                     ) : (
                         <>
-                            {state.messages.map(item => (
+                            {state.messages.map((item, index) => (
                                 <div
                                     className={`chat-row ${item.sender === 'user' ? 'chat-row-user' : ''}`}
                                     key={item.id}
@@ -1195,6 +1364,10 @@ const Chat: React.FC = () => {
                                         {item.chart && (
                                             <ChartSpecRenderer chart={item.chart} className='chat-chart-card' />
                                         )}
+                                        {item.attention ? <AttentionList attention={item.attention} /> : null}
+                                        {item.cards?.length ? <AnswerCards cards={item.cards} /> : null}
+                                        {item.watch ? <WatchCard draft={item.watch} words={state.messages[index - 1]?.content} /> : null}
+                                        {item.chaser && canChase ? <ChaserCard draft={item.chaser} words={state.messages[index - 1]?.content} /> : null}
                                         {item.action?.kind === 'schedule_appointment' && canScheduleAppointments && (
                                             <Button
                                                 type='primary'
@@ -1243,7 +1416,7 @@ const Chat: React.FC = () => {
                                         icon={<OpenAIOutlined />}
                                         style={{ background: 'var(--app-accent)' }}
                                     />
-                                    <TypingIndicator />
+                                    <StepTrail steps={state.steps} />
                                 </div>
                             )}
                         </>
@@ -1262,6 +1435,11 @@ const Chat: React.FC = () => {
             </section>
 
             <ChatHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
+            {canChase ? (
+                <Modal open={chasersOpen} onCancel={closeChasers} footer={null} width={500} destroyOnClose>
+                    <ChasersList />
+                </Modal>
+            ) : null}
             {canScheduleAppointments && (
                 <ScheduleAppointmentFlow
                     open={scheduleOpen}

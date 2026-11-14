@@ -1,0 +1,347 @@
+/* Market Linkage page (mlx-). Layout comes from the shared ws- workspace
+   classes: header, tab switcher, then a scrolling pane. */
+
+.mlx-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+/* Header: compact icon actions so the title keeps the width on a phone. */
+.ws-detail-head.mlx-head {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+}
+
+.ws-detail-head.mlx-head .ws-detail-identity {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.mlx-head-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+
+.mlx-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-bottom: 16px;
+}
+
+.mlx-empty {
+    padding: 24px 0 32px;
+}
+
+/* Filter fills the width; the actions sit on their own line beneath it. */
+.mlx-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mlx-toolbar-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Tabs size to their labels, so a count never gets cut to "Matches …". */
+.mlx-tabs.ant-segmented-block .ant-segmented-item {
+    flex: 1 1 auto;
+    min-width: max-content;
+}
+
+.mlx-tabs .ant-segmented-item-label {
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.mlx-reqs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.mlx-reqs .ant-tag {
+    margin-inline-end: 0;
+}
+
+/* --- Match rows ------------------------------------------------------------ */
+
+.mlx-matches {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mlx-match {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: var(--app-surface);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mlx-match:hover {
+    border-color: var(--app-border-strong);
+}
+
+.mlx-match.is-selected {
+    border-color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 6%, var(--app-surface));
+}
+
+.mlx-match.is-invited,
+.mlx-match.is-static {
+    cursor: default;
+}
+
+.mlx-match .ant-checkbox-wrapper,
+.mlx-match > .ant-checkbox {
+    margin-top: 2px;
+}
+
+.mlx-match-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.mlx-match-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.mlx-match-head .ant-tag {
+    margin-inline-end: 0;
+}
+
+.mlx-match-name {
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.mlx-notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.mlx-notes li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.mlx-notes.is-good .anticon {
+    color: var(--ant-color-success, #52c41a);
+}
+
+.mlx-notes.is-gap .anticon {
+    color: var(--ant-color-error, #ff4d4f);
+}
+
+.mlx-meta {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.mlx-quote {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--app-text);
+}
+
+/* Fit score: number over a small label, tinted when the SME is eligible.
+   A button, so a tap explains it without ticking the row. */
+.mlx-fit {
+    font: inherit;
+    border: 0;
+    cursor: help;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 44px;
+    padding: 4px 6px;
+    border-radius: 10px;
+    line-height: 1.1;
+    background: color-mix(in srgb, var(--app-text-muted) 12%, transparent);
+    color: var(--app-text-muted);
+}
+
+.mlx-fit strong {
+    font-size: 16px;
+}
+
+.mlx-fit span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mlx-fit.is-eligible {
+    color: var(--ant-color-success, #52c41a);
+    background: color-mix(in srgb, var(--ant-color-success, #52c41a) 14%, transparent);
+}
+
+@media (max-width: 576px) {
+    /* Labels need the room more than the icons do. */
+    .mlx-tabs .ant-segmented-item-icon {
+        display: none;
+    }
+
+    .mlx-toolbar-actions .ant-btn {
+        flex: 1 1 0;
+    }
+}
+
+/* Phone: the opportunity opens as a bottom sheet. */
+.mlx-sheet .ant-drawer-content {
+    border-radius: 16px 16px 0 0;
+}
+
+.mlx-fit-breakdown {
+    max-width: 280px;
+    font-size: 13px;
+}
+
+.mlx-fit-breakdown ul {
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+}
+
+.mlx-fit-breakdown li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 2px 0;
+}
+
+.mlx-fit-breakdown .is-negative {
+    color: var(--ant-color-error, #ff4d4f);
+}
+
+.mlx-fit-breakdown p {
+    margin: 0;
+}
+
+.mlx-fit-note {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+/* Phone: the actions get their own full-width row under the title. */
+@media (max-width: 576px) {
+    .ws-detail-head.mlx-head {
+        flex-wrap: wrap;
+    }
+
+    .mlx-head-actions {
+        width: 100%;
+    }
+
+    .mlx-head-actions > .ant-btn-primary {
+        flex: 1 1 auto;
+    }
+
+    .mlx-btn-text {
+        display: none;
+    }
+}
+
+/* --- Pipeline and contracts --------------------------------------------- */
+
+.mlx-lost {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--app-text);
+}
+
+.mlx-milestones-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin: 4px 0 8px;
+}
+
+.mlx-milestone-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mlx-milestone-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px 150px 32px;
+    gap: 8px;
+    align-items: center;
+}
+
+.mlx-milestone-row .ant-picker,
+.mlx-milestone-row .ant-input-number,
+.mlx-milestone-row .ant-input-number-affix-wrapper {
+    width: 100%;
+}
+
+@media (max-width: 576px) {
+    .mlx-milestone-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+    }
+
+    .mlx-milestone-row > .ant-input {
+        grid-column: 1 / -1;
+    }
+}
+
+.mlx-milestone-edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px 140px 120px 32px;
+    gap: 8px;
+    align-items: center;
+}
+
+.mlx-milestone-edit .ant-picker,
+.mlx-milestone-edit .ant-input-number,
+.mlx-milestone-edit .ant-input-number-affix-wrapper {
+    width: 100%;
+}
+
+.mlx-milestone-edit.is-overdue .ant-picker {
+    border-color: var(--ant-color-error, #ff4d4f);
+}
+
+@media (max-width: 991px) {
+    .mlx-milestone-edit {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--app-border);
+    }
+
+    .mlx-milestone-edit > .ant-input {
+        grid-column: 1 / -1;
+    }
+}
+
+.mlx-area.ant-segmented {
+    margin-bottom: 12px;
+}

@@ -62,6 +62,19 @@ service firebase.storage {
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Files an SME attaches to a survey answer (components/surveys/response).
+    // The response id is their participant id (very old responses: their uid).
+    // Staff open the answer through its download URL.
+    match /survey_uploads/{formId}/{responseId}/{fieldId}/{fileName} {
+      allow read: if request.auth != null;
+      // Update covers re-attaching a file with the same name.
+      allow create, update: if request.auth != null
+        && (request.auth.uid == responseId
+          || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.participantId == responseId)
+        && request.resource.size <= 10 * 1024 * 1024;
+      allow delete: if false;
+    }
+
     match /intervention-evidence/{programId}/{participantId}/{assignmentId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
@@ -104,7 +117,7 @@ service firebase.storage {
     function canAccessProposals() {
       return request.auth != null &&
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role is string &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role.lower().trim() != 'incubatee';
+        !(firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role.lower().trim() in ['incubatee', 'training_sme']);
     }
 
     match /projectProposals/{scope}/{proposalId}/{folder}/{fileName} {

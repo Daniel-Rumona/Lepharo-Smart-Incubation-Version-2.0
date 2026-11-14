@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleStaffAction = exports.STAFF_ACTIONS = exports.executeSchedule = exports.validateSchedule = exports.resolveStaffByPhone = exports.UserError = exports.roleGroupOf = void 0;
+exports.handleStaffAction = exports.STAFF_ACTIONS = exports.executeSchedule = exports.validateSchedule = exports.documentAccess = exports.sessionsTodayFor = exports.inProgramme = exports.programmeFilter = exports.ownerIds = exports.staffIdentityFromUser = exports.resolveStaffByPhone = exports.sastParts = exports.UserError = exports.roleGroupOf = void 0;
 const firebase_1 = require("./firebase");
 const whatsappCommon_1 = require("./whatsappCommon");
+const departmentRoles_1 = require("./departmentRoles");
+const complianceExpiry_1 = require("./complianceExpiry");
+const findSmeLogic_1 = require("./findSmeLogic");
 const roleKey = (role) => (0, whatsappCommon_1.clean)(role).toLowerCase().replace(/[\s_-]/g, "");
 const roleGroupOf = (role) => {
     const key = roleKey(role);
@@ -16,7 +19,7 @@ const roleGroupOf = (role) => {
         return "coordinator";
     if (key === "receptionist")
         return "receptionist";
-    if (["employee", "consultant", "projectmanager", "auxiliary"].includes(key))
+    if (key === "employee")
         return "employee";
     if (["funder", "government"].includes(key))
         return "external";
@@ -51,7 +54,8 @@ const sastParts = (date) => {
     const get = (type) => parts.find((part) => part.type === type)?.value || "";
     return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
 };
-const todaySast = () => sastParts(new Date()).date;
+exports.sastParts = sastParts;
+const todaySast = () => (0, exports.sastParts)(new Date()).date;
 const validDate = (value) => {
     const text = (0, whatsappCommon_1.clean)(value);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text))
@@ -67,7 +71,7 @@ const shortText = (value, max) => (0, whatsappCommon_1.clean)(value).replace(/\s
 const formatWhen = (date) => {
     if (!date)
         return null;
-    const { date: day, time } = sastParts(date);
+    const { date: day, time } = (0, exports.sastParts)(date);
     return `${day} ${time}`;
 };
 /* ------------------------------------------------------------------ identity */
@@ -84,23 +88,31 @@ async function resolveStaffByPhone(phoneNumber) {
     }
     let rows = Array.from(matches.values());
     if (rows.length !== 1) {
+        // Read only the phone fields; whole user documents overflow the function's memory.
         const suffix = digits.slice(-9);
-        const snapshot = await firebase_1.db.collection("users").limit(2000).get();
-        rows = snapshot.docs.filter((doc) => {
+        const snapshot = await firebase_1.db.collection("users").select("phone", "phoneNumber").limit(2000).get();
+        const ids = snapshot.docs
+            .filter((doc) => {
             const data = doc.data() || {};
             return [data.phone, data.phoneNumber].some((stored) => {
                 const normalized = (0, whatsappCommon_1.normalizePhone)(stored);
                 return suffix.length >= 8 && normalized.length >= 8 && normalized.slice(-9) === suffix;
             });
-        });
+        })
+            .map((doc) => doc.id);
+        rows = ids.length === 1 ? [await firebase_1.db.collection("users").doc(ids[0]).get()] : [];
     }
     if (rows.length !== 1)
         return null;
-    const data = rows[0].data() || {};
+    return staffIdentityFromUser(rows[0].id, rows[0].data() || {}, phoneNumber);
+}
+exports.resolveStaffByPhone = resolveStaffByPhone;
+/** A staff member as the WhatsApp assistant sees them, from their users document. */
+function staffIdentityFromUser(id, data, phoneNumber = "") {
     const role = (0, whatsappCommon_1.clean)(data.role);
     return {
         kind: "staff",
-        id: rows[0].id,
+        id,
         uid: (0, whatsappCommon_1.clean)(data.uid) || null,
         name: (0, whatsappCommon_1.clean)(data.name) || (0, whatsappCommon_1.clean)(data.displayName) || (0, whatsappCommon_1.clean)(data.email) || "there",
         role,
@@ -109,11 +121,109 @@ async function resolveStaffByPhone(phoneNumber) {
         phoneNumber: (0, whatsappCommon_1.clean)(data.phone || data.phoneNumber) || phoneNumber,
         departmentId: (0, whatsappCommon_1.clean)(data.departmentId) || null,
         branchId: (0, whatsappCommon_1.clean)(data.assignedBranch || data.branchId) || null,
+        assignedProgramIds: idList(Array.isArray(data.assignedPrograms) ? data.assignedPrograms : [data.assignedProgramId]),
     };
 }
-exports.resolveStaffByPhone = resolveStaffByPhone;
+exports.staffIdentityFromUser = staffIdentityFromUser;
+// Program references are stored as ids, numbers or { id } objects.
+const idList = (values) => values.map((value) => (0, whatsappCommon_1.clean)(typeof value === "object" && value ? value.id : value)).filter(Boolean);
 const ownerIds = (identity) => Array.from(new Set([identity.id, identity.uid || ""].filter(Boolean)));
-const isOwnedBy = (identity, assigneeId) => ownerIds(identity).includes((0, whatsappCommon_1.clean)(assigneeId));
+exports.ownerIds = ownerIds;
+const isOwnedBy = (identity, assigneeId) => (0, exports.ownerIds)(identity).includes((0, whatsappCommon_1.clean)(assigneeId));
+const ALL_PROGRAMMES = "all";
+const ALL_PROGRAMMES_LABEL = "All programmes";
+const canSeeAllProgrammes = (identity) => ["system_admin", "director", "hod"].includes(identity.roleGroup);
+const programBranchId = (data) => (0, whatsappCommon_1.clean)(data.normalizedAssignedBranchId) || (0, whatsappCommon_1.clean)(data.branchId) ||
+    (0, whatsappCommon_1.clean)(typeof data.assignedBranch === "object" && data.assignedBranch ? data.assignedBranch.id : data.assignedBranch);
+async function programmesFor(identity) {
+    const key = roleKey(identity.role);
+    let docs = (await firebase_1.db.collection("programs").get()).docs
+        .filter((doc) => doc.data().isActive !== false && (0, whatsappCommon_1.clean)(doc.data().kind) !== "training");
+    if (key === "projectadmin" || key === "receptionist") {
+        docs = identity.branchId ? docs.filter((doc) => programBranchId(doc.data()) === identity.branchId) : [];
+    }
+    else if (key === "coordinator") {
+        docs = docs.filter((doc) => (identity.assignedProgramIds || []).includes(doc.id));
+    }
+    else if (identity.roleGroup === "hod" && identity.departmentId) {
+        docs = docs.filter((doc) => {
+            const ids = doc.data().participatingDepartmentIds;
+            return !Array.isArray(ids) || ids.length === 0 || ids.includes(identity.departmentId);
+        });
+    }
+    return docs
+        .map((doc) => ({ id: doc.id, name: (0, whatsappCommon_1.clean)(doc.data().name) || (0, whatsappCommon_1.clean)(doc.data().title) || "Programme" }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
+async function programmeContext(identity) {
+    const [options, state] = await Promise.all([
+        programmesFor(identity),
+        firebase_1.db.collection("whatsappAgentState").doc(identity.id).get(),
+    ]);
+    const allowAll = canSeeAllProgrammes(identity);
+    if (options.length <= 1)
+        return { options, allowAll, selected: options[0] || null, needsChoice: false };
+    const data = state.data() || {};
+    const stored = (0, whatsappCommon_1.clean)(data.programId);
+    const selected = options.find((option) => option.id === stored) || null;
+    const valid = !!selected || (stored === ALL_PROGRAMMES && allowAll);
+    return { options, allowAll, selected, needsChoice: !valid || (0, whatsappCommon_1.clean)(data.programChosenOn) !== todaySast() };
+}
+/** Programme ids a read is limited to (null: no limit) and the name to show with the result. */
+async function programmeFilter(identity) {
+    const { options, allowAll, selected } = await programmeContext(identity);
+    if (selected)
+        return { ids: new Set([selected.id]), label: selected.name };
+    // No programmes configured for this person: keep the reads as they were rather than empty them.
+    if (!options.length)
+        return { ids: null, label: null };
+    if (allowAll)
+        return { ids: null, label: ALL_PROGRAMMES_LABEL };
+    return { ids: new Set(options.map((option) => option.id)), label: null };
+}
+exports.programmeFilter = programmeFilter;
+const inProgramme = (filter, programId) => !filter.ids || filter.ids.has((0, whatsappCommon_1.clean)(programId));
+exports.inProgramme = inProgramme;
+/** SMEs with an accepted application to one of the programmes. */
+async function acceptedParticipantIds(programIds) {
+    const ids = Array.from(programIds);
+    const found = new Set();
+    for (let i = 0; i < ids.length; i += 30) {
+        const snapshot = await firebase_1.db.collection("applications")
+            .where("programId", "in", ids.slice(i, i + 30))
+            .select("participantId", "applicationStatus")
+            .get();
+        snapshot.docs
+            .filter((doc) => (0, whatsappCommon_1.clean)(doc.data().applicationStatus).toLowerCase() === "accepted")
+            .forEach((doc) => found.add((0, whatsappCommon_1.clean)(doc.data().participantId)));
+    }
+    found.delete("");
+    return found;
+}
+async function listProgrammes(identity) {
+    if (identity.roleGroup === "external" || identity.roleGroup === "unknown")
+        return fail(403, "not_permitted");
+    const { options, allowAll, selected, needsChoice } = await programmeContext(identity);
+    const current = selected || (allowAll && options.length > 1 && !needsChoice ? { id: ALL_PROGRAMMES, name: ALL_PROGRAMMES_LABEL } : null);
+    return ok({ programmes: options, allowAll: allowAll && options.length > 1, current, needsChoice });
+}
+async function selectProgramme(identity, payload) {
+    if (identity.roleGroup === "external" || identity.roleGroup === "unknown")
+        return fail(403, "not_permitted");
+    const programId = (0, whatsappCommon_1.clean)(payload.programId);
+    const { options, allowAll } = await programmeContext(identity);
+    const chosen = programId === ALL_PROGRAMMES && allowAll
+        ? { id: ALL_PROGRAMMES, name: ALL_PROGRAMMES_LABEL }
+        : options.find((option) => option.id === programId);
+    if (!chosen)
+        return fail(400, "programme_not_available");
+    await firebase_1.db.collection("whatsappAgentState").doc(identity.id).set({
+        programId: chosen.id,
+        programChosenOn: todaySast(),
+        updatedAt: firebase_1.admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return ok({ current: chosen });
+}
 /* -------------------------------------------------------------------- reads */
 const tally = (values) => {
     const counts = {};
@@ -123,24 +233,98 @@ const tally = (values) => {
     });
     return counts;
 };
+const scopeOf = (identity) => {
+    if (["system_admin", "director", "receptionist"].includes(identity.roleGroup))
+        return "organisation";
+    if (identity.roleGroup === "hod" && identity.departmentId)
+        return "department";
+    return "mine";
+};
+// Sessions that started up to an hour ago still count, so one in progress is not dropped.
+const UPCOMING_GRACE_MS = 60 * 60 * 1000;
+async function upcomingSessionDocs(identity, scope, programme) {
+    const from = Date.now() - UPCOMING_GRACE_MS;
+    let docs;
+    if (scope === "organisation") {
+        docs = (await firebase_1.db.collection("appointmentSessions")
+            .where("startAt", ">=", firebase_1.admin.firestore.Timestamp.fromMillis(from))
+            .orderBy("startAt")
+            .limit(200)
+            .get()).docs;
+    }
+    else if (scope === "department") {
+        docs = (await firebase_1.db.collection("appointmentSessions").where("departmentId", "==", identity.departmentId).limit(500).get()).docs;
+    }
+    else {
+        const found = new Map();
+        for (const id of (0, exports.ownerIds)(identity)) {
+            const snapshot = await firebase_1.db.collection("appointmentSessions").where("assigneeId", "==", id).limit(300).get();
+            snapshot.docs.forEach((doc) => found.set(doc.id, doc));
+        }
+        docs = Array.from(found.values());
+    }
+    return docs
+        .filter((doc) => {
+        const data = doc.data();
+        const start = data.startAt?.toMillis?.() ?? 0;
+        return !["cancelled", "completed"].includes((0, whatsappCommon_1.clean)(data.status).toLowerCase()) && start >= from &&
+            (0, exports.inProgramme)(programme, data.programId);
+    })
+        .sort((a, b) => (a.data().startAt?.toMillis?.() ?? 0) - (b.data().startAt?.toMillis?.() ?? 0));
+}
+/**
+ * Today's sessions for the morning summary: the same scope as the assistant's appointment list
+ * (department, organisation or own), across every programme the person works in rather than
+ * the one picked on WhatsApp.
+ */
+async function sessionsTodayFor(identity) {
+    const options = await programmesFor(identity);
+    const programme = canSeeAllProgrammes(identity) || !options.length
+        ? { ids: null, label: null }
+        : { ids: new Set(options.map((option) => option.id)), label: null };
+    const today = todaySast();
+    return (await upcomingSessionDocs(identity, scopeOf(identity), programme))
+        .filter((doc) => (0, exports.sastParts)(doc.data().startAt.toDate()).date === today)
+        .map((doc) => sessionSummary(doc.id, doc.data()));
+}
+exports.sessionsTodayFor = sessionsTodayFor;
+async function departmentName(identity) {
+    if (!identity.departmentId)
+        return null;
+    const snapshot = await firebase_1.db.collection("departments").doc(identity.departmentId).get();
+    return (0, whatsappCommon_1.clean)(snapshot.data()?.name) || null;
+}
 async function staffOverview(identity) {
     if (!["system_admin", "director", "hod"].includes(identity.roleGroup))
         return fail(403, "not_permitted");
-    const [participants, assignments, upcoming] = await Promise.all([
-        firebase_1.db.collection("participants").count().get(),
-        firebase_1.db.collection("assignedInterventions").select("assignmentStatus").get(),
-        firebase_1.db.collection("appointmentSessions")
-            .where("startAt", ">=", firebase_1.admin.firestore.Timestamp.now())
-            .count()
-            .get(),
+    const scope = scopeOf(identity);
+    const programme = await programmeFilter(identity);
+    const assignmentsQuery = scope === "organisation"
+        ? firebase_1.db.collection("assignedInterventions")
+        : scope === "department"
+            ? firebase_1.db.collection("assignedInterventions").where("departmentId", "==", identity.departmentId)
+            : firebase_1.db.collection("assignedInterventions").where("assigneeId", "in", (0, exports.ownerIds)(identity));
+    const organisationSmes = () => programme.ids
+        ? acceptedParticipantIds(programme.ids).then((ids) => ids.size)
+        : firebase_1.db.collection("participants").count().get().then((snap) => snap.data().count);
+    const [assignmentSnapshot, upcoming, participantCount, department] = await Promise.all([
+        assignmentsQuery.select("assignmentStatus", "participantId", "programId").get(),
+        upcomingSessionDocs(identity, scope, programme),
+        scope === "organisation" ? organisationSmes() : null,
+        scope === "organisation" ? null : departmentName(identity),
     ]);
+    const assignments = assignmentSnapshot.docs.filter((doc) => (0, exports.inProgramme)(programme, doc.data().programId));
     const body = {
-        participants: participants.data().count,
+        scope,
+        departmentName: department,
+        programme: programme.label,
+        // Outside the organisation view, count the SMEs these interventions are for.
+        participants: participantCount ?? new Set(assignments.map((doc) => (0, whatsappCommon_1.clean)(doc.data().participantId)).filter(Boolean)).size,
         assignments: {
-            total: assignments.size,
-            byStatus: tally(assignments.docs.map((doc) => (0, whatsappCommon_1.clean)(doc.data().assignmentStatus).toLowerCase())),
+            total: assignments.length,
+            byStatus: tally(assignments.map((doc) => (0, whatsappCommon_1.clean)(doc.data().assignmentStatus).toLowerCase())),
         },
-        upcomingSessions: upcoming.data().count,
+        upcomingSessions: upcoming.length,
     };
     if (identity.roleGroup !== "hod") {
         const users = await firebase_1.db.collection("users").select("role").get();
@@ -152,7 +336,8 @@ async function staffOverview(identity) {
     return ok(body);
 }
 async function governanceSummary(identity) {
-    if (!["system_admin", "director"].includes(identity.roleGroup))
+    // Feature governance is the system administrators' (directors get Performance instead).
+    if (identity.roleGroup !== "system_admin")
         return fail(403, "not_permitted");
     const [features, meetings] = await Promise.all([
         firebase_1.db.collection("featureGovernance").get(),
@@ -198,7 +383,7 @@ const sessionSummary = (id, data) => {
         interventionTitle: (0, whatsappCommon_1.clean)(data?.interventionTitle) || null,
         assigneeName: (0, whatsappCommon_1.clean)(data?.assigneeName) || null,
         start: formatWhen(start),
-        endTime: end ? sastParts(end).time : null,
+        endTime: end ? (0, exports.sastParts)(end).time : null,
         deliveryMethod: (0, whatsappCommon_1.clean)(data?.deliveryMethod) || null,
         location: (0, whatsappCommon_1.clean)(data?.location) || null,
         meetingLink: (0, whatsappCommon_1.clean)(data?.meetingLink) || null,
@@ -210,37 +395,13 @@ const sessionSummary = (id, data) => {
 async function myAppointments(identity) {
     if (identity.roleGroup === "external" || identity.roleGroup === "unknown")
         return fail(403, "not_permitted");
-    const now = Date.now();
-    let docs;
-    const orgWide = ["system_admin", "director", "receptionist"].includes(identity.roleGroup);
-    if (orgWide) {
-        const snapshot = await firebase_1.db.collection("appointmentSessions")
-            .where("startAt", ">=", firebase_1.admin.firestore.Timestamp.fromMillis(now - 60 * 60 * 1000))
-            .orderBy("startAt")
-            .limit(60)
-            .get();
-        docs = snapshot.docs;
-    }
-    else {
-        const found = new Map();
-        for (const id of ownerIds(identity)) {
-            const snapshot = await firebase_1.db.collection("appointmentSessions").where("assigneeId", "==", id).limit(300).get();
-            snapshot.docs.forEach((doc) => found.set(doc.id, doc));
-        }
-        docs = Array.from(found.values());
-    }
-    const sessions = docs
-        .filter((doc) => {
-        const data = doc.data();
-        const status = (0, whatsappCommon_1.clean)(data.status).toLowerCase();
-        const start = data.startAt?.toMillis?.() ?? 0;
-        return !["cancelled", "completed"].includes(status) && start >= now - 60 * 60 * 1000;
-    })
-        .sort((a, b) => (a.data().startAt?.toMillis?.() ?? 0) - (b.data().startAt?.toMillis?.() ?? 0))
-        .filter((doc) => identity.roleGroup !== "receptionist" || sastParts(doc.data().startAt.toDate()).date === todaySast())
+    const scope = scopeOf(identity);
+    const programme = await programmeFilter(identity);
+    const sessions = (await upcomingSessionDocs(identity, scope, programme))
+        .filter((doc) => identity.roleGroup !== "receptionist" || (0, exports.sastParts)(doc.data().startAt.toDate()).date === todaySast())
         .slice(0, 8)
         .map((doc) => sessionSummary(doc.id, doc.data()));
-    return ok({ appointments: sessions, scope: orgWide ? "organisation" : "mine" });
+    return ok({ appointments: sessions, scope, programme: programme.label });
 }
 const participantLabel = (data) => (0, whatsappCommon_1.clean)(data?.beneficiaryName) || (0, whatsappCommon_1.clean)(data?.participantName) || (0, whatsappCommon_1.clean)(data?.businessName) || (0, whatsappCommon_1.clean)(data?.companyName) || (0, whatsappCommon_1.clean)(data?.name);
 // System administrators oversee the programme: they can view appointments and interventions but
@@ -252,14 +413,249 @@ async function searchParticipants(identity, query) {
     const needle = shortText(query, 80).toLowerCase();
     if (needle.length < 2)
         return fail(400, "query_required");
-    const snapshot = await firebase_1.db.collection("participants").limit(2000).get();
-    const matches = snapshot.docs
+    const programme = await programmeFilter(identity);
+    const enrolled = programme.ids ? await acceptedParticipantIds(programme.ids) : null;
+    const scope = (0, findSmeLogic_1.findScope)(identity);
+    const reachable = await findableSmes(identity, scope, programme);
+    const allowed = reachable && enrolled ? new Set(Array.from(reachable).filter((id) => enrolled.has(id))) : reachable || enrolled;
+    const participants = await findParticipants(needle, allowed);
+    return ok({ participants, programme: programme.label, scope, ...(participants.length ? {} : { note: NOT_FOUND_NOTE[scope] }) });
+}
+// Why a search found nothing, so the assistant can say so instead of "no such SME".
+const NOT_FOUND_NOTE = {
+    own_work: "Only SMEs you have open interventions with can be found.",
+    department_plans: "Only SMEs whose development plan both your department and the SME have signed off can be found.",
+    programmes: "Only SMEs on your programmes can be found.",
+};
+/** The SMEs this person may find (findSmeLogic.ts), or null for everyone on their programmes. */
+async function findableSmes(identity, scope, programme) {
+    if (scope === "own_work") {
+        const rows = [];
+        for (const id of (0, exports.ownerIds)(identity)) {
+            (await firebase_1.db.collection("assignedInterventions").where("assigneeId", "==", id).limit(500).get()).docs
+                .forEach((doc) => rows.push(doc.data()));
+        }
+        return (0, findSmeLogic_1.smesWithOpenWork)(rows.filter((row) => (0, exports.inProgramme)(programme, row.programId)));
+    }
+    if (scope === "department_plans") {
+        const plans = (await firebase_1.db.collection("diagnosticPlans").get()).docs
+            .filter((doc) => (0, exports.inProgramme)(programme, doc.data().programId))
+            .map((doc) => ({ id: doc.id, data: doc.data() }));
+        return (0, findSmeLogic_1.smesWithConfirmedPlans)(plans, identity.departmentId || "");
+    }
+    return null;
+}
+/** SMEs whose name contains every word of the needle, limited to the enrolled ids when given. */
+async function findParticipants(needle, enrolled) {
+    const snapshot = await firebase_1.db.collection("participants")
+        .select("beneficiaryName", "participantName", "businessName", "companyName", "name")
+        .limit(2000)
+        .get();
+    return snapshot.docs
+        .filter((doc) => !enrolled || enrolled.has(doc.id))
         .map((doc) => ({ id: doc.id, name: participantLabel(doc.data()) }))
         .filter((row) => row.name && needle.split(" ").every((token) => row.name.toLowerCase().includes(token)))
         .slice(0, 6);
-    return ok({ participants: matches });
 }
-const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"];
+const POPIA_KEY = "popia";
+const docKey = (label) => (0, whatsappCommon_1.clean)(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const isBankDocument = (key) => key.includes("bank");
+// Words staff use for a document, mapped to part of its key.
+const DOCUMENT_ALIASES = {
+    id: "id-copy",
+    "id-document": "id-copy",
+    identity: "id-copy",
+    bee: "b-bbee",
+    bbbee: "b-bbee",
+    "b-bbee": "b-bbee",
+    tax: "sars",
+    tcs: "sars",
+    "tax-clearance": "sars",
+    address: "proof-of-address",
+    "proof-of-residence": "proof-of-address",
+    registration: "cipc",
+    "company-registration": "cipc",
+    agreement: "memorandum-of-agreement",
+    moa: "memorandum-of-agreement",
+    contract: "pre-incubation-contract",
+    gap: "gap-analysis",
+    bank: "bank",
+    "bank-letter": "bank",
+    privacy: POPIA_KEY,
+    "popia-act": POPIA_KEY,
+};
+/**
+ * Who may have SME documents sent to them, and whether that includes the Bank Confirmation Letter.
+ * System admins and directors oversee everything; operations and coordinators only in the ROM and
+ * M&E departments (or their sub-departments). Banking follows the banking-details rule: admins
+ * and ROM, not M&E or directors.
+ */
+async function documentAccess(identity) {
+    if (identity.roleGroup === "system_admin")
+        return { allowed: true, banking: true };
+    if (identity.roleGroup === "director")
+        return { allowed: true, banking: false };
+    if (!["hod", "coordinator"].includes(identity.roleGroup) || !identity.departmentId)
+        return { allowed: false, banking: false };
+    const [rom, monitoring] = await Promise.all([
+        (0, departmentRoles_1.isDepartmentInRole)(identity.departmentId, "rom"),
+        (0, departmentRoles_1.isDepartmentInRole)(identity.departmentId, "monitoring"),
+    ]);
+    return { allowed: rom || monitoring, banking: rom };
+}
+exports.documentAccess = documentAccess;
+const millis = (value) => value?.toMillis?.() ?? (Date.parse((0, whatsappCommon_1.clean)(value)) || 0);
+const dateOnly = (value) => {
+    if (value?.toDate)
+        return (0, exports.sastParts)(value.toDate()).date;
+    const text = (0, whatsappCommon_1.clean)(value);
+    return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : null;
+};
+/**
+ * The SME's documents: the newest upload for each of their programme's required documents, read
+ * where the compliance pages read them (subcollection and embedded arrays), the signed POPIA
+ * notice, and the required documents still missing.
+ */
+async function smeDocumentsOf(participantId) {
+    const [records, applications] = await Promise.all([
+        (0, complianceExpiry_1.participantComplianceRecords)(participantId),
+        firebase_1.db.collection("applications").where("participantId", "==", participantId).get(),
+    ]);
+    const applicationId = records.application?.id || null;
+    const documents = [];
+    // POPIA is signed once, on whichever application the SME signed it.
+    const popia = applications.docs
+        .map((doc) => ({ id: doc.id, agreement: doc.data().signedAgreements?.["popia-act"] }))
+        .filter((row) => (0, whatsappCommon_1.clean)(row.agreement?.pdfUrl))
+        .sort((a, b) => millis(b.agreement.acceptedAt) - millis(a.agreement.acceptedAt))[0];
+    if (popia) {
+        documents.push({
+            key: POPIA_KEY, label: "POPIA notice", url: (0, whatsappCommon_1.clean)(popia.agreement.pdfUrl), fileName: "popia.pdf",
+            issued: dateOnly(popia.agreement.acceptedAt), expires: null, status: null, applicationId: popia.id,
+        });
+    }
+    const missing = [];
+    if (records.requirements.length) {
+        for (const state of (0, complianceExpiry_1.requirementStates)(records.documents, records.requirements)) {
+            if (!state.document) {
+                missing.push(state.title);
+                continue;
+            }
+            documents.push({
+                key: docKey(state.title), label: state.title, url: (0, whatsappCommon_1.clean)(state.document.url), fileName: (0, whatsappCommon_1.clean)(state.document.fileName),
+                issued: dateOnly(state.document.issueDate), expires: state.expires ? (0, exports.sastParts)(state.expires).date : null,
+                status: state.status, applicationId,
+            });
+        }
+    }
+    else {
+        // The programme lists no requirements: offer every upload, the newest of each type.
+        const newest = new Map();
+        const uploaded = [...records.documents].sort((a, b) => millis(b.updatedAt || b.createdAt || b.uploadedAt) - millis(a.updatedAt || a.createdAt || a.uploadedAt));
+        for (const item of uploaded) {
+            const label = (0, whatsappCommon_1.clean)(item?.type || item?.documentName || item?.title);
+            const key = docKey(label);
+            if (!key || newest.has(key) || !(0, whatsappCommon_1.clean)(item?.url))
+                continue;
+            newest.set(key, {
+                key, label, url: (0, whatsappCommon_1.clean)(item.url), fileName: (0, whatsappCommon_1.clean)(item.fileName),
+                issued: dateOnly(item.issueDate), expires: dateOnly(item.expiryDate), status: (0, whatsappCommon_1.clean)(item.status).toLowerCase() || null, applicationId,
+            });
+        }
+        documents.push(...newest.values());
+    }
+    return { documents, missing };
+}
+/** Documents matching what was asked for: an exact key, an alias, or words of the type name. */
+function matchDocuments(documents, wanted) {
+    const key = docKey(wanted);
+    const exact = documents.filter((doc) => doc.key === key);
+    if (exact.length)
+        return exact;
+    const alias = DOCUMENT_ALIASES[key];
+    if (alias)
+        return documents.filter((doc) => doc.key.includes(alias));
+    const words = key.split("-").filter((word) => word.length > 1);
+    return words.length ? documents.filter((doc) => words.every((word) => doc.key.includes(word))) : [];
+}
+const fileSafe = (value) => value.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+const extensionOf = (fileName) => (/\.([a-z0-9]{2,5})$/i.exec(fileName)?.[1] || "pdf").toLowerCase();
+async function smeDocument(identity, payload) {
+    const access = await documentAccess(identity);
+    if (!access.allowed)
+        return fail(403, "not_permitted");
+    // Only SMEs enrolled in a programme this person is looking at.
+    const programme = await programmeFilter(identity);
+    const enrolled = programme.ids ? await acceptedParticipantIds(programme.ids) : null;
+    let participantId = (0, whatsappCommon_1.clean)(payload.participantId);
+    if (participantId && enrolled && !enrolled.has(participantId)) {
+        return ok({ found: false, reason: "not_in_programme", programme: programme.label });
+    }
+    if (!participantId) {
+        const needle = shortText(payload.query, 80).toLowerCase();
+        if (needle.length < 2)
+            return fail(400, "query_required");
+        const matches = await findParticipants(needle, enrolled);
+        if (matches.length !== 1)
+            return ok({ found: false, reason: matches.length ? "several_matches" : "no_match", matches });
+        participantId = matches[0].id;
+    }
+    const participant = await firebase_1.db.collection("participants").doc(participantId).get();
+    if (!participant.exists)
+        return ok({ found: false, reason: "no_match", matches: [] });
+    const name = participantLabel(participant.data()) || "SME";
+    const all = await smeDocumentsOf(participantId);
+    const visible = all.documents.filter((doc) => access.banking || !isBankDocument(doc.key));
+    const today = todaySast();
+    const listing = {
+        found: true,
+        participantId,
+        participantName: name,
+        documents: visible.map((doc) => ({
+            key: doc.key, label: doc.label, issued: doc.issued, expires: doc.expires, expired: !!doc.expires && doc.expires < today,
+            status: doc.status,
+        })),
+        missing: all.missing.filter((label) => access.banking || !isBankDocument(docKey(label))),
+    };
+    const wanted = shortText(payload.document || payload.documentType, 80);
+    if (!wanted || ["list", "all", "documents", "everything"].includes(wanted.toLowerCase()))
+        return ok(listing);
+    const wantsBank = isBankDocument(docKey(wanted)) || DOCUMENT_ALIASES[docKey(wanted)] === "bank";
+    if (wantsBank && !access.banking)
+        return ok({ ...listing, reason: "bank_letter_not_permitted" });
+    const matches = matchDocuments(visible, wanted);
+    if (matches.length !== 1) {
+        return ok({ ...listing, reason: matches.length ? "several_documents" : "document_not_uploaded", asked: wanted });
+    }
+    const doc = matches[0];
+    await firebase_1.db.collection("whatsappDocumentRequests").add({
+        requestedBy: identity.id,
+        requestedByName: identity.name,
+        requestedByRole: identity.role,
+        participantId,
+        participantName: name,
+        applicationId: all.documents.find((item) => item.key === doc.key)?.applicationId || null,
+        documentType: doc.label,
+        channel: identity.channel || "whatsapp",
+        requestedAt: firebase_1.admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return ok({
+        found: true,
+        participantId,
+        participantName: name,
+        document: {
+            url: doc.url,
+            filename: `${fileSafe(name)} - ${fileSafe(doc.label)}.${extensionOf(doc.fileName)}`,
+            label: doc.label,
+            signedOn: doc.key === POPIA_KEY ? doc.issued : null,
+            issued: doc.key === POPIA_KEY ? null : doc.issued,
+            expires: doc.expires,
+            expired: !!doc.expires && doc.expires < today,
+            status: doc.status,
+        },
+    });
+}
+const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"]; // the same list as findSmeLogic.isOpenAssignment
 async function searchAssignments(identity, payload) {
     if (!SCHEDULERS.includes(identity.roleGroup))
         return fail(403, "not_permitted");
@@ -267,13 +663,20 @@ async function searchAssignments(identity, payload) {
     const needle = shortText(payload.query, 80).toLowerCase();
     if (!participantId && needle.length < 2)
         return fail(400, "query_required");
+    const programme = await programmeFilter(identity);
+    // A head of department sees their department's interventions for the SME, whoever they're assigned to
+    // (they assign the work); everyone else sees their own.
+    const department = (0, findSmeLogic_1.findScope)(identity) === "department_plans" ? identity.departmentId : null;
     let docs = [];
     if (participantId) {
         docs = (await firebase_1.db.collection("assignedInterventions").where("participantId", "==", participantId).limit(100).get()).docs;
     }
+    else if (department) {
+        docs = (await firebase_1.db.collection("assignedInterventions").where("departmentId", "==", department).limit(1000).get()).docs;
+    }
     else {
         const found = new Map();
-        for (const id of ownerIds(identity)) {
+        for (const id of (0, exports.ownerIds)(identity)) {
             (await firebase_1.db.collection("assignedInterventions").where("assigneeId", "==", id).limit(500).get()).docs
                 .forEach((doc) => found.set(doc.id, doc));
         }
@@ -281,8 +684,9 @@ async function searchAssignments(identity, payload) {
     }
     const assignments = docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((row) => !INACTIVE_ASSIGNMENT.includes((0, whatsappCommon_1.clean)(row.assignmentStatus).toLowerCase()))
-        .filter((row) => isOwnedBy(identity, row.assigneeId))
+        .filter((row) => (0, findSmeLogic_1.isOpenAssignment)(row))
+        .filter((row) => (department ? (0, whatsappCommon_1.clean)(row.departmentId) === department : isOwnedBy(identity, row.assigneeId)))
+        .filter((row) => (0, exports.inProgramme)(programme, row.programId))
         .filter((row) => !needle || (0, whatsappCommon_1.clean)(row.participantName).toLowerCase().includes(needle))
         .slice(0, 8)
         .map((row) => ({
@@ -294,6 +698,8 @@ async function searchAssignments(identity, payload) {
         assigneeName: (0, whatsappCommon_1.clean)(row.assigneeName) || null,
         cycleKey: (0, whatsappCommon_1.clean)(row.cycleKey) || null,
         grouped: (0, whatsappCommon_1.clean)(row.type) === "grouped" || !!(0, whatsappCommon_1.clean)(row.groupKey),
+        // Only the person it's assigned to can book it from WhatsApp.
+        yours: isOwnedBy(identity, row.assigneeId),
     }));
     return ok({ assignments });
 }
@@ -384,7 +790,7 @@ async function loadSchedule(identity, params) {
     if (hour < 6 || hour >= 18)
         throw new UserError("Appointments must start between 06:00 and 18:00.");
     const created = assignment.createdAt?.toDate?.() || assignment.assignedAt?.toDate?.() || null;
-    if (created && date < sastParts(created).date) {
+    if (created && date < (0, exports.sastParts)(created).date) {
         throw new UserError("The appointment can't be earlier than the date the intervention was assigned.");
     }
     const programId = (0, whatsappCommon_1.clean)(assignment.programId);
@@ -430,8 +836,8 @@ async function validateSchedule(identity, raw) {
     return {
         params: {
             assignedInterventionId: context.assignmentId,
-            date: sastParts(context.start).date,
-            time: sastParts(context.start).time,
+            date: (0, exports.sastParts)(context.start).date,
+            time: (0, exports.sastParts)(context.start).time,
             durationMinutes,
             deliveryMethod,
             location,
@@ -660,10 +1066,11 @@ async function stateSet(identity, payload) {
         text: shortText(turn?.text, 700),
     }))
         .filter((turn) => turn.text);
+    // Merge, so the chosen programme survives the conversation history being rewritten.
     await firebase_1.db.collection("whatsappAgentState").doc(identity.id).set({
         history,
         updatedAt: firebase_1.admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }, { merge: true });
     return ok({ saved: true });
 }
 /* ----------------------------------------------------------------- dispatch */
@@ -678,6 +1085,9 @@ exports.STAFF_ACTIONS = new Set([
     "cancel_proposal",
     "agent_state_get",
     "agent_state_set",
+    "list_programmes",
+    "select_programme",
+    "sme_document",
 ]);
 async function handleStaffAction(action, identity, payload) {
     switch (action) {
@@ -691,6 +1101,9 @@ async function handleStaffAction(action, identity, payload) {
         case "cancel_proposal": return cancelProposal(identity);
         case "agent_state_get": return stateGet(identity);
         case "agent_state_set": return stateSet(identity, payload);
+        case "list_programmes": return listProgrammes(identity);
+        case "select_programme": return selectProgramme(identity, payload);
+        case "sme_document": return smeDocument(identity, payload);
         default: return fail(400, "unsupported_action");
     }
 }

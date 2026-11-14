@@ -20,6 +20,8 @@ import { type TrainingInvitee, inviteeKey } from "./attendeeStorage";
  */
 
 export const trainingInterventionId = (trainingId: string) => `training_${trainingId}`;
+/** A training session's appointments carry trainingInterventionId and no assigned intervention. */
+export const isTrainingInterventionId = (interventionId?: string | null) => String(interventionId || "").startsWith("training_");
 export const trainingSessionGroupKey = (trainingId: string, planSessionId: string) => `training:${trainingId}:${planSessionId}`;
 
 export const newPlanSessionId = () => `ps_${crypto.randomUUID().slice(0, 8)}`;
@@ -163,7 +165,8 @@ export function scheduleProblem(session: TrainingPlanSession, invitees: Training
   if (!session.startAt || !session.endAt) return "Set a date and time first.";
   if (new Date(session.endAt) <= new Date(session.startAt)) return "The session must end after it starts.";
   if (!session.facilitatorId) return "Choose a facilitator.";
-  if (!invitees.length) return session.category ? `No one attending is in the ${session.category} category yet.` : "No SMEs are enrolled in this training yet.";
+  // Enrolled SMEs whose people all don't attend leave no one to invite, too.
+  if (!invitees.length) return session.category ? `No one attending is in the ${session.category} category yet.` : "No one from this training's SMEs is set to attend yet.";
   return undefined;
 }
 

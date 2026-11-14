@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./firebase";
 import { suppressRecordNotifications } from "./syntheticData";
 import { assessComplianceDocuments, loadComplianceContext } from "./complianceExpiry";
@@ -10,6 +10,7 @@ import {
   computeRiskScore,
   deriveRiskInputs,
   riskTrend,
+  smeJoinedAt,
   shouldAlert,
   suggestNextStep,
 } from "./smeRiskLogic";
@@ -63,6 +64,9 @@ export async function runSmeRiskScoring(now = new Date()) {
     usersSnapshot,
     compliance,
     romDepartmentIds,
+    plansSnapshot,
+    departmentsSnapshot,
+    closuresSnapshot,
   ] = await Promise.all([
     db.collection("applications").where("applicationStatus", "in", ["accepted", "Accepted"]).get(),
     db.collection("participants").get(),
@@ -76,6 +80,9 @@ export async function runSmeRiskScoring(now = new Date()) {
     db.collection("users").get(),
     loadComplianceContext(),
     departmentIdsForRole("rom"),
+    db.collection("diagnosticPlans").get(),
+    db.collection("departments").get(),
+    db.collection("interventionClosures").where("status", "==", "closed").get(),
   ]);
 
   const participants = new Map(participantsSnapshot.docs.map((doc) => [doc.id, doc.data() as any]));
@@ -86,6 +93,17 @@ export async function runSmeRiskScoring(now = new Date()) {
   const queries = groupBy(queriesSnapshot.docs.map((doc) => doc.data() as any), (row) => clean(row.context?.participantId));
   const bounced = new Set(suppressionsSnapshot.docs.map((doc) => clean(doc.data().participantId)).filter(Boolean));
   const previous = new Map(snapshotsSnapshot.docs.map((doc) => [doc.id, doc.data() as any]));
+  // Department coverage, as the register reads it (smeRiskLogic departmentCoverage).
+  const planByParticipant = new Map(plansSnapshot.docs.map((doc) => [clean(doc.data().participantId), doc.data() as any]));
+  const departmentsById = Object.fromEntries(departmentsSnapshot.docs.map((doc) => [doc.id, doc.data()]));
+  const closedByParticipant = new Map<string, Set<string>>();
+  closuresSnapshot.docs.forEach((doc) => {
+    const participantId = clean(doc.data().participantId);
+    const interventionId = clean(doc.data().interventionId);
+    if (!participantId || !interventionId) return;
+    if (!closedByParticipant.has(participantId)) closedByParticipant.set(participantId, new Set());
+    closedByParticipant.get(participantId)!.add(interventionId);
+  });
 
   const users = usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() as any }))
     .filter((user) => !["inactive", "disabled", "deleted"].includes(lower(user.status)));
@@ -141,6 +159,12 @@ export async function runSmeRiskScoring(now = new Date()) {
       openQueries: (queries.get(participantId) || []).length,
       emailBounced: bounced.has(participantId),
       compliance: counts,
+      joinedAt: smeJoinedAt(application, participant),
+      coverage: {
+        plan: planByParticipant.get(participantId) || null,
+        departmentsById,
+        closedInterventionIds: closedByParticipant.get(participantId),
+      },
     }, now.getTime());
 
     const result = computeRiskScore(inputs);
@@ -213,7 +237,7 @@ export async function runSmeRiskScoring(now = new Date()) {
       participantId: alert.participantId,
       participantName: alert.name,
       programId: alert.programId || null,
-      link: "/operations/participants/risk",
+      link: "/participants/risk",
     });
     await db.collection(SNAPSHOTS).doc(alert.participantId).update({ alertedLevel: alert.level, alertedAt: admin.firestore.FieldValue.serverTimestamp() });
   }
@@ -221,7 +245,7 @@ export async function runSmeRiskScoring(now = new Date()) {
   return { scored: writes.length, alerted: alerts.length };
 }
 
-export const smeRiskScoringCron = onSchedule(
+export const smeRiskScoringCron = scheduledJob("smeRiskScoringCron",
   {
     region: "us-central1",
     schedule: "0 6 * * *",

@@ -24,7 +24,8 @@ class AttentionTests(unittest.TestCase):
         for question in ("Which SMEs need me this week?", "what needs my attention", "Who should I focus on today?",
                          "which smes should I prioritise", "Where should I start this week?", "Prioritise my SMEs for this week"):
             self.assertTrue(asks_for_attention(question), question)
-        for question in ("How many interventions are active?", "Tell me about Zungu Trading", "Do we need more facilitators?"):
+        for question in ("How many interventions are active?", "Tell me about Zungu Trading", "Do we need more facilitators?",
+                         "Prepare that step for me to confirm, or tell me what you need from me to do it."):
             self.assertFalse(asks_for_attention(question), question)
 
     def test_ranked_most_pressing_first_with_one_next_step_each(self):
@@ -64,12 +65,31 @@ class AttentionTests(unittest.TestCase):
         programmes = rank_attention(*data, {"kind": "programmes", "programmeIds": ["p2"]}, NOW)
         self.assertEqual([item["participantId"] for item in programmes["items"]], ["b"])
 
+    def test_a_head_of_department_gets_the_smes_their_department_works_with_and_only_its_work(self):
+        legal = {"kind": "department", "departmentIds": ["legal"], "programmeIds": []}
+        result = rank_attention(
+            [snap("a", "High"), snap("b", "Critical")],
+            [
+                assignment("a", NOW - 30 * DAY, status="completed", departmentId="legal"),
+                assignment("a", NOW - DAY, departmentId="finance", interventionTitle="Bookkeeping"),
+                assignment("c", NOW - DAY, departmentId="legal", interventionTitle="Contract Management"),
+            ],
+            [{"participantId": "a", "status": "awaiting_hod", "interventionTitle": "Bookkeeping", "departmentId": "finance",
+              "evidenceCheck": {"verdict": "weak"}, "programId": "p1"}],
+            {}, legal, NOW,
+        )
+        self.assertEqual([item["participantId"] for item in result["items"]], ["a", "c"], "b has no Legal work, so it isn't theirs")
+        a = result["items"][0]
+        self.assertNotIn("Bookkeeping", " ".join(a["why"]) + a["nextStep"], "Finance's overdue work and weak MOV are Finance's to act on")
+        self.assertIn("Contract Management", result["items"][1]["nextStep"])
+
     def test_visibility_by_role(self):
         self.assertEqual(visibility_for("system_admin", "u", None), {"kind": "all"})
         self.assertEqual(visibility_for("director", "u", ["p1"]), {"kind": "programmes", "programmeIds": ["p1"]})
         self.assertIsNone(visibility_for("projectadmin", "u", None))
         self.assertEqual(visibility_for("coordinator", "u", None)["kind"], "own")
         self.assertIsNone(visibility_for("incubatee", "u", None))
+        self.assertEqual(visibility_for("operations", "u", None, ["legal", "legal-sub"])["kind"], "department")
 
 
 if __name__ == "__main__":

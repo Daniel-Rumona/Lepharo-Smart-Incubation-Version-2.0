@@ -1,231 +1,126 @@
 import React, { useState } from 'react'
-import { Card, List, Tag, Button, Space, Empty, Badge, Modal } from 'antd'
-import {
-    EyeOutlined,
-    EditOutlined,
-    UserOutlined,
-    ArrowRightOutlined
-} from '@ant-design/icons'
+import { Avatar, Button, Card, Drawer, Empty } from 'antd'
+import { ExclamationCircleFilled, RightOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { Inquiry, PRIORITY_COLORS, STATUS_COLORS } from '@/types/inquiry'
 import { formatDistanceToNow } from 'date-fns'
-import { MotionCard } from '../dashboards/metrics/Header'
+import { Inquiry, PRIORITY_COLORS, STATUS_COLORS } from '@/types/inquiry'
 import InquiryDetail from './InquiryDetail'
-import {
-  channelLabel,
-  resolveInquiryAudience,
-  resolveInquiryChannel
-} from '@/utils/inquirySource'
+import { channelLabel, resolveInquiryAudience, resolveInquiryChannel } from '@/utils/inquirySource'
+import '@/styles/admin-overview.css'
+import '@/styles/receptionist-dashboard.css'
+
+/*
+ * Five inquiries at the branch, to read only: open urgent ones first, marked
+ * in red, then the newest of the rest. No paging and no editing here: both
+ * happen on the inquiries page, behind "View all".
+ */
+
+const SHOWN = 5
 
 interface RecentInquiriesProps {
+    /** All the branch's inquiries, newest first. */
     inquiries: Inquiry[]
+    /** The open urgent ones (inquiryService.getReceptionistDashboard decides which). */
+    urgentInquiries: Inquiry[]
     onRefresh: () => void
 }
 
-const RecentInquiries: React.FC<RecentInquiriesProps> = ({
-    inquiries,
-    onRefresh
-}) => {
+const initials = (inquiry: Inquiry) =>
+    `${inquiry.contactInfo.firstName?.charAt(0) || ''}${inquiry.contactInfo.lastName?.charAt(0) || ''}`.toUpperCase() || '?'
+
+const RecentInquiries: React.FC<RecentInquiriesProps> = ({ inquiries, urgentInquiries }) => {
     const navigate = useNavigate()
     const [selectedInquiryId, setSelectedInquiryId] = useState<string | null>(null)
 
-    const handleViewInquiry = (inquiryId: string) => {
-        setSelectedInquiryId(inquiryId)
-    }
-
-    const handleEditInquiry = (inquiryId: string) => {
-        navigate(`/receptionist/inquiries/${inquiryId}/edit`)
-    }
-
-    const handleViewAll = () => {
-        navigate('/receptionist/inquiries')
-    }
-
-    if (inquiries.length === 0) {
-        return (
-            <MotionCard
-                title='Recent Inquiries'
-                extra={
-                    <Button
-                        icon={<ArrowRightOutlined />}
-                        iconPosition='end'
-                        type='link'
-                        onClick={handleViewAll}
-                    >
-                        View All
-                    </Button>
-                }
-            >
-                <Empty
-                    description='No recent inquiries'
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
-            </MotionCard>
-        )
-    }
+    const urgentIds = new Set(urgentInquiries.map(i => i.id))
+    const urgentFirst = [...urgentInquiries].sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime())
+    const shown = [...urgentFirst, ...inquiries.filter(i => !urgentIds.has(i.id))].slice(0, SHOWN)
+    const urgentCount = urgentInquiries.length
 
     return (
         <>
-        <MotionCard
-            title='Recent Inquiries'
-            extra={
-                <Button
-                    icon={<ArrowRightOutlined />}
-                    iconPosition='end'
-                    type='link'
-                    onClick={handleViewAll}
-                >
-                    View All ({inquiries.length})
-                </Button>
-            }
-        >
-            <List
-                itemLayout='horizontal'
-                dataSource={inquiries}
-                split={false}
-                pagination={{
-                    pageSize: 4,
-                    size: 'small',
-                    hideOnSinglePage: true,
-                    showSizeChanger: false,
-                    position: 'bottom'
-                }}
-                renderItem={inquiry => (
-                    <List.Item
-                        key={inquiry.id}
-                        style={{
-                            padding: '10px 12px',
-                            marginBottom: 8,
-                            border: '1px solid #f0f0f0',
-                            borderRadius: 10,
-                            alignItems: 'center'
-                        }}
-                        actions={[
-                            <Space key='actions' size={10} wrap={false}>
-                                <Button
-                                    type='default'
-                                    size='middle'
-                                    shape='round'
-                                    icon={<EyeOutlined />}
-                                    onClick={() => handleViewInquiry(inquiry.id)}
-                                    style={{
-                                        color: '#1677ff',
-                                        borderColor: '#1677ff',
-                                        background: '#e6f4ff',
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    View
-                                </Button>
-                                <Button
-                                    type='default'
-                                    size='middle'
-                                    shape='round'
-                                    icon={<EditOutlined />}
-                                    onClick={() => handleEditInquiry(inquiry.id)}
-                                    style={{
-                                        color: '#d46b08',
-                                        borderColor: '#fa8c16',
-                                        background: '#fff7e6',
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    Edit
-                                </Button>
-                            </Space>
-                        ]}
-                    >
-                        <List.Item.Meta
-                            title={
-                                <div
-                                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                                >
-                                    <span>
-                                        {inquiry.contactInfo.firstName}{' '}
-                                        {inquiry.contactInfo.lastName}
-                                    </span>
-                                    {resolveInquiryAudience(inquiry as any) === 'Incubatee' && (
-                                        <Badge
-                                            count={<UserOutlined style={{ color: '#1890ff' }} />}
-                                            title='SME Inquiry'
-                                            style={{ backgroundColor: '#e6f7ff' }}
-                                        />
-                                    )}
-                                    <Tag
-                                        color={PRIORITY_COLORS[inquiry.priority]}
-                                        style={{ fontSize: '10px' }}
+            <Card className='admin-card' bordered={false}>
+                <div className='admin-card-head'>
+                    <div>
+                        <h3>Recent inquiries</h3>
+                        <span>
+                            {inquiries.length
+                                ? urgentCount
+                                    ? `${urgentCount} urgent shown first · ${inquiries.length.toLocaleString()} at your branch`
+                                    : `Latest ${shown.length} of ${inquiries.length.toLocaleString()} at your branch`
+                                : 'Nothing logged at your branch yet'}
+                        </span>
+                    </div>
+                    <Button type='text' size='small' onClick={() => navigate('/inquiries')}>
+                        View all <RightOutlined />
+                    </Button>
+                </div>
+
+                {shown.length ? (
+                    <ul className='rcp-inquiry-list'>
+                        {shown.map(inquiry => {
+                            const name = `${inquiry.contactInfo.firstName || ''} ${inquiry.contactInfo.lastName || ''}`.trim() || 'Unnamed contact'
+                            const detail = [
+                                inquiry.inquiryDetails?.inquiryType,
+                                inquiry.contactInfo.company,
+                                resolveInquiryAudience(inquiry as any) === 'Incubatee' ? 'SME' : inquiry.programId ? '' : 'Non-incubatee'
+                            ]
+                                .filter(Boolean)
+                                .join(' · ')
+                            return (
+                                <li key={inquiry.id} className={urgentIds.has(inquiry.id) ? 'is-urgent' : undefined}>
+                                    <button
+                                        type='button'
+                                        className='rcp-inquiry-main'
+                                        onClick={() => setSelectedInquiryId(inquiry.id)}
+                                        aria-label={`Open the inquiry from ${name}`}
                                     >
-                                        {inquiry.priority}
-                                    </Tag>
-                                    <Tag
-                                        color={STATUS_COLORS[inquiry.status]}
-                                        style={{ fontSize: '10px' }}
-                                    >
-                                        {inquiry.status}
-                                    </Tag>
-                                    {!inquiry.programId && (
-                                        <Tag color='default' style={{ fontSize: '10px' }}>
-                                            Non-incubatee
-                                        </Tag>
-                                    )}
-                                </div>
-                            }
-                            description={
-                                <Space
-                                    direction='vertical'
-                                    size='small'
-                                    style={{ width: '100%' }}
-                                >
-                                    <div style={{ color: '#666', lineHeight: 1.35 }}>
-                                        {inquiry.inquiryDetails.inquiryType}
-                                        {inquiry.contactInfo.company &&
-                                            ` • ${inquiry.contactInfo.company}`}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#999', lineHeight: 1.3 }}>
-                                        {formatDistanceToNow(inquiry.submittedAt, {
-                                            addSuffix: true
-                                        })}{' '}
-                                        • {channelLabel(resolveInquiryChannel(inquiry.source))}
-                                    </div>
-                                </Space>
-                            }
-                        />
-                        <div
-                            style={{
-                                maxWidth: '100%',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                color: '#666',
-                                fontSize: '13px'
-                            }}
-                        >
-                            {inquiry.inquiryDetails.description}
-                        </div>
-                    </List.Item>
+                                        <Avatar size={38} className='rcp-inquiry-avatar'>
+                                            {initials(inquiry)}
+                                        </Avatar>
+                                        <span className='rcp-inquiry-copy'>
+                                            <span className='rcp-inquiry-top'>
+                                                <strong>{name}</strong>
+                                                <time>{formatDistanceToNow(inquiry.submittedAt, { addSuffix: true })}</time>
+                                            </span>
+                                            <span className='rcp-inquiry-detail'>{detail || 'Inquiry'}</span>
+                                            <span className='rcp-inquiry-meta'>
+                                                {urgentIds.has(inquiry.id) && (
+                                                    <span className='rcp-urgent-flag'>
+                                                        <ExclamationCircleFilled /> Urgent
+                                                    </span>
+                                                )}
+                                                <span className='rcp-pill' style={{ ['--pill' as any]: STATUS_COLORS[inquiry.status as keyof typeof STATUS_COLORS] || '#8c8c8c' }}>
+                                                    {inquiry.status}
+                                                </span>
+                                                {!urgentIds.has(inquiry.id) && (
+                                                    <span className='rcp-pill' style={{ ['--pill' as any]: PRIORITY_COLORS[inquiry.priority] || '#8c8c8c' }}>
+                                                        {inquiry.priority}
+                                                    </span>
+                                                )}
+                                                <span className='rcp-inquiry-channel'>{channelLabel(resolveInquiryChannel(inquiry.source))}</span>
+                                            </span>
+                                        </span>
+                                    </button>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No inquiries yet' />
                 )}
-            />
-        </MotionCard>
-        <Modal
-            open={Boolean(selectedInquiryId)}
-            onCancel={() => setSelectedInquiryId(null)}
-            footer={null}
-            width={1240}
-            style={{ maxWidth: 'calc(100vw - 24px)' }}
-            centered
-            destroyOnClose
-            styles={{
-                body: {
-                    maxHeight: '78vh',
-                    overflowY: 'auto',
-                    overflowX: 'hidden'
-                }
-            }}
-        >
-            {selectedInquiryId && (
-                <InquiryDetail inquiryId={selectedInquiryId} embedded />
-            )}
-        </Modal>
+            </Card>
+
+            <Drawer
+                open={Boolean(selectedInquiryId)}
+                onClose={() => setSelectedInquiryId(null)}
+                width='min(720px, 100vw)'
+                title={null}
+                destroyOnClose
+                styles={{ body: { padding: 24 } }}
+            >
+                {selectedInquiryId && <InquiryDetail inquiryId={selectedInquiryId} embedded />}
+            </Drawer>
         </>
     )
 }

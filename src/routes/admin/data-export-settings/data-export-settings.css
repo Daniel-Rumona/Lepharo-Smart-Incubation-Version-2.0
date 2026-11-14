@@ -1,0 +1,45 @@
+/* Data Export Permissions: the review workspace (components/workspace) plus the
+   dataset switches in the detail pane. Colours come from the --app-* tokens. */
+
+/* Bulk choices sit with Save; they wrap under the name when the panel is narrow. */
+.dxs-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.dxs-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.dxs-group-head .ws-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.dxs-group-count {
+    font-weight: 500;
+    color: var(--app-text-muted);
+}
+
+/* A whole row toggles its switch; an allowed dataset picks up the accent edge. */
+.dxs-dataset.ws-row {
+    cursor: pointer;
+}
+
+.dxs-dataset.is-on {
+    border-color: var(--app-accent-border-strong, var(--app-accent));
+    background: var(--app-accent-wash, var(--app-surface));
+}
+
+.dxs-dataset-desc {
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--app-text-muted);
+}

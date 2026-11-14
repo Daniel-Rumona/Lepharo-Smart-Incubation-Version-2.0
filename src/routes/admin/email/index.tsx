@@ -5,15 +5,18 @@ import {
     Card,
     Col,
     DatePicker,
+    Drawer,
     Form,
     Grid,
     Input,
     Modal,
     Row,
+    Segmented,
     Select,
     Space,
     Table,
     Tag,
+    Tooltip,
     Typography,
     message,
 } from "antd";
@@ -24,12 +27,12 @@ import {
     NotificationOutlined,
     ReloadOutlined,
     SendOutlined,
-  CloseOutlined,
+    CloseOutlined,
     TeamOutlined,
-  CalendarOutlined,
-  UnorderedListOutlined,
-  IdcardOutlined,
-  RightOutlined,
+    CalendarOutlined,
+    UnorderedListOutlined,
+    IdcardOutlined,
+    RightOutlined,
     FileTextOutlined,
     ScheduleOutlined,
     ToolOutlined,
@@ -48,9 +51,11 @@ import dayjs, { Dayjs } from "dayjs";
 import { db, functions } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
-import { MetricTile, type MetricTone } from "@/components/dashboards/metrics/MetricTile";
+import type { MetricTone } from "@/components/dashboards/metrics/MetricTile";
 import "@/components/shared/setup-segmented.css";
 import { MobileCardList } from "@/components/shared/MobileCardList";
+import { Helmet } from "react-helmet";
+import EmailInsights from "./EmailInsights";
 
 const { RangePicker } = DatePicker;
 const { TextArea } = Input;
@@ -139,70 +144,69 @@ const SYSTEM_NOTICE_PRESETS: Record<
 
 /** Slim, clickable option row used by the "Choose an email action" dialog. */
 const ActionOption: React.FC<{
-  icon: React.ReactNode;
-  color: string;
-  title: string;
-  description: string;
-  tags?: React.ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
+    icon: React.ReactNode;
+    color: string;
+    title: string;
+    description: string;
+    tags?: React.ReactNode;
+    disabled?: boolean;
+    onClick: () => void;
 }> = ({ icon, color, title, description, tags, disabled, onClick }) => (
-  <div
-    role="button"
-    tabIndex={disabled ? -1 : 0}
-    aria-disabled={!!disabled}
-    onClick={disabled ? undefined : onClick}
-    onKeyDown={(event) => {
-      if (!disabled && (event.key === "Enter" || event.key === " ")) onClick();
-    }}
-    className="email-action-option"
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      height: "100%",
-      padding: "10px 14px",
-      borderRadius: 12,
-      border: "1px solid rgba(128,128,128,.28)",
-      opacity: disabled ? 0.5 : 1,
-      cursor: disabled ? "not-allowed" : "pointer",
-    }}
-  >
-    <span
-      style={{
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        display: "grid",
-        placeItems: "center",
-        flex: "0 0 auto",
-        fontSize: 16,
-        color,
-        background: `${color}1f`,
-      }}
+    <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={!!disabled}
+        onClick={disabled ? undefined : onClick}
+        onKeyDown={(event) => {
+            if (!disabled && (event.key === "Enter" || event.key === " ")) onClick();
+        }}
+        className="email-action-option"
+        style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            height: "100%",
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: "1px solid rgba(128,128,128,.28)",
+            opacity: disabled ? 0.5 : 1,
+            cursor: disabled ? "not-allowed" : "pointer",
+        }}
     >
-      {icon}
-    </span>
-    <span style={{ minWidth: 0, flex: "1 1 auto", lineHeight: 1.3 }}>
-      <Text strong style={{ display: "block" }}>
-        {title}
-      </Text>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {description}
-      </Text>
-    </span>
-    {tags ? (
-      <span style={{ display: "inline-flex", gap: 4, flex: "0 0 auto" }}>{tags}</span>
-    ) : null}
-    {!disabled ? (
-      <RightOutlined style={{ fontSize: 11, opacity: 0.45, flex: "0 0 auto" }} />
-    ) : null}
-  </div>
+        <span
+            style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                display: "grid",
+                placeItems: "center",
+                flex: "0 0 auto",
+                fontSize: 16,
+                color,
+                background: `${color}1f`,
+            }}
+        >
+            {icon}
+        </span>
+        <span style={{ minWidth: 0, flex: "1 1 auto", lineHeight: 1.3 }}>
+            <Text strong style={{ display: "block" }}>
+                {title}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+                {description}
+            </Text>
+        </span>
+        {tags ? (
+            <span style={{ display: "inline-flex", gap: 4, flex: "0 0 auto" }}>{tags}</span>
+        ) : null}
+        {!disabled ? (
+            <RightOutlined style={{ fontSize: 11, opacity: 0.45, flex: "0 0 auto" }} />
+        ) : null}
+    </div>
 );
 
 const sunkenPanelStyle: React.CSSProperties = {
     background: "#f5f7fb",
-    border: "1px solid #d9e2f0",
     borderRadius: 16,
     padding: 14,
     boxShadow: "inset 0 2px 8px rgba(15, 23, 42, 0.06)",
@@ -262,6 +266,7 @@ const AdminEmailMonitor: React.FC = () => {
     const [logStatusFilter, setLogStatusFilter] = useState<string[]>([]);
     const [logTypeFilter, setLogTypeFilter] = useState<string[]>([]);
     const [actionModalOpen, setActionModalOpen] = useState(false);
+    const [logsOpen, setLogsOpen] = useState(false);
     const [testModalOpen, setTestModalOpen] = useState(false);
     const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
     const [dateModalOpen, setDateModalOpen] = useState(false);
@@ -882,50 +887,50 @@ const AdminEmailMonitor: React.FC = () => {
     ];
 
     // "Selected users" only appears once users are selected, which keeps the grid
-  // 2 x 2 normally and gives the last card a full row when there are five.
-  const accountActions = [
-    {
-      key: "test",
-      icon: <MailOutlined />,
-      color: "#1677ff",
-      title: "Test email",
-      description: "Check delivery to one address",
-    },
-    ...(selectedUserIds.length
-      ? [
-          {
-            key: "selected",
-            icon: <CheckCircleOutlined />,
-            color: "#16a34a",
-            title: "Selected users",
-            description: `${selectedUserIds.length} user(s) selected`,
-          },
-        ]
-      : []),
-    {
-      key: "dateRange",
-      icon: <CalendarOutlined />,
-      color: "#722ed1",
-      title: "Creation date",
-      description: "Target a user date range",
-    },
-    {
-      key: "emailList",
-      icon: <UnorderedListOutlined />,
-      color: "#fa8c16",
-      title: "Email list",
-      description: "Paste specific addresses",
-    },
-    {
-      key: "roles",
-      icon: <IdcardOutlined />,
-      color: "#13c2c2",
-      title: "User roles",
-      description: "Target one or more roles",
-    },
-  ] as const;
+    // 2 x 2 normally and gives the last card a full row when there are five.
+    const accountActions = [
+        {
+            key: "test",
+            icon: <MailOutlined />,
+            color: "#1677ff",
+            title: "Test email",
+            description: "Check delivery to one address",
+        },
+        ...(selectedUserIds.length
+            ? [
+                {
+                    key: "selected",
+                    icon: <CheckCircleOutlined />,
+                    color: "#16a34a",
+                    title: "Selected users",
+                    description: `${selectedUserIds.length} user(s) selected`,
+                },
+            ]
+            : []),
+        {
+            key: "dateRange",
+            icon: <CalendarOutlined />,
+            color: "#722ed1",
+            title: "Creation date",
+            description: "Target a user date range",
+        },
+        {
+            key: "emailList",
+            icon: <UnorderedListOutlined />,
+            color: "#fa8c16",
+            title: "Email list",
+            description: "Paste specific addresses",
+        },
+        {
+            key: "roles",
+            icon: <IdcardOutlined />,
+            color: "#13c2c2",
+            title: "User roles",
+            description: "Target one or more roles",
+        },
+    ] as const;
 
-  const failedLogCount = logs.filter(
+    const failedLogCount = logs.filter(
         (row) => ["failed", "bounced"].includes(String(row.status))
     ).length;
 
@@ -972,243 +977,258 @@ const AdminEmailMonitor: React.FC = () => {
         ];
 
     return (
-        <div style={{ padding: 24, minHeight: "100vh" }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                {viewMetrics.map((metric) => (
-                    <Col key={metric.key} xs={12} xl={6}>
-                        <MetricTile
-                            icon={metric.icon}
-                            tone={metric.tone}
-                            title={metric.title}
-                            value={metric.value}
-                            subtitle={isMobile ? undefined : metric.subtitle}
-                            onClick={() => setActiveView(metric.key)}
-                            wrapperStyle={
-                                activeView === metric.key
-                                    ? { borderColor: "#1677ff", boxShadow: "0 0 0 1px #1677ff" }
-                                    : undefined
-                            }
-                        />
-                    </Col>
-                ))}
-            </Row>
+        <div style={{ padding: isMobile ? "5px 12px 16px" : "5px 24px 24px", minHeight: "100vh" }}>
+            <Helmet>
+                <title>Emails | Smart Incubation</title>
+            </Helmet>
 
-            <MotionCard
-                filterBar={
-                    <div className="setup-toolbar">
-                        <div className="setup-toolbar-search">
-                            {activeView === "devPlanReminders" ? (
-                                <Input.Search
-                                    allowClear
-                                    value={devPlanSearch}
-                                    onChange={(event) => setDevPlanSearch(event.target.value)}
-                                    placeholder="Search by SME email, participant, program, or company"
-                                    prefix={<MailOutlined />}
-                                />
-                            ) : activeView === "logs" ? (
-                                <Input.Search
-                                    allowClear
-                                    value={logSearch}
-                                    onChange={(event) => setLogSearch(event.target.value)}
-                                    placeholder="Search logs by recipient, subject, error, type, or company"
-                                    prefix={<MailOutlined />}
-                                />
-                            ) : (
-                                <Input.Search
-                                    allowClear
-                                    value={emailSearch}
-                                    onChange={(event) => setEmailSearch(event.target.value)}
-                                    placeholder="Search users by email, name, role, or company"
-                                    prefix={<MailOutlined />}
-                                />
-                            )}
-                        </div>
-                        {activeView === "logs" ? (
-                            <>
-                                <div className="setup-toolbar-filter">
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        maxTagCount="responsive"
-                                        value={logStatusFilter}
-                                        onChange={setLogStatusFilter}
-                                        placeholder="Status"
-                                        style={{ width: "100%" }}
-                                    >
-                                        <Option value="sent">Sent</Option>
-                                        <Option value="failed">Failed</Option>
-                                        <Option value="skipped">Skipped</Option>
-                                    </Select>
-                                </div>
-                                <div className="setup-toolbar-filter">
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        maxTagCount="responsive"
-                                        value={logTypeFilter}
-                                        onChange={setLogTypeFilter}
-                                        placeholder="Type"
-                                        style={{ width: "100%" }}
-                                    >
-                                        {logTypeOptions.map((type) => (
-                                            <Option key={type} value={type}>
-                                                {type}
-                                            </Option>
-                                        ))}
-                                    </Select>
-                                </div>
-                            </>
-                        ) : null}
-                        <div className="setup-toolbar-action">
-                            <Space>
-                                <Button
-                                    type="primary"
-                                    icon={<SendOutlined />}
-                                    onClick={() => setActionModalOpen(true)}
-                                >
-                                    Email Action
-                                </Button>
-                                <Button
-                                    icon={<ReloadOutlined />}
-                                    onClick={loadData}
-                                    loading={loading}
-                                >
-                                    Refresh
-                                </Button>
-                            </Space>
-                        </div>
-                    </div>
+            <EmailInsights
+                isMobile={isMobile}
+                actions={
+                    <Space wrap>
+                        <Button icon={<FileTextOutlined />} onClick={() => setLogsOpen(true)}>
+                            Logs and recipients
+                        </Button>
+                        <Button type="primary" icon={<SendOutlined />} onClick={() => setActionModalOpen(true)}>
+                            Email action
+                        </Button>
+                    </Space>
                 }
-                filterBarProps={{
-                    style: sunkenPanelStyle,
-                    marginBottom: 18,
-                    padding: 0,
-                    background: "transparent",
-                    borderColor: "transparent",
-                    boxShadow: "none",
-                }}
-            >
-                {isMobile ? (
-                    activeView === "devPlanReminders" ? (
-                        <MobileCardList
-                            data={filteredDevPlanRows}
-                            loading={loading}
-                            getKey={(row) => row.id}
-                            emptyText="No SME reminders"
-                            renderCard={(row: any) => ({
-                                title: row.to || "Unknown recipient",
-                                subtitle: row.participantId || row.programId || undefined,
-                                badge: statusTag(row.status),
-                                fields: [
-                                    { label: "When", value: fmtDate(row.createdAt) },
-                                    {
-                                        label: "Bounce",
-                                        value: row.bounce ? (
-                                            <Text type="danger">{row.bounce.reason || "Bounced"}</Text>
-                                        ) : (
-                                            "None"
-                                        ),
-                                    },
-                                ],
-                                note: row.error ? <Text type="danger">{row.error}</Text> : undefined,
-                            })}
-                        />
-                    ) : activeView === "logs" ? (
-                        <MobileCardList
-                            data={filteredLogs}
-                            loading={loading}
-                            getKey={(row) => row.id}
-                            emptyText="No email logs"
-                            renderCard={(row: any) => ({
-                                title: row.subject || "(no subject)",
-                                subtitle: row.to,
-                                badge: statusTag(row.status),
-                                fields: [
-                                    { label: "When", value: fmtDate(row.createdAt) },
-                                    { label: "Type", value: row.type || "EMAIL" },
-                                ],
-                                note: row.error ? <Text type="danger">{row.error}</Text> : undefined,
-                            })}
-                        />
-                    ) : (
-                        <MobileCardList
-                            data={activeView === "bounced" ? bouncedUsers : filteredUsers}
-                            loading={loading}
-                            getKey={(row) => row.id}
-                            emptyText={activeView === "bounced" ? "No bounced users" : "No users"}
-                            selectedKeys={activeView === "users" ? selectedUserIds : undefined}
-                            onSelectionChange={activeView === "users" ? setSelectedUserIds : undefined}
-                            renderCard={(row: UserRow) => ({
-                                title: row.name || row.email || "Unnamed user",
-                                subtitle: row.name ? row.email : undefined,
-                                badge: statusTag(
-                                    row.emailDeliveryStatus || (row.emailBounced ? "bounced" : "ok")
+            />
+
+            {/* Detail tables live in a drawer so the page stays an overview. */}
+            <Drawer
+                open={logsOpen}
+                onClose={() => setLogsOpen(false)}
+                width={isMobile ? "100%" : 1100}
+                title="Logs and recipients"
+                extra={
+                    !isMobile && (
+                        <Segmented
+                            value={activeView}
+                            onChange={(value) => setActiveView(value as ViewKey)}
+                            options={viewMetrics.map((metric) => ({
+                                value: metric.key,
+                                label: (
+                                    <Tooltip title={metric.subtitle}>
+                                        <span>
+                                            {metric.title} <Text type="secondary">{metric.value}</Text>
+                                        </span>
+                                    </Tooltip>
                                 ),
-                                fields: [
-                                    { label: "Role", value: row.role || "Unknown" },
-                                    { label: "Created", value: fmtDate(row.createdAt) },
-                                ],
-                                note:
-                                    activeView === "bounced" ? (
-                                        <Text type="danger">{row.emailBounceReason || "Send failed"}</Text>
-                                    ) : undefined,
-                            })}
+                            }))}
                         />
                     )
-                ) : activeView === "devPlanReminders" ? (
-                    <Table
-                        rowKey="id"
-                        loading={loading}
-                        columns={devPlanColumns}
-                        dataSource={filteredDevPlanRows}
-                        pagination={{
-                            pageSize: 10,
-                            position: ["bottomCenter"],
-                            showSizeChanger: false,
-                        }}
-                    />
-                ) : activeView === "logs" ? (
-                    <Table
-                        rowKey="id"
-                        loading={loading}
-                        columns={logColumns}
-                        dataSource={filteredLogs}
-                        pagination={{
-                            pageSize: 10,
-                            position: ["bottomCenter"],
-                            showSizeChanger: false,
-                        }}
-                    />
-                ) : activeView === "bounced" ? (
-                    <Table
-                        rowKey="id"
-                        loading={loading}
-                        columns={bouncedColumns}
-                        dataSource={bouncedUsers}
-                        pagination={{
-                            pageSize: 10,
-                            position: ["bottomCenter"],
-                            showSizeChanger: false,
-                        }}
-                    />
-                ) : (
-                    <Table
-                        rowKey="id"
-                        loading={loading}
-                        columns={userColumns}
-                        dataSource={filteredUsers}
-                        rowSelection={{
-                            selectedRowKeys: selectedUserIds,
-                            onChange: setSelectedUserIds,
-                        }}
-                        pagination={{
-                            pageSize: 10,
-                            position: ["bottomCenter"],
-                            showSizeChanger: false,
-                        }}
+                }
+            >
+                {isMobile && (
+                    <Segmented
+                        block
+                        size="small"
+                        value={activeView}
+                        onChange={(value) => setActiveView(value as ViewKey)}
+                        options={viewMetrics.map((metric) => ({ value: metric.key, label: metric.title }))}
+                        style={{ marginBottom: 12 }}
                     />
                 )}
-            </MotionCard>
+                <MotionCard
+                    styles={{ body: { padding: 0 } }}
+                    style={{ boxShadow: "none", border: "none", padding: 10 }}
+                    filterBar={
+                        <div className="setup-toolbar">
+                            <div className="setup-toolbar-search">
+                                {activeView === "devPlanReminders" ? (
+                                    <Input.Search
+                                        allowClear
+                                        value={devPlanSearch}
+                                        onChange={(event) => setDevPlanSearch(event.target.value)}
+                                        placeholder="Search by SME email, participant, program, or company"
+                                        prefix={<MailOutlined />}
+                                    />
+                                ) : activeView === "logs" ? (
+                                    <Input.Search
+                                        allowClear
+                                        value={logSearch}
+                                        onChange={(event) => setLogSearch(event.target.value)}
+                                        placeholder="Search logs by recipient, subject, error, type, or company"
+                                        prefix={<MailOutlined />}
+                                    />
+                                ) : (
+                                    <Input.Search
+                                        allowClear
+                                        value={emailSearch}
+                                        onChange={(event) => setEmailSearch(event.target.value)}
+                                        placeholder="Search users by email, name, role, or company"
+                                        prefix={<MailOutlined />}
+                                    />
+                                )}
+                            </div>
+                            {activeView === "logs" ? (
+                                <>
+                                    <div className="setup-toolbar-filter">
+                                        <Select
+                                            mode="multiple"
+                                            allowClear
+                                            maxTagCount="responsive"
+                                            value={logStatusFilter}
+                                            onChange={setLogStatusFilter}
+                                            placeholder="Status"
+                                            style={{ width: "100%" }}
+                                        >
+                                            <Option value="sent">Sent</Option>
+                                            <Option value="failed">Failed</Option>
+                                            <Option value="skipped">Skipped</Option>
+                                        </Select>
+                                    </div>
+                                    <div className="setup-toolbar-filter">
+                                        <Select
+                                            mode="multiple"
+                                            allowClear
+                                            maxTagCount="responsive"
+                                            value={logTypeFilter}
+                                            onChange={setLogTypeFilter}
+                                            placeholder="Type"
+                                            style={{ width: "100%" }}
+                                        >
+                                            {logTypeOptions.map((type) => (
+                                                <Option key={type} value={type}>
+                                                    {type}
+                                                </Option>
+                                            ))}
+                                        </Select>
+                                    </div>
+                                </>
+                            ) : null}
+                        </div>
+                    }
+                    filterBarProps={{
+                        style: sunkenPanelStyle,
+                        marginBottom: 18,
+                        padding: 0,
+                    }}
+                >
+                    {isMobile ? (
+                        activeView === "devPlanReminders" ? (
+                            <MobileCardList
+                                data={filteredDevPlanRows}
+                                loading={loading}
+                                getKey={(row) => row.id}
+                                emptyText="No SME reminders"
+                                renderCard={(row: any) => ({
+                                    title: row.to || "Unknown recipient",
+                                    subtitle: row.participantId || row.programId || undefined,
+                                    badge: statusTag(row.status),
+                                    fields: [
+                                        { label: "When", value: fmtDate(row.createdAt) },
+                                        {
+                                            label: "Bounce",
+                                            value: row.bounce ? (
+                                                <Text type="danger">{row.bounce.reason || "Bounced"}</Text>
+                                            ) : (
+                                                "None"
+                                            ),
+                                        },
+                                    ],
+                                    note: row.error ? <Text type="danger">{row.error}</Text> : undefined,
+                                })}
+                            />
+                        ) : activeView === "logs" ? (
+                            <MobileCardList
+                                data={filteredLogs}
+                                loading={loading}
+                                getKey={(row) => row.id}
+                                emptyText="No email logs"
+                                renderCard={(row: any) => ({
+                                    title: row.subject || "(no subject)",
+                                    subtitle: row.to,
+                                    badge: statusTag(row.status),
+                                    fields: [
+                                        { label: "When", value: fmtDate(row.createdAt) },
+                                        { label: "Type", value: row.type || "EMAIL" },
+                                    ],
+                                    note: row.error ? <Text type="danger">{row.error}</Text> : undefined,
+                                })}
+                            />
+                        ) : (
+                            <MobileCardList
+                                data={activeView === "bounced" ? bouncedUsers : filteredUsers}
+                                loading={loading}
+                                getKey={(row) => row.id}
+                                emptyText={activeView === "bounced" ? "No bounced users" : "No users"}
+                                selectedKeys={activeView === "users" ? selectedUserIds : undefined}
+                                onSelectionChange={activeView === "users" ? setSelectedUserIds : undefined}
+                                renderCard={(row: UserRow) => ({
+                                    title: row.name || row.email || "Unnamed user",
+                                    subtitle: row.name ? row.email : undefined,
+                                    badge: statusTag(
+                                        row.emailDeliveryStatus || (row.emailBounced ? "bounced" : "ok")
+                                    ),
+                                    fields: [
+                                        { label: "Role", value: row.role || "Unknown" },
+                                        { label: "Created", value: fmtDate(row.createdAt) },
+                                    ],
+                                    note:
+                                        activeView === "bounced" ? (
+                                            <Text type="danger">{row.emailBounceReason || "Send failed"}</Text>
+                                        ) : undefined,
+                                })}
+                            />
+                        )
+                    ) : activeView === "devPlanReminders" ? (
+                        <Table
+                            rowKey="id"
+                            loading={loading}
+                            columns={devPlanColumns}
+                            dataSource={filteredDevPlanRows}
+                            pagination={{
+                                pageSize: 10,
+                                position: ["bottomCenter"],
+                                showSizeChanger: false,
+                            }}
+                        />
+                    ) : activeView === "logs" ? (
+                        <Table
+                            rowKey="id"
+                            loading={loading}
+                            columns={logColumns}
+                            dataSource={filteredLogs}
+                            pagination={{
+                                pageSize: 10,
+                                position: ["bottomCenter"],
+                                showSizeChanger: false,
+                            }}
+                        />
+                    ) : activeView === "bounced" ? (
+                        <Table
+                            rowKey="id"
+                            loading={loading}
+                            columns={bouncedColumns}
+                            dataSource={bouncedUsers}
+                            pagination={{
+                                pageSize: 10,
+                                position: ["bottomCenter"],
+                                showSizeChanger: false,
+                            }}
+                        />
+                    ) : (
+                        <Table
+                            rowKey="id"
+                            loading={loading}
+                            columns={userColumns}
+                            dataSource={filteredUsers}
+                            rowSelection={{
+                                selectedRowKeys: selectedUserIds,
+                                onChange: setSelectedUserIds,
+                            }}
+                            pagination={{
+                                pageSize: 10,
+                                position: ["bottomCenter"],
+                                showSizeChanger: false,
+                            }}
+                        />
+                    )}
+                </MotionCard>
+            </Drawer>
 
             <Modal
                 title="Choose an Email Action"
@@ -1246,7 +1266,7 @@ const AdminEmailMonitor: React.FC = () => {
                             xs={24}
                             md={
                                 accountActions.length % 2 === 1 &&
-                                index === accountActions.length - 1
+                                    index === accountActions.length - 1
                                     ? 24
                                     : 12
                             }

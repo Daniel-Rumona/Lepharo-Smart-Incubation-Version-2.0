@@ -15,7 +15,7 @@ import '@/routes/operations/movs/movs.css'
 import './reportPhaseTwo.css'
 import './reports.css'
 
-const BASE = '/operations/reports/collaborative'
+const BASE = '/reports/collaborative'
 
 type CreateFlow = 'template' | 'upload'
 

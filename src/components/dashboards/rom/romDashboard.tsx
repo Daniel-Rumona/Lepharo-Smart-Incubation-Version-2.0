@@ -981,7 +981,7 @@ const ROMDashboard: React.FC = () => {
         row.docsRejected === 0
     ).length;
     const actionRequired = riskRows.filter(
-      (row) => row.docsMissing + row.docsQueried + row.docsRejected > 0
+      (row) => row.docsMissing + row.docsExpired + row.docsQueried + row.docsRejected > 0
     ).length;
 
     return {
@@ -1299,7 +1299,7 @@ const ROMDashboard: React.FC = () => {
             title="Critical SMEs"
             value={criticalSmesCount}
             subtitle="Open SME risk register"
-            onClick={() => navigate("/operations/participants/risk")}
+            onClick={() => navigate("/participants/risk")}
             loading={metricsLoading}
           />
         </Col>

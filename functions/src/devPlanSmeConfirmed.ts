@@ -4,6 +4,7 @@ import { db, getParticipantName } from "./emailShared";
 import { notifyInApp } from "./inAppNotifications";
 import { getDepartmentHods } from "./movRecipients";
 import { suppressRecordNotifications } from "./syntheticData";
+import { confirmedDeptIds } from "./findSmeLogic";
 
 /**
  * When an SME confirms a department's part of their development plan, that
@@ -11,20 +12,6 @@ import { suppressRecordNotifications } from "./syntheticData";
  * work. In-app only: the type is not in NOTIFICATION_REGISTRY, so no email
  * goes out, and nothing is sent on WhatsApp.
  */
-
-// SME sign-off lives in two maps (the roadmap and the plan builder write
-// different ones); a department counts as confirmed when either says so.
-const isOn = (value: any) => value === true || (value && typeof value === "object" && value.confirmed === true);
-
-const confirmedDeptIds = (plan: any): Set<string> => {
-  const ids = new Set<string>();
-  for (const map of [plan?.incubateeDepartmentConfirmationsByDeptId, plan?.smmeConfirmedByDeptId]) {
-    Object.entries(map || {}).forEach(([id, value]) => {
-      if (isOn(value)) ids.add(id);
-    });
-  }
-  return ids;
-};
 
 /** The department's HODs; a sub-department with none falls back to its parent's. */
 async function hodUidsFor(departmentId: string): Promise<{ uids: string[]; name: string }> {

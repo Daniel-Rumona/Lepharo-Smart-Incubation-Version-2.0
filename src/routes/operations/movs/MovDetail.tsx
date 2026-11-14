@@ -10,6 +10,8 @@ import { EntityAvatar } from '@/components/workspace'
 import { LightSurface } from '@/components/shared/LightSurface'
 import { MovDocumentView } from '@/components/movs/MovDocumentView'
 import { PreIncPoeButton } from '@/components/movs/PreIncPoeButton'
+import { EvidenceCheckCard } from '@/components/movs/EvidenceCheckCard'
+import { EVIDENCE_VERDICT, checkMovEvidence, type EvidenceCheck } from '@/services/evidenceCheckService'
 import { hasPreIncAgreementEvidence } from '@/services/movService'
 import {
     MOV_STATUS_META,
@@ -84,6 +86,8 @@ export const MovDetail: React.FC<Props> = ({ mov, ws, canApprove, currentUid, ac
     const inPack = inPackId ? ws.packs.find(p => p.id === inPackId) : null
     const late = status === 'approved' && ws.isLate(current) ? ws.packMonthFor(current) : null
     const poeList = full ? buildPoeList(full) : []
+    const evidenceCheck = ((full as any)?.evidenceCheck || null) as EvidenceCheck | null
+    const keepCheck = (check: EvidenceCheck) => setFull(previous => (previous ? { ...previous, evidenceCheck: check } as Mov : previous))
     const openPack = ws.openPackFor(current)
     const sub = [current.interventionTitle, current.facilitatorName].filter(Boolean).join(' · ')
 
@@ -276,6 +280,11 @@ export const MovDetail: React.FC<Props> = ({ mov, ws, canApprove, currentUid, ac
                             {inPack && <StatusPill tone='neutral'>In {monthLabel(inPack.month, 'MMM YYYY')} pack</StatusPill>}
                             {late && <StatusPill tone='warning' title='Its own month’s pack is already confirmed'>Late · goes into {monthLabel(late, 'MMM YYYY')}</StatusPill>}
                             {full && !hasMovEvidence(full) && <StatusPill tone='danger'>No evidence</StatusPill>}
+                            {evidenceCheck && hasMovEvidence(full) && ['weak', 'unreadable'].includes(evidenceCheck.verdict) && (
+                                <StatusPill tone={EVIDENCE_VERDICT[evidenceCheck.verdict].tone} title={evidenceCheck.summary}>
+                                    {EVIDENCE_VERDICT[evidenceCheck.verdict].label}
+                                </StatusPill>
+                            )}
                         </div>
                     </div>
                 </motion.header>
@@ -343,6 +352,16 @@ export const MovDetail: React.FC<Props> = ({ mov, ws, canApprove, currentUid, ac
                                     throw error
                                 }
                             }}
+                        />
+                    )}
+
+                    {full && hasMovEvidence(full) && (
+                        <EvidenceCheckCard
+                            movId={mov.id}
+                            check={evidenceCheck}
+                            currentLinks={poeList.map(item => item.link)}
+                            audience={isFacilitator ? 'facilitator' : 'reviewer'}
+                            onChecked={keepCheck}
                         />
                     )}
 
@@ -453,6 +472,8 @@ export const MovDetail: React.FC<Props> = ({ mov, ws, canApprove, currentUid, ac
                     onChanged={() => {
                         void ws.reload()
                         enrichMov(mov, activeProgramId).then(setFull).catch(() => undefined)
+                        // New evidence: check it again so the reviewer sees the current picture.
+                        checkMovEvidence(mov.id).then(keepCheck).catch(error => console.warn('Evidence re-check did not run', error))
                     }}
                 />
             )}

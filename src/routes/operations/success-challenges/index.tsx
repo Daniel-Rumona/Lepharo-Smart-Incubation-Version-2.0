@@ -330,7 +330,7 @@ const resolveStoryDepartmentScope = async (user: any) => {
     )
     const role = norm(user?.role)
     const isMainDepartment = departmentData?.isMain === true || departmentData?.is_main === true || departmentData?.isPrimary === true || departmentData?.primary === true
-    const elevatedRole = ['projectadmin', 'project_admin', 'system_admin', 'superadmin', 'director', 'projectmanager'].includes(role)
+    const elevatedRole = ['projectadmin', 'project_admin', 'system_admin', 'superadmin', 'director'].includes(role)
     const canSeeAll = elevatedRole || (role === 'operations' && isMainDepartment)
     const belongsToDepartment = (row: any) => {
         if (canSeeAll) return true

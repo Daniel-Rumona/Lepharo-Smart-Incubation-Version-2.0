@@ -59,8 +59,6 @@ function replaceEmailValue(value: any, oldEmail: string, newEmail: string): { va
 
 const HR_EMPLOYEE_ROLES = new Set([
   'operations',
-  'projectmanager',
-  'project manager',
   'coordinator',
   'projectadmin',
   'center coordinator',

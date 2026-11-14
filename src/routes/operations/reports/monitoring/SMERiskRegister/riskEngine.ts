@@ -3,14 +3,22 @@ import { Timestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import {
     computeRiskScore as sharedComputeRiskScore,
-    deriveRiskInputs,
     RISK_LEVEL_RANK,
+    scoreInputsFor,
     smeJoinedAt,
     type RiskScoreInputs as SharedRiskScoreInputs
 } from '../../../../../../functions/src/smeRiskLogic'
+import {
+    normalizeProgramRequirements,
+    resolveComplianceRows,
+    type ComplianceRow
+} from '../../../../../../functions/src/twin/rules'
 
 import type {
     AnyDoc,
+    ComplianceItem,
+    ComplianceItemStatus,
+    RiskNote,
     RiskDriverKey,
     BounceStatus,
     CommunicationAttempt,
@@ -457,95 +465,158 @@ export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string): boolean {
     ))
 }
 
-export function parseComplianceDocuments(application: AnyDoc): {
+const COMPLETE_DOC_STATUSES = ['verified', 'approved', 'accepted', 'complete', 'completed', 'valid', 'resolved', 'true']
+const QUERIED_DOC_STATUSES = ['queried', 'query', 'needs revision', 'needs_reupload']
+const REJECTED_DOC_STATUSES = ['rejected', 'invalid', 'declined']
+
+const formatDocDate = (value: any) => {
+    const date = toDate(value)
+    return date ? dayjs(date).format('D MMM YYYY') : null
+}
+
+// "bankConfirmationLetter" -> "Bank confirmation letter"
+const humaniseKey = (key: string) => {
+    const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase()
+    return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** One compliance document's state, read from its status, file and expiry date. */
+function assessDocument(
+    key: string,
+    title: string,
+    raw: AnyDoc | string | undefined,
+    today: dayjs.Dayjs
+): ComplianceItem {
+    const doc: AnyDoc = raw && typeof raw === 'object' ? raw : {}
+    const status = normalizeLower(
+        typeof raw === 'string' ? raw : firstNonEmpty(doc.status, doc.verificationStatus, doc.reviewStatus)
+    )
+    const hasFile = !!firstNonEmpty(
+        doc.url,
+        doc.downloadURL,
+        doc.fileUrl,
+        doc.fileURL,
+        doc.fileName,
+        doc.storagePath,
+        doc.pdfPath,
+        typeof raw === 'string' && raw.startsWith('http') ? raw : undefined
+    )
+    const expiry = formatDocDate(doc.expiryDate)
+    const pastExpiry = !!toDate(doc.expiryDate) && dayjs(toDate(doc.expiryDate)).isBefore(today, 'day')
+
+    if (status === 'expired' || (COMPLETE_DOC_STATUSES.includes(status) && pastExpiry)) {
+        return { key, title, status: 'expired', detail: expiry ? `Expired on ${expiry}` : 'Expired' }
+    }
+    if (COMPLETE_DOC_STATUSES.includes(status)) {
+        return { key, title, status: 'complete', detail: expiry ? `Valid until ${expiry}` : undefined }
+    }
+    if (QUERIED_DOC_STATUSES.includes(status)) {
+        return { key, title, status: 'queried', detail: normalizeText(firstNonEmpty(doc.queryReason, doc.reason)) || 'Queried by the reviewer' }
+    }
+    if (REJECTED_DOC_STATUSES.includes(status)) {
+        return { key, title, status: 'rejected', detail: normalizeText(firstNonEmpty(doc.reason, doc.queryReason)) || 'Rejected by the reviewer' }
+    }
+    if (hasFile) {
+        const uploaded = formatDocDate(doc.uploadedAt)
+        return { key, title, status: 'awaiting_review', detail: uploaded ? `Uploaded ${uploaded}, awaiting review` : 'Uploaded, awaiting review' }
+    }
+    return { key, title, status: 'missing', detail: 'Not uploaded yet' }
+}
+
+/**
+ * Every compliance document for an SME and its state. Reads the embedded list the
+ * nightly job reads (the participant's, else the application's), falling back to
+ * the legacy per-key fields on the application.
+ */
+export function parseComplianceDocuments(application: AnyDoc, participant?: AnyDoc): {
     total: number
     completed: number
     missing: number
     pending: number
     queried: number
     rejected: number
+    expired: number
+    items: ComplianceItem[]
 } {
-    const docsArray = Array.isArray(application?.complianceDocuments)
-        ? application.complianceDocuments
-        : Array.isArray(application?.documents)
-            ? application.documents
-            : Array.isArray(application?.requiredDocs)
-                ? application.requiredDocs
-                : []
+    const today = dayjs()
+    const embedded = [
+        participant?.complianceDocuments,
+        application?.complianceDocuments,
+        application?.documents,
+        application?.requiredDocs
+    ].find(list => Array.isArray(list) && list.length > 0) as AnyDoc[] | undefined
 
-    if (docsArray.length > 0) {
-        let completed = 0
-        let missing = 0
-        let pending = 0
-        let queried = 0
-        let rejected = 0
-
-        docsArray.forEach((doc: AnyDoc) => {
-            const status = normalizeLower(
-                firstNonEmpty(doc.status, doc.verificationStatus, doc.reviewStatus)
+    const items: ComplianceItem[] = embedded
+        ? embedded.map((doc, index) =>
+            assessDocument(
+                String(firstNonEmpty(doc?.id, doc?.key, doc?.slug, doc?.type) || `document-${index}`),
+                String(firstNonEmpty(doc?.documentName, doc?.title, doc?.name, doc?.type, doc?.label) || `Document ${index + 1}`),
+                doc,
+                today
             )
+        )
+        : DOC_REQUIRED_KEYS.map(key => assessDocument(key, humaniseKey(key), application?.[key], today))
 
-            const hasFile =
-                !!firstNonEmpty(
-                    doc.url,
-                    doc.downloadURL,
-                    doc.fileUrl,
-                    doc.fileURL,
-                    doc.fileName,
-                    doc.storagePath
-                )
-
-            if (['verified', 'approved', 'accepted', 'complete', 'completed'].includes(status)) {
-                completed += 1
-            } else if (['queried', 'query', 'needs revision', 'needs_reupload'].includes(status)) {
-                queried += 1
-            } else if (['rejected', 'invalid', 'declined'].includes(status)) {
-                rejected += 1
-            } else if (hasFile) {
-                pending += 1
-            } else {
-                missing += 1
-            }
-        })
-
-        return {
-            total: docsArray.length,
-            completed,
-            missing,
-            pending,
-            queried,
-            rejected
-        }
-    }
-
-    const flags = DOC_REQUIRED_KEYS.map((key) => {
-        const raw = application?.[key]
-        const status = normalizeLower(raw?.status ?? raw?.verificationStatus ?? raw)
-        const hasFile =
-            !!firstNonEmpty(
-                raw?.url,
-                raw?.downloadURL,
-                raw?.fileUrl,
-                raw?.storagePath,
-                typeof raw === 'string' ? raw : undefined
-            )
-
-        if (['verified', 'approved', 'accepted', 'complete', 'completed', 'true'].includes(status)) {
-            return 'completed'
-        }
-        if (['queried', 'query', 'needs revision'].includes(status)) return 'queried'
-        if (['rejected', 'invalid', 'declined'].includes(status)) return 'rejected'
-        if (hasFile) return 'pending'
-        return 'missing'
-    })
+    const count = (status: ComplianceItemStatus) => items.filter(item => item.status === status).length
 
     return {
-        total: flags.length,
-        completed: flags.filter(v => v === 'completed').length,
-        missing: flags.filter(v => v === 'missing').length,
-        pending: flags.filter(v => v === 'pending').length,
-        queried: flags.filter(v => v === 'queried').length,
-        rejected: flags.filter(v => v === 'rejected').length
+        total: items.length,
+        completed: count('complete'),
+        missing: count('missing'),
+        pending: count('awaiting_review'),
+        queried: count('queried'),
+        rejected: count('rejected'),
+        expired: count('expired'),
+        items
+    }
+}
+
+/** One resolved compliance row (functions/src/twin/rules.ts) as the register shows it. */
+function complianceItemFromRow(row: ComplianceRow): ComplianceItem {
+    const status = normalizeLower(row.status)
+    const expiry = formatDocDate(row.expiry)
+    if (status === 'missing') return { key: row.key, title: row.title, status: 'missing', detail: 'Not uploaded yet' }
+    if (status === 'expired') return { key: row.key, title: row.title, status: 'expired', detail: expiry ? `Expired on ${expiry}` : 'Expired' }
+    if (status === 'queried') return { key: row.key, title: row.title, status: 'queried', detail: 'Queried by the reviewer' }
+    if (status === 'rejected' || status === 'invalid') return { key: row.key, title: row.title, status: 'rejected', detail: 'Rejected by the reviewer' }
+    if (row.covered) {
+        const detail = status === 'expiring-soon'
+            ? (expiry ? `Expires soon, on ${expiry}` : 'Expires soon')
+            : expiry ? `Valid until ${expiry}` : undefined
+        return { key: row.key, title: row.title, status: 'complete', detail }
+    }
+    return { key: row.key, title: row.title, status: 'awaiting_review', detail: 'Uploaded, awaiting review' }
+}
+
+/**
+ * Compliance documents counted the way the Compliance page and the digital twin count
+ * them: the SME's uploads (applications/{id}/complianceDocuments, over any copies
+ * embedded on the participant or application) measured against the programme's
+ * required uploads. Null when there is nothing to measure, so the caller can fall
+ * back to the legacy reading.
+ */
+export function complianceAgainstRequirements(args: {
+    application: AnyDoc
+    participant?: AnyDoc
+    programRequirements?: AnyDoc[] | null
+    uploads?: AnyDoc[] | null
+}): ReturnType<typeof parseComplianceDocuments> | null {
+    const requirements = normalizeProgramRequirements(args.programRequirements || [])
+    const uploads = args.uploads || []
+    const embedded = [args.participant?.complianceDocuments, args.application?.complianceDocuments]
+        .find(list => Array.isArray(list) && list.length > 0) as AnyDoc[] | undefined
+    if (!requirements.length && !uploads.length) return null
+    const items = resolveComplianceRows({ requirements, embedded: embedded ?? [], uploads }).map(complianceItemFromRow)
+    const count = (status: ComplianceItemStatus) => items.filter(item => item.status === status).length
+    return {
+        total: items.length,
+        completed: count('complete'),
+        missing: count('missing'),
+        pending: count('awaiting_review'),
+        queried: count('queried'),
+        rejected: count('rejected'),
+        expired: count('expired'),
+        items
     }
 }
 
@@ -572,10 +643,6 @@ export function getRiskLevel(score: number): RiskLevel {
 
 export function getRiskRowStyle(level: RiskLevel): CSSProperties {
     return { backgroundColor: RISK_ROW_BACKGROUND[level] }
-}
-
-export function isOpenChallengeStatus(value: any) {
-    return !['resolved', 'closed'].includes(normalizeLower(value))
 }
 
 export function getChallengeStatusColor(value: any) {
@@ -842,54 +909,8 @@ export function getRiskDriversForRow(row: SMERow): Array<{
         }))
 }
 
-// Signals this page doesn't load live; the nightly snapshot has them.
-const SNAPSHOT_ONLY_INPUTS = [
-    'missedAppointments',
-    'declinedAppointments',
-    'revenueDropPercent',
-    'overdueFollowUps',
-    'openQueries',
-    'emailBounced',
-    'expiredComplianceDocs',
-    'docsMissing',
-    'docsQueried',
-    'docsRejected'
-] as const
-
-/** The SME's score inputs: live assignments and plan, plus the snapshot's other signals. */
-export function scoreInputsFor(args: {
-    assignments: AnyDoc[]
-    diagnosticPlan?: AnyDoc
-    departmentsById: Record<string, AnyDoc>
-    closedInterventionIds: Set<string>
-    docs: { missing: number; queried: number; rejected: number }
-    snapshot?: AnyDoc
-    joinedAt: number | null
-    now: number
-}): SharedRiskScoreInputs {
-    const stored = args.snapshot?.inputs || null
-    const live = deriveRiskInputs({
-        assignments: args.assignments,
-        appointments: [],
-        monthlyRevenue: [],
-        followUps: [],
-        openQueries: 0,
-        emailBounced: false,
-        compliance: { ...args.docs, expired: 0 },
-        coverage: {
-            plan: args.diagnosticPlan || null,
-            departmentsById: args.departmentsById,
-            closedInterventionIds: args.closedInterventionIds
-        },
-        knownServiceAt: typeof stored?.lastServiceAt === 'number' ? stored.lastServiceAt : null,
-        joinedAt: args.joinedAt
-    }, args.now)
-    if (!stored) return live
-    const fromSnapshot = Object.fromEntries(
-        SNAPSHOT_ONLY_INPUTS.filter(key => stored[key] !== undefined).map(key => [key, stored[key]])
-    )
-    return { ...live, ...fromSnapshot }
-}
+// The register's score inputs: shared with the digital twin (functions/src/smeRiskLogic.ts).
+export { scoreInputsFor }
 
 export function buildRow(args: {
     participant: AnyDoc
@@ -906,11 +927,25 @@ export function buildRow(args: {
         departmentId?: string
         departmentName?: string
     }
+    /** The application's programme, for its required uploads. */
+    program?: AnyDoc | null
+    /** Documents the SME uploaded under applications/{id}/complianceDocuments. */
+    complianceUploads?: AnyDoc[]
 }): SMERow {
     const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, scopedDepartment } = args
     const participantId = getParticipantId(application ?? participant ?? {})
-    const applicationId = getApplicationId(application ?? participant ?? {})
-    const docs = parseComplianceDocuments(application ?? {})
+    // The application document's own id first: applications rarely carry an
+    // applicationId field, and the digital twin opens by this id.
+    const applicationId = firstNonEmpty(application?.id, getApplicationId(application ?? participant ?? {}))
+    // Uploads against the programme's requirements, as the Compliance page and the twin
+    // count them; SMEs with neither keep the legacy reading.
+    const docs =
+        complianceAgainstRequirements({
+            application: application ?? {},
+            participant,
+            programRequirements: args.program?.programRequirements,
+            uploads: args.complianceUploads
+        }) ?? parseComplianceDocuments(application ?? {}, participant)
     const today = dayjs()
     const diagnosticPlanDoc = diagnosticPlan || {}
 
@@ -926,6 +961,9 @@ export function buildRow(args: {
 
     const expectedMap = new Map<string, DepartmentSummary>()
     let smePendingAcceptanceCount = 0
+    // What each SME-side hold-up is, for the expandable risk notes.
+    const awaitingAcceptance: string[] = []
+    const awaitingConfirmation: string[] = []
     let smePendingConfirmationCount = 0
     const responsivenessRiskDepartmentSet = new Set<string>()
 
@@ -997,11 +1035,15 @@ export function buildRow(args: {
         if (state.awaitingSMEAcceptance) {
             smePendingAcceptanceCount += 1
             responsivenessRiskDepartmentSet.add(dep.departmentName)
+            awaitingAcceptance.push(`${getInterventionTitle(assignment)} · ${dep.departmentName}`)
         }
 
         if (state.awaitingSMECompletion) {
             smePendingConfirmationCount += 1
             responsivenessRiskDepartmentSet.add(dep.departmentName)
+            awaitingConfirmation.push(
+                `${getInterventionTitle(assignment)} · ${dep.departmentName}${date ? ` · completed ${dayjs(date).format('D MMM YYYY')}` : ''}`
+            )
         }
 
         if (!entry.latestServiceDate || (date && date.getTime() > entry.latestServiceDate.getTime())) {
@@ -1070,35 +1112,68 @@ export function buildRow(args: {
     const daysSinceLastService = riskInputs.daysSinceLastService
     const inactivityBucket = getInactivityBucket(daysSinceLastService)
 
-    const notes: string[] = []
+    const notes: RiskNote[] = []
+    const note = (key: string, label: string, details: string[] = []) => notes.push({ key, label, details })
+    const docLines = (status: ComplianceItemStatus) =>
+        docs.items
+            .filter(item => item.status === status)
+            .map(item => (item.detail ? `${item.title}: ${item.detail}` : item.title))
+    const docNote = (status: ComplianceItemStatus, count: number, word: string) => {
+        if (count > 0) note(`documents-${status}`, `${count} ${word} document${count > 1 ? 's' : ''}`, docLines(status))
+    }
     const noServiceReasons: string[] = []
     const responsivenessRiskDepartments = [...responsivenessRiskDepartmentSet].filter(Boolean).sort()
 
-    if (docs.missing > 0) notes.push(`${docs.missing} missing document${docs.missing > 1 ? 's' : ''}`)
-    if (docs.queried > 0) notes.push(`${docs.queried} queried document${docs.queried > 1 ? 's' : ''}`)
-    if (docs.rejected > 0) notes.push(`${docs.rejected} rejected document${docs.rejected > 1 ? 's' : ''}`)
+    docNote('missing', docs.missing, 'missing')
+    docNote('expired', docs.expired, 'expired')
+    docNote('queried', docs.queried, 'queried')
+    docNote('rejected', docs.rejected, 'rejected')
     if (smePendingConfirmationCount > 0) {
-        notes.push(`Unresponsive: ${smePendingConfirmationCount} completed intervention(s) pending SME confirmation`)
+        note(
+            'awaiting-confirmation',
+            `Unresponsive: ${smePendingConfirmationCount} completed intervention(s) pending SME confirmation`,
+            awaitingConfirmation
+        )
     }
     if (smePendingAcceptanceCount > 0) {
-        notes.push(`Unresponsive: ${smePendingAcceptanceCount} assigned intervention(s) pending SME acceptance`)
+        note(
+            'awaiting-acceptance',
+            `Unresponsive: ${smePendingAcceptanceCount} assigned intervention(s) pending SME acceptance`,
+            awaitingAcceptance
+        )
     }
     if (smePendingAcceptanceCount + smePendingConfirmationCount >= 3 && responsivenessRiskDepartments.length) {
         noServiceReasons.push(`SME responsiveness threshold reached for: ${responsivenessRiskDepartments.join(', ')}.`)
     }
 
     if (!diagnosticPlan) {
-        notes.push('No diagnostic plan linked')
+        note('no-plan', 'No diagnostic plan linked', [
+            'Departments only know what to deliver once a diagnostic plan is created or linked for this SME.'
+        ])
         noServiceReasons.push('No diagnostic plan has been created or linked for this SME.')
     } else if (eligibleDpInterventions.length === 0) {
-        notes.push('Diagnostic plan has no intervention department services')
+        note('plan-without-services', 'Diagnostic plan has no intervention department services', [
+            "None of the plan's interventions belong to a department marked as an intervention department."
+        ])
         noServiceReasons.push('The diagnostic plan does not list services for departments marked as intervention departments.')
     } else if (fullyConfirmedDepartments.length === 0) {
         if (!accessInfo.hasAccessedSystem) {
             noServiceReasons.push('The SME has never accessed the system.')
         }
     } else if (missingDepartments.length > 0) {
-        notes.push(`${missingDepartments.length} department(s) need confirmation or service follow-up`)
+        note(
+            'departments-follow-up',
+            `${missingDepartments.length} department(s) need confirmation or service follow-up`,
+            missingDepartments.map(dep =>
+                `${dep.departmentName}: ${
+                    !dep.deptConfirmed
+                        ? 'plan not reviewed by the department yet'
+                        : !dep.smmeConfirmed
+                            ? 'waiting for the SME to confirm the plan'
+                            : 'plan confirmed, no service delivered yet'
+                }`
+            )
+        )
         missingDepartments.forEach(dep => {
             if (dep.deptConfirmed && dep.smmeConfirmed && dep.servicedCount === 0) {
                 noServiceReasons.push(`${dep.departmentName}: Developmental Plan is confirmed, but no service has been assigned.`)
@@ -1107,16 +1182,35 @@ export function buildRow(args: {
     }
 
     if (totalTouches === 0 && fullyConfirmedDepartments.length > 0) {
-        notes.push('No assigned interventions recorded yet for confirmed departments')
+        note(
+            'no-assignments',
+            'No assigned interventions recorded yet for confirmed departments',
+            fullyConfirmedDepartments.map(dep => `${dep.departmentName}: plan confirmed, nothing assigned`)
+        )
         if (!accessInfo.hasAccessedSystem) {
             noServiceReasons.push('The SME has never accessed the system.')
         }
     }
 
-    if (daysSinceLastService !== null) {
-        if (daysSinceLastService >= 180) notes.push('No service in 6+ months')
-        else if (daysSinceLastService >= 90) notes.push('No service in 3+ months')
-        else if (daysSinceLastService >= 30) notes.push('No service in 1 month+')
+    if (daysSinceLastService !== null && daysSinceLastService >= 30) {
+        const label =
+            daysSinceLastService >= 180
+                ? 'No service in 6+ months'
+                : daysSinceLastService >= 90
+                    ? 'No service in 3+ months'
+                    : 'No service in 1 month+'
+        const details = [
+            lastInterventionDate
+                ? `Last service ${dayjs(lastInterventionDate).format('D MMM YYYY')}, ${daysSinceLastService} days ago`
+                : `${daysSinceLastService} days without service`
+        ]
+        if (riskInputs.expectedServiceIntervalDays) {
+            details.push(`Expected every ${riskInputs.expectedServiceIntervalDays} days`)
+        }
+        // Counts completed work and attended sessions only, like the score; the
+        // department dates on the Services tab include work still in progress.
+        details.push('Counts completed work and attended sessions only')
+        note('service-gap', label, details)
     }
 
     return {
@@ -1137,6 +1231,8 @@ export function buildRow(args: {
         docsPending: docs.pending,
         docsQueried: docs.queried,
         docsRejected: docs.rejected,
+        docsExpired: docs.expired,
+        complianceItems: docs.items,
 
         expectedDepartments,
         servicedDepartments,

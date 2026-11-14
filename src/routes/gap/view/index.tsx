@@ -7,7 +7,7 @@ import { getAllowedSectionsForDept } from '../sections'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 
 /**
- * Full-page GAP Analysis detail — /operations/gap/:id
+ * Full-page GAP Analysis detail — /gap/:id
  *
  * Manual GAPs live in applications/{appId}/complianceDocuments/{id}, so the
  * application id travels in ?appId= to keep the URL shareable and refreshable.
@@ -31,7 +31,7 @@ const GAPAnalysisDetailView: React.FC = () => {
 
     const goBack = () => {
         if (window.history.length > 1) navigate(-1)
-        else navigate('/operations/gap')
+        else navigate('/gap')
     }
 
     if (!id) {
@@ -41,7 +41,7 @@ const GAPAnalysisDetailView: React.FC = () => {
                 showIcon
                 message='Missing GAP id'
                 description='This link does not point at a GAP Analysis record.'
-                action={<Button onClick={() => navigate('/operations/gap')}>Back to list</Button>}
+                action={<Button onClick={() => navigate('/gap')}>Back to list</Button>}
             />
         )
     }

@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.workflowQueryReminderCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const reminderCadence_1 = require("./reminderCadence");
@@ -48,7 +48,7 @@ function asDate(value) {
  * no separate ledger collection, unlike compliance's per-document ledger,
  * since a workflowQuery is a single long-lived doc with a stable ref.
  */
-exports.workflowQueryReminderCron = (0, scheduler_1.onSchedule)({
+exports.workflowQueryReminderCron = (0, cronHeartbeat_1.scheduledJob)("workflowQueryReminderCron", {
     region: "us-central1",
     schedule: "0 8 * * *",
     timeZone: "Africa/Johannesburg",
@@ -74,7 +74,7 @@ exports.workflowQueryReminderCron = (0, scheduler_1.onSchedule)({
             logger.warn("workflowQueryReminderCron.noResolver", { queryId: querySnap.id });
             continue;
         }
-        const resolverRole = String(query.resolver?.role || "consultant").trim();
+        const resolverRole = String(query.resolver?.role || "coordinator").trim();
         await emailShared_1.db.collection("notifications").add({
             type: "workflow-query-reminder",
             message: "Reminder: an open query needs your response.",

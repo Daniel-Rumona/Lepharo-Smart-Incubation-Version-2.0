@@ -494,8 +494,6 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
             switch (key) {
                 case 'operations':
                     return 'HOD'
-                case 'projectmanager':
-                    return 'Project Coordinator'
                 default:
                     return key
                         ? key.charAt(0).toUpperCase() + key.slice(1).toLowerCase()

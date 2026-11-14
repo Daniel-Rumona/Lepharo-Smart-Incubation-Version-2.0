@@ -1,7 +1,7 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { suppressRecordNotifications } from "./syntheticData";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { buildAppointmentEmailHTML, buildICS, coreChanged } from "./emailHelpers";
 import { admin, db, getTransporter, toDate, formatWhere, APP_BASE_URL, ApptDoc } from "./emailShared";
 import { notifyInApp, uidForParticipant } from "./inAppNotifications";
@@ -287,7 +287,7 @@ function buildAppointmentCompletionEmail(opts: {
   return { subject, html, text };
 }
 
-export const appointmentCompletionNotifier = onSchedule(
+export const appointmentCompletionNotifier = scheduledJob("appointmentCompletionNotifier",
   {
     region: "us-central1",
     schedule: "*/30 * * * *",

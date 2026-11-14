@@ -22,30 +22,33 @@ const labelsFit = (labels: string[]) => {
  * A filter choice for a filter popover. Short lists with short labels (gender,
  * age group) are a one-click pill strip so every option is visible; long lists
  * or long labels (hubs, provinces) keep the dropdown. With nothing to choose between, it renders nothing rather than a
- * lone "All".
+ * lone "All". A value may carry its own label, e.g. { value: 'not_serviced', label: 'Not serviced' }.
  */
+export type ChoiceValue = { value: string; label: string }
+
 export const ChoiceFilter: React.FC<{
     id: string
     label: string
     /** Label for the "all" choice in the dropdown form, e.g. "All hubs". */
     allLabel: string
     value: string
-    values: string[]
+    values: Array<string | ChoiceValue>
     onChange: (value: string) => void
-}> = ({ id, label, allLabel, value, values, onChange }) =>
-    values.length === 0 ? null : (
+}> = ({ id, label, allLabel, value, values, onChange }) => {
+    const choices = values.map(v => (typeof v === 'string' ? { value: v, label: v } : v))
+    return choices.length === 0 ? null : (
         <div>
             <label className='ws-filter-label' id={`${id}-label`} htmlFor={id}>
                 {label}
             </label>
-            {values.length <= MAX_INLINE_CHOICES && labelsFit(['All', ...values]) ? (
+            {choices.length <= MAX_INLINE_CHOICES && labelsFit(['All', ...choices.map(c => c.label)]) ? (
                 <Segmented
                     id={id}
                     aria-labelledby={`${id}-label`}
                     block
                     value={value}
                     onChange={v => onChange(String(v))}
-                    options={[{ value: 'all', label: 'All' }, ...values.map(v => ({ value: v, label: v }))]}
+                    options={[{ value: 'all', label: 'All' }, ...choices]}
                 />
             ) : (
                 <Select
@@ -53,13 +56,14 @@ export const ChoiceFilter: React.FC<{
                     style={{ width: '100%' }}
                     value={value}
                     onChange={onChange}
-                    options={[{ value: 'all', label: allLabel }, ...values.map(v => ({ value: v, label: v }))]}
+                    options={[{ value: 'all', label: allLabel }, ...choices]}
                     showSearch
                     optionFilterProp='label'
                 />
             )}
         </div>
     )
+}
 
 /** The popover body: choice filters plus a Reset link. */
 export const FilterPanel: React.FC<{ children: React.ReactNode; canReset: boolean; onReset: () => void }> = ({

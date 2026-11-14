@@ -21,15 +21,15 @@ const InquiryDetailPage: React.FC = () => {
   const isMobile = !Grid.useBreakpoint().md
 
   if (!id) {
-    return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
+    return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/inquiries' }} />
   }
 
   const handleEdit = () => {
-    navigate(`/receptionist/inquiries/${id}/edit`)
+    navigate(`/inquiries/${id}/edit`)
   }
 
   const handleBack = () => {
-    navigate('/receptionist/inquiries')
+    navigate('/inquiries')
   }
 
   return (
@@ -50,7 +50,7 @@ const InquiryDetailPage: React.FC = () => {
           {!isMobile && (
             <Breadcrumb>
               <Breadcrumb.Item>
-                <Link to='/receptionist/inquiries'>Inquiries</Link>
+                <Link to='/inquiries'>Inquiries</Link>
               </Breadcrumb.Item>
               <Breadcrumb.Item>Inquiry Details</Breadcrumb.Item>
             </Breadcrumb>
@@ -99,7 +99,7 @@ const InquiryDetailPage: React.FC = () => {
         inquiryId={id}
         onEdit={handleEdit}
         onStatusAction={setStatusAction}
-        listPath={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }}
+        listPath={{ label: 'Back to inquiries', to: '/inquiries' }}
         onUnavailable={setUnavailable}
       />
       </div>

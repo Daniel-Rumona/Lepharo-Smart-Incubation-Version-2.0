@@ -28,6 +28,7 @@ import {
     ReceptionistDashboardData
   } from '@/types/inquiry'
   import { followUpService } from './followUpService'
+  import { nextWorkingMorning } from '@/lib/followUpBuckets'
 
   export const inquiryService = {
     // Create a new inquiry
@@ -35,7 +36,8 @@ import {
       inquiryData: InquiryFormData,
       branchId: string,
       submittedBy: string,
-
+      /** Submitted by the SME on their portal: reception always gets a follow-up to reply. */
+      options: { fromPortal?: boolean } = {}
     ): Promise<string> {
       try {
         // Validate required contact info (email or phone)
@@ -74,6 +76,12 @@ import {
           programId: inquiryData.programId || null,
           programName: inquiryData.programName || null,
           sourceType: inquiryData.sourceType || (inquiryData.programId ? 'Incubatee' : 'Non-Incubatee'),
+          // Funder, stakeholder, visitor and so on (lib/inquiryContactTypes); absent on older inquiries.
+          ...(inquiryData.contactType ? { contactType: inquiryData.contactType } : {}),
+          // A walk-in: why they came, and for a session the appointment they were checked in for.
+          ...(inquiryData.visitPurpose ? { visitPurpose: inquiryData.visitPurpose } : {}),
+          ...(inquiryData.appointmentId ? { appointmentId: inquiryData.appointmentId, appointmentSessionId: inquiryData.appointmentSessionId || null } : {}),
+          ...(inquiryData.visit ? { visit: inquiryData.visit } : {}),
           participantId: inquiryData.participantId || null,
           isRepresentative: Boolean(inquiryData.isRepresentative),
           updatedAt: serverTimestamp(),
@@ -82,6 +90,31 @@ import {
 
         const docRef = await addDoc(collection(db, 'inquiries'), inquiryDoc)
         console.log('Inquiry created successfully:', docRef.id)
+
+        // An SME's own inquiry always lands on reception's follow-up list, due at
+        // 09:00 the next working day (or when the SME asked to be contacted).
+        if (options.fromPortal) {
+          try {
+            const asked = inquiryData.followUp?.nextFollowUpDate
+            await followUpService.createFollowUp({
+              inquiryId: docRef.id,
+              branchId,
+              scheduledDate: asked && asked > new Date() ? asked : nextWorkingMorning(new Date()),
+              followUpType: inquiryData.followUp?.followUpMethod || 'Phone',
+              priority: inquiryData.priority,
+              notes: 'Reply to a new inquiry from the SME portal',
+              // The rules let an SME create a follow-up only in their own name; the
+              // reception desk owns it all the same (owner below).
+              assignedTo: submittedBy,
+              assignedToName: '',
+              owner: 'reception',
+              createdVia: 'portal'
+            })
+          } catch (followUpError) {
+            console.error('Failed to create the reception follow-up for portal inquiry:', docRef.id, followUpError)
+          }
+          return docRef.id
+        }
 
         // Create follow-up if follow-up data is provided
         if (inquiryData.followUp?.followUpMethod) {
@@ -148,11 +181,8 @@ import {
         console.log('InquiryService: Using simple query without complex filters to avoid index requirements')
         // Will filter isActive and sort by submittedAt client-side
 
-        // Add limit if specified
-        if (params.limit) {
-          console.log('InquiryService: Adding limit:', params.limit)
-          inquiryQuery = query(inquiryQuery, limit(params.limit))
-        }
+        // The limit is applied after the client-side filter and sort below, so a
+        // limit of N returns the newest N active inquiries, not N arbitrary ones.
 
         console.log('InquiryService: Executing Firestore query...')
         const querySnapshot = await getDocs(inquiryQuery)
@@ -298,7 +328,9 @@ import {
       inquiryId: string,
       newStatus: InquiryStatus,
       changedBy: string,
-      notes?: string
+      notes?: string,
+      /** Shown in the inquiry's activity; older entries only have the user id. */
+      changedByName?: string
     ): Promise<void> {
       try {
         console.log('updateInquiryStatus called:', { inquiryId, newStatus, changedBy, notes })
@@ -318,6 +350,7 @@ import {
           status: newStatus,
           changedAt: new Date(),
           changedBy,
+          ...(changedByName ? { changedByName } : {}),
           ...(notes ? { notes } : {})
         }
 

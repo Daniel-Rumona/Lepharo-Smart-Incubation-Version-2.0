@@ -30,6 +30,7 @@ const logger = __importStar(require("firebase-functions/logger"));
 const https_1 = require("firebase-functions/v2/https");
 const emailShared_1 = require("./emailShared");
 const departmentRoles_1 = require("./departmentRoles");
+const smeIdentityLogic_1 = require("./smeIdentityLogic");
 if (!admin.apps.length) {
     admin.initializeApp();
 }
@@ -69,8 +70,6 @@ function replaceEmailValue(value, oldEmail, newEmail) {
 }
 const HR_EMPLOYEE_ROLES = new Set([
     'operations',
-    'projectmanager',
-    'project manager',
     'coordinator',
     'projectadmin',
     'center coordinator',
@@ -130,11 +129,12 @@ async function assertUserDeletionAllowed(req, targetUid, targetEmail) {
         const target = targetSnap.data() || {};
         const targetRole = String(target.role || '').trim().toLowerCase();
         const sameDepartment = Boolean(caller.departmentId) && caller.departmentId === target.departmentId;
-        const canManageAsHr = (await (0, departmentRoles_1.isHrManagerProfile)(caller)) && isHrEmployeeTarget(target);
+        // HR can disable logins but not delete permanently; that stays with
+        // directors and admins. Coordinators are still managed by their department.
         const canManageCoordinator = targetRole === 'coordinator' &&
             ['operations', 'projectadmin', 'coordinator', 'center coordinator'].includes(callerRole) &&
             (callerRole !== 'operations' || sameDepartment);
-        if (!canManageAsHr && !canManageCoordinator) {
+        if (!canManageCoordinator) {
             throw new https_1.HttpsError('permission-denied', 'You are not authorized to permanently remove this employee.');
         }
     }
@@ -277,6 +277,10 @@ exports.setEmployeeAccountStatus = (0, https_1.onCall)(async (req) => {
     if (!uid || typeof active !== 'boolean') {
         throw new https_1.HttpsError('invalid-argument', 'Provide a uid and an active status.');
     }
+    const reason = String(req.data?.reason || '').trim().slice(0, 500);
+    if (!active && reason.length < 3) {
+        throw new https_1.HttpsError('invalid-argument', 'Give a reason for disabling this login.');
+    }
     const callerUid = req.auth?.uid;
     if (!callerUid) {
         throw new https_1.HttpsError('unauthenticated', 'You must be signed in.');
@@ -296,9 +300,13 @@ exports.setEmployeeAccountStatus = (0, https_1.onCall)(async (req) => {
     const target = targetSnap.data() || {};
     const callerRole = String(caller.role || '').trim().toLowerCase();
     const isAdministrator = ['system_admin', 'superadmin', 'director'].includes(callerRole);
-    const canManageAsHr = (await (0, departmentRoles_1.isHrManagerProfile)(caller)) && isHrEmployeeTarget(target);
+    // HR may manage ordinary staff logins, but never another HR manager's.
+    // Directors and admins are already outside HR_EMPLOYEE_ROLES.
+    const canManageAsHr = (await (0, departmentRoles_1.isHrManagerProfile)(caller)) &&
+        isHrEmployeeTarget(target) &&
+        !(await (0, departmentRoles_1.isHrManagerProfile)(target));
     if (!isAdministrator && !canManageAsHr) {
-        throw new https_1.HttpsError('permission-denied', 'You are not authorized to change this employee account.');
+        throw new https_1.HttpsError('permission-denied', 'Only a director can change the login of HR staff, directors or admins.');
     }
     await admin.auth().updateUser(uid, { disabled: !active });
     await targetSnap.ref.set({
@@ -309,8 +317,26 @@ exports.setEmployeeAccountStatus = (0, https_1.onCall)(async (req) => {
         accountDisabledBy: active
             ? admin.firestore.FieldValue.delete()
             : callerUid,
+        accountDisabledReason: active
+            ? admin.firestore.FieldValue.delete()
+            : reason,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+    await db.collection('auditLogs').add({
+        type: active ? 'account_enabled' : 'account_disabled',
+        when: admin.firestore.FieldValue.serverTimestamp(),
+        actor: {
+            uid: callerUid,
+            email: req.auth?.token?.email || caller.email || null,
+            role: callerRole,
+        },
+        target: {
+            uid,
+            email: target.email || null,
+            name: target.name || target.displayName || null,
+        },
+        reason: reason || null,
+    });
     return { ok: true, uid, active };
 });
 /** Resend the account-setup email, resetting the account to the default temporary password. */
@@ -422,8 +448,9 @@ exports.deleteUserCascade = (0, https_1.onCall)(async (req) => {
             throw new https_1.HttpsError("not-found", "Auth user not found");
         email = authUser.email || undefined;
     }
-    if (!uid || !email) {
-        throw new https_1.HttpsError("failed-precondition", "Could not resolve uid & email");
+    // An SME login may have no email (docs/sme-identity-migration-plan.md); the uid is enough.
+    if (!uid) {
+        throw new https_1.HttpsError("failed-precondition", "Could not resolve uid");
     }
     // ensure authUser loaded for response
     if (!authUser) {
@@ -505,12 +532,40 @@ exports.deleteUserCascade = (0, https_1.onCall)(async (req) => {
             byCollectionCount["users"] = (byCollectionCount["users"] || 0) + 1;
         }
     }
-    // Sweep collections
+    // Sweep collections (never by an empty email: that would match every doc without one)
     for (const col of TARGET_COLLECTIONS) {
-        for (const f of FIELDS_TO_CHECK)
-            await collectWhere(col, f, email);
+        if (email)
+            for (const f of FIELDS_TO_CHECK)
+                await collectWhere(col, f, email);
         for (const f of UID_FIELDS)
             await collectWhere(col, f, uid);
+    }
+    // SME login: also its participant record and the records keyed by its participantId
+    // (docs/sme-identity-migration-plan.md). Only when that participant is this login's
+    // alone: not linked to another uid and claimed by no other login.
+    const smeParticipantId = profile && (0, smeIdentityLogic_1.isSmeRole)(profile.role) ? String(profile.participantId || "").trim() : "";
+    if (smeParticipantId) {
+        const participantRef = db.collection("participants").doc(smeParticipantId);
+        const [participantSnap, claimants] = await Promise.all([
+            participantRef.get(),
+            db.collection("users").where("participantId", "==", smeParticipantId).limit(5).get(),
+        ]);
+        const linkedUid = String(participantSnap.data()?.uid || "").trim();
+        const ownedHere = participantSnap.exists &&
+            (!linkedUid || linkedUid === uid) &&
+            claimants.docs.every((d) => d.id === uid);
+        if (ownedHere) {
+            if (!toDelete.has(participantRef.path)) {
+                toDelete.set(participantRef.path, participantRef);
+                byCollectionCount["participants"] = (byCollectionCount["participants"] || 0) + 1;
+            }
+            for (const col of ["applications", "assignedInterventions"]) {
+                await collectWhere(col, "participantId", smeParticipantId);
+            }
+        }
+        else {
+            logger.warn("deleteUserCascade.participantNotOwned", { uid, participantId: smeParticipantId });
+        }
     }
     // Build impact summary (backend returns real collection names; UI can mask them)
     const impact = {

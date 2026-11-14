@@ -21,6 +21,11 @@ import {
     type ExtractedSurveyField,
     type SurveyExtractionResult
 } from '@/services/surveyQuestionExtractionService'
+import {
+    hasExportDesign,
+    type SurveyExportDesign
+} from '@/lib/surveyExportDesign'
+import { canReadExportDesign, readExportDesign } from '@/services/surveyTemplateImport'
 
 const { Text } = Typography
 
@@ -54,14 +59,18 @@ export type ImportQuestionsOptions = {
 type ImportQuestionsModalProps = {
     open: boolean
     onClose: () => void
-    /** Current survey category, sent as a hint to the extractor. */
-    category: string
+    /** Optional hint for the extractor; the survey builder no longer has categories. */
+    category?: string
     hasExistingFields: boolean
+    /** The survey already has a print design the import could replace. */
+    hasExistingDesign?: boolean
     /** Receives only the questions the user kept ticked. */
     onImport: (
         fields: ExtractedSurveyField[],
         meta: ImportQuestionsMeta,
-        options: ImportQuestionsOptions
+        options: ImportQuestionsOptions,
+        /** The document's printed layout, when the user chose to keep it. */
+        design?: SurveyExportDesign
     ) => void
 }
 
@@ -70,6 +79,7 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
     onClose,
     category,
     hasExistingFields,
+    hasExistingDesign,
     onImport
 }) => {
     const { message } = App.useApp()
@@ -80,6 +90,8 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
     const [skipped, setSkipped] = useState<Set<number>>(new Set())
     const [applyMeta, setApplyMeta] = useState(true)
     const [replace, setReplace] = useState(false)
+    const [design, setDesign] = useState<SurveyExportDesign | null>(null)
+    const [useDesign, setUseDesign] = useState(true)
 
     const reset = () => {
         setFile(null)
@@ -89,6 +101,8 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
         setSkipped(new Set())
         setApplyMeta(true)
         setReplace(false)
+        setDesign(null)
+        setUseDesign(true)
     }
 
     const handleClose = () => {
@@ -102,8 +116,25 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
         setError(null)
         setResult(null)
         setSkipped(new Set())
+        setDesign(null)
+        // The layout is read in the browser alongside the AI's question pass;
+        // a failure there never blocks the questions.
+        const designPromise = canReadExportDesign(target)
+            ? readExportDesign(target).catch(error => {
+                console.warn('Could not read the document layout', error)
+                return null
+            })
+            : Promise.resolve(null)
         try {
-            const extracted = await extractSurveyQuestions(target, { category })
+            const [extracted, layout] = await Promise.all([
+                extractSurveyQuestions(target, { category }),
+                designPromise
+            ])
+            const usable = layout && hasExportDesign(layout) ? layout : null
+            setDesign(usable)
+            setUseDesign(!hasExistingDesign)
+            // Questions named like the form's sign-off lines (Designation,
+            // Date, …) stay in: the PDF prints their answers on those lines.
             setResult(extracted)
         } catch (e: any) {
             setError(e?.message || 'Could not read questions from this document.')
@@ -135,7 +166,8 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                 description: result.description,
                 category: result.category
             },
-            { replace, applyMeta }
+            { replace, applyMeta },
+            design && useDesign ? design : undefined
         )
         message.success(
             `${selected.length} question${selected.length === 1 ? '' : 's'} imported.`
@@ -249,6 +281,26 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                             </Checkbox>
                         ) : null}
 
+                        {design ? (
+                            <Checkbox
+                                checked={useDesign}
+                                onChange={e => setUseDesign(e.target.checked)}
+                            >
+                                {hasExistingDesign ? 'Replace the print design with' : 'Print responses on'}{' '}
+                                this document's layout
+                                <Text type='secondary' style={{ display: 'block', fontSize: 12 }}>
+                                    {[
+                                        design.logoDataUrl && 'logo',
+                                        (design.docControl.length || design.approvals.length) && 'letterhead',
+                                        design.ratingLegend.length && 'rating legend',
+                                        design.signOff.length && `sign-off (${design.signOff.join(', ')})`
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </Text>
+                            </Checkbox>
+                        ) : null}
+
                         {hasExistingFields ? (
                             <Radio.Group
                                 value={replace ? 'replace' : 'append'}
@@ -265,7 +317,10 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                             style={{ maxHeight: '40vh', overflow: 'auto' }}
                             dataSource={result.fields}
                             renderItem={(field, index) => (
-                                <List.Item>
+                                // Keyed on the state so the row redraws as a whole
+                                // when it's ticked or unticked; the box and the
+                                // strike-through must never disagree.
+                                <List.Item key={`${index}-${skipped.has(index) ? 'out' : 'in'}`}>
                                     <Space align='start' style={{ width: '100%' }}>
                                         <Checkbox
                                             checked={!skipped.has(index)}
@@ -274,7 +329,10 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
                                         <div style={{ minWidth: 0 }}>
                                             <Text
                                                 strong={field.type === 'heading'}
-                                                delete={skipped.has(index)}
+                                                type={skipped.has(index) ? 'secondary' : undefined}
+                                                style={{
+                                                    textDecoration: skipped.has(index) ? 'line-through' : 'none'
+                                                }}
                                             >
                                                 {field.label}
                                             </Text>

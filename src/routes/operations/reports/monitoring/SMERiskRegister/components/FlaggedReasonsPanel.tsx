@@ -2,9 +2,9 @@ import { useState } from 'react'
 import {
     App,
     Button,
+    Collapse,
     Popconfirm,
     Space,
-    Tag,
     Tooltip,
     Typography,
     theme
@@ -323,32 +323,33 @@ export default function FlaggedReasonsPanel({
             ))}
 
             {row.notes.length > 0 && (
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap'
-                    }}
-                >
+                <div>
                     <Text
                         type="secondary"
-                        style={{ fontSize: 11 }}
+                        style={{ display: 'block', fontSize: 11, margin: '4px 0 6px' }}
                     >
-                        More detail:
+                        More detail
                     </Text>
 
-                    {row.notes.map(note => (
-                        <Tag
-                            key={note}
-                            style={{
-                                marginInlineEnd: 0,
-                                borderRadius: 999
-                            }}
-                        >
-                            {note}
-                        </Tag>
-                    ))}
+                    <Collapse
+                        size="small"
+                        items={row.notes.map(note => ({
+                            key: note.key,
+                            label: <Text style={{ fontSize: 13 }}>{note.label}</Text>,
+                            // A note with nothing more to say stays a plain line.
+                            collapsible: note.details.length ? undefined : ('icon' as const),
+                            showArrow: note.details.length > 0,
+                            children: note.details.length ? (
+                                <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                                    {note.details.map(detail => (
+                                        <li key={detail}>
+                                            <Text style={{ fontSize: 13 }}>{detail}</Text>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : null
+                        }))}
+                    />
                 </div>
             )}
         </Space>

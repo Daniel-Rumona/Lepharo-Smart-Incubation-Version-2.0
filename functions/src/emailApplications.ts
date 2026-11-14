@@ -1,8 +1,8 @@
+import { scheduledJob } from "./cronHeartbeat";
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { suppressRecordNotifications } from "./syntheticData";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { buildAcceptanceEmail, buildRejectionEmail } from "./emailHelpers";
 import { admin, db, getTransporter, getConsultantMapByIds, REMINDER_STATUSES, fmtDate, TaskDoc } from "./emailShared";
 import { notifyInApp, uidForParticipant } from "./inAppNotifications";
@@ -311,7 +311,7 @@ export const onTaskWriteSendEmails = onDocumentWritten(
   }
 );
 
-export const taskDeadlineNotifier = onSchedule(
+export const taskDeadlineNotifier = scheduledJob("taskDeadlineNotifier",
   {
     region: "us-central1",
     schedule: "0 9,13,17 * * *",

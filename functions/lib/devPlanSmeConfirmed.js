@@ -30,25 +30,13 @@ const emailShared_1 = require("./emailShared");
 const inAppNotifications_1 = require("./inAppNotifications");
 const movRecipients_1 = require("./movRecipients");
 const syntheticData_1 = require("./syntheticData");
+const findSmeLogic_1 = require("./findSmeLogic");
 /**
  * When an SME confirms a department's part of their development plan, that
  * department's HODs get an in-app notice that they can start assigning the
  * work. In-app only: the type is not in NOTIFICATION_REGISTRY, so no email
  * goes out, and nothing is sent on WhatsApp.
  */
-// SME sign-off lives in two maps (the roadmap and the plan builder write
-// different ones); a department counts as confirmed when either says so.
-const isOn = (value) => value === true || (value && typeof value === "object" && value.confirmed === true);
-const confirmedDeptIds = (plan) => {
-    const ids = new Set();
-    for (const map of [plan?.incubateeDepartmentConfirmationsByDeptId, plan?.smmeConfirmedByDeptId]) {
-        Object.entries(map || {}).forEach(([id, value]) => {
-            if (isOn(value))
-                ids.add(id);
-        });
-    }
-    return ids;
-};
 /** The department's HODs; a sub-department with none falls back to its parent's. */
 async function hodUidsFor(departmentId) {
     const snap = await emailShared_1.db.collection("departments").doc(departmentId).get();
@@ -70,8 +58,8 @@ exports.onDevPlanSmeConfirmedNotifyHod = (0, firestore_1.onDocumentUpdated)({ re
     const planId = String(event.params.planId);
     if ((0, syntheticData_1.suppressRecordNotifications)(after, planId))
         return;
-    const was = confirmedDeptIds(before);
-    const newlyConfirmed = Array.from(confirmedDeptIds(after)).filter((id) => !was.has(id));
+    const was = (0, findSmeLogic_1.confirmedDeptIds)(before);
+    const newlyConfirmed = Array.from((0, findSmeLogic_1.confirmedDeptIds)(after)).filter((id) => !was.has(id));
     if (!newlyConfirmed.length)
         return;
     const participantId = String(after.participantId || "").trim() || null;

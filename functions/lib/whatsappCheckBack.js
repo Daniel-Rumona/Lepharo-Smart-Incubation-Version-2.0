@@ -69,12 +69,21 @@ async function staffNumber(assigneeId) {
     }
     return "";
 }
-/** The SME's WhatsApp number, only if they said yes to WhatsApp updates. */
-async function smeConsentedNumber(email) {
-    if (!email)
-        return "";
-    const snap = await emailShared_1.db.collection("users").where("email", "==", lower(email)).limit(5).get();
-    const match = snap.docs.find((doc) => {
+/**
+ * The SME's WhatsApp number, only if they said yes to WhatsApp updates.
+ * Their login is found by users.participantId (docs/sme-identity-migration-plan.md).
+ */
+async function smeConsentedNumber(participantId, email) {
+    let docs = [];
+    if (participantId) {
+        const linked = await emailShared_1.db.collection("users").where("participantId", "==", participantId).limit(5).get();
+        docs = linked.docs.filter((doc) => lower(doc.data().role) === "incubatee");
+    }
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+    if (!docs.length && email) {
+        docs = (await emailShared_1.db.collection("users").where("email", "==", lower(email)).limit(5).get()).docs;
+    }
+    const match = docs.find((doc) => {
         const data = doc.data();
         return lower(data.role) === "incubatee" && data.whatsappConsent?.status === "granted";
     });
@@ -109,7 +118,7 @@ async function sendCheckBackWhatsApp(followUpId, followUp, options) {
     }
     if (options.sendToSme) {
         try {
-            const to = await smeConsentedNumber((0, whatsappCommon_1.clean)(followUp.participantEmail));
+            const to = await smeConsentedNumber((0, whatsappCommon_1.clean)(followUp.participantId), (0, whatsappCommon_1.clean)(followUp.participantEmail));
             if (to) {
                 result.sme = await post((0, whatsappCheckBackLogic_1.smeDispatch)({
                     followUpId,
@@ -145,10 +154,17 @@ async function recordCheckBackTap(input) {
     // An SME may reply from the number they gave consent on, even if their profile number differs.
     const digits = (0, whatsappCommon_1.normalizePhone)(input.phoneNumber);
     let smeConsentNumberMatches = false;
-    if (digits && (0, whatsappCommon_1.clean)(followUp.participantEmail)) {
+    const followUpParticipantId = (0, whatsappCommon_1.clean)(followUp.participantId);
+    if (digits && (followUpParticipantId || (0, whatsappCommon_1.clean)(followUp.participantEmail))) {
         for (const candidate of (0, whatsappCommon_1.candidatePhoneValues)(digits)) {
             const owners = await emailShared_1.db.collection("users").where("whatsappConsent.number", "==", candidate).limit(3).get();
-            if (owners.docs.some((doc) => lower(doc.data().email) === lower(followUp.participantEmail))) {
+            if (owners.docs.some((doc) => {
+                const data = doc.data();
+                if (followUpParticipantId && (0, whatsappCommon_1.clean)(data.participantId))
+                    return (0, whatsappCommon_1.clean)(data.participantId) === followUpParticipantId;
+                // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+                return !!(0, whatsappCommon_1.clean)(followUp.participantEmail) && lower(data.email) === lower(followUp.participantEmail);
+            })) {
                 smeConsentNumberMatches = true;
                 break;
             }

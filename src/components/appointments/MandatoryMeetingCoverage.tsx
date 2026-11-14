@@ -50,8 +50,6 @@ const { Text, Title } = Typography
 const FACILITATOR_ROLES = new Set([
     'operations',
     'coordinator',
-    'consultant',
-    'projectmanager',
     'employee'
 ])
 

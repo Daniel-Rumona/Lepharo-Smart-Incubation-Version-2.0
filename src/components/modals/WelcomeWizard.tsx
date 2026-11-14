@@ -95,7 +95,6 @@ const { Option } = Select
 
 type Role =
     | 'system_admin'
-    | 'consultant'
     | 'incubatee'
     | 'operations'
     | 'director'
@@ -207,6 +206,12 @@ const WelcomeWizard: React.FC = () => {
 
     // --- Signature state (typed / drawn / upload optional)
     const [sigMode, setSigMode] = useState<'typed' | 'drawn' | 'upload'>('typed')
+    // With a signature saved, its tools stay closed until the person chooses to replace it.
+    const [replacingSig, setReplacingSig] = useState(false)
+    const sigEditorOpen = !signatureURL || replacingSig
+    useEffect(() => {
+        setReplacingSig(false)
+    }, [signatureURL])
     const [typedName, setTypedName] = useState('')
     const [typedFont, setTypedFont] = useState(FONT_OPTIONS[0])
     const styledRef = useRef<HTMLDivElement>(null)
@@ -215,9 +220,11 @@ const WelcomeWizard: React.FC = () => {
     // password step state
     const [mustChangePassword, setMustChangePassword] = useState(false)
     const [pwdStepComplete, setPwdStepComplete] = useState(false)
-    // Fixed when the page loads: a person on a default password sees only the password
-    // step, and this must not flip when the password is saved or the rest would appear.
+    // Set when the page loads: a person on a default password sees only the password
+    // step first. Saving the password does not flip it; the "Continue setup" button on
+    // the done screen does, and the rest of the setup follows in the same visit.
     const [passwordOnly, setPasswordOnly] = useState(false)
+    const [continuedAfterPassword, setContinuedAfterPassword] = useState(false)
     const [pwdForm] = Form.useForm()
 
     // loading guards
@@ -395,8 +402,7 @@ const WelcomeWizard: React.FC = () => {
             mustRegisterCompany,
             hideConsent: false
         })
-        setPlan(
-            pendingWelcomeSteps(
+        const pending = pendingWelcomeSteps(
                 keys,
                 {
                     password: pwdStepComplete,
@@ -408,7 +414,8 @@ const WelcomeWizard: React.FC = () => {
                 },
                 firstVisit
             )
-        )
+        // Carrying on straight from the password step: no second welcome screen.
+        setPlan(continuedAfterPassword ? pending.filter(key => key !== 'welcome') : pending)
         setCurrent(0)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading, plan])
@@ -580,7 +587,7 @@ const WelcomeWizard: React.FC = () => {
         const observer = new ResizeObserver(update)
         observer.observe(pad)
         return () => observer.disconnect()
-    }, [sigMode, currentKey])
+    }, [sigMode, currentKey, sigEditorOpen])
 
     // Back / Next and the like: one row, the buttons sharing it evenly.
     const actionRow = (children: React.ReactNode, marginTop = 16) => (
@@ -692,11 +699,22 @@ const WelcomeWizard: React.FC = () => {
     }
 
     // Final redirect (role-aware)
+    // Signature and POPIA are asked of everyone, so they follow the password step
+    // in the same visit rather than waiting for the next sign-in.
+    const restOfSetupPending = !signatureURL || !popiaSigned
+
     const finish = async () => {
         if (!userId) return
 
-        // mark welcome complete. After a password-only visit the rest of the setup
-        // (POPIA, WhatsApp, signature) has not happened yet, so it is left to appear next time.
+        if (passwordOnly && restOfSetupPending) {
+            setPasswordOnly(false)
+            setContinuedAfterPassword(true)
+            setPlan(null)
+            return
+        }
+
+        // mark welcome complete. A password-only visit only gets here when nothing else
+        // is missing; otherwise it carried on into the rest of the setup above.
         if (!passwordOnly) {
             await setDoc(
                 doc(db, 'users', userId),
@@ -1290,16 +1308,38 @@ const WelcomeWizard: React.FC = () => {
                     Set up your signature
                 </Title>
                 <Spin spinning={savingSig}>
-                    {signatureURL && (
-                        <Alert
-                            type='success'
-                            showIcon
-                            message='Signature on file'
-                            description='You can replace it using one of the methods below.'
-                            style={{ marginBottom: 12 }}
-                        />
-                    )}
-
+                    {/* One thing at a time: the saved signature, or the tools to make one,
+                        never both (a drawing and its saved copy side by side was confusing). */}
+                    {!sigEditorOpen ? (
+                        <>
+                            <div
+                                className='keep-light'
+                                style={{
+                                    padding: '20px 16px',
+                                    background: '#fff',
+                                    borderRadius: 8,
+                                    border: `1px solid ${token.colorBorderSecondary}`,
+                                    textAlign: 'center'
+                                }}
+                            >
+                                <img
+                                    src={signatureURL || ''}
+                                    alt='Your signature'
+                                    style={{ maxHeight: 120, maxWidth: '100%' }}
+                                />
+                            </div>
+                            <Paragraph type='secondary' style={{ margin: '10px 0 0', textAlign: 'center' }}>
+                                Your signature is saved. It is placed on the documents you sign.
+                            </Paragraph>
+                            {actionRow(
+                                <Button size='large' block icon={<EditOutlined />} onClick={() => setReplacingSig(true)}>
+                                    Replace signature
+                                </Button>,
+                                12
+                            )}
+                        </>
+                    ) : (
+                    <>
                     {/* Large, full-width choice: the radio buttons were easy to miss. */}
                     <Segmented
                         block
@@ -1463,23 +1503,11 @@ const WelcomeWizard: React.FC = () => {
                     )}
 
                     {signatureURL && (
-                        <div
-                            className='keep-light'
-                            style={{
-                                marginTop: 16,
-                                padding: 12,
-                                background: '#fff',
-                                borderRadius: 8,
-                                border: `1px dashed ${token.colorBorder}`,
-                                textAlign: 'center'
-                            }}
-                        >
-                            <img
-                                src={signatureURL}
-                                alt='Your signature'
-                                style={{ maxHeight: 90, maxWidth: '100%' }}
-                            />
-                        </div>
+                        <Button type='link' block onClick={() => setReplacingSig(false)} style={{ marginTop: 8 }}>
+                            Keep my current signature
+                        </Button>
+                    )}
+                    </>
                     )}
                 </Spin>
             </Card>
@@ -1753,7 +1781,9 @@ const WelcomeWizard: React.FC = () => {
     const renderCompleted = () => {
         const saved = plannedTasks.map(key => STEP_SAVED[key]).filter(Boolean) as string[]
         const description = passwordOnly
-            ? 'Your account is secure. The rest of your setup will appear the next time you sign in.'
+            ? restOfSetupPending
+                ? 'Your account is secure. Next, set up your signature and sign the POPIA privacy notice.'
+                : 'Your account is secure. You can continue to the system now.'
             : saved.length
                 ? `${joinList(saved).replace(/^./, c => c.toUpperCase())} ${saved.length === 1 ? 'is' : 'are'} saved. You can continue to the system now.`
                 : 'Everything on your account is already set up. You can continue to the system now.'
@@ -1774,7 +1804,7 @@ const WelcomeWizard: React.FC = () => {
                 iconPosition='end'
                 onClick={finish}
             >
-                Continue to the system
+                {passwordOnly && restOfSetupPending ? 'Continue setup' : 'Continue to the system'}
             </Button>
         </Card>
         )

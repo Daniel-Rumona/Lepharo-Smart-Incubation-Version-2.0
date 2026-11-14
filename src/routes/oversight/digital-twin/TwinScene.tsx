@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Slider } from 'antd'
-import { CaretRightOutlined, PauseOutlined, UndoOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, CaretRightOutlined, HistoryOutlined, PauseOutlined, SlidersOutlined, UndoOutlined } from '@ant-design/icons'
 import { useReducedMotion } from 'framer-motion'
 import { WORK_STAGES, type WorkStage } from '@/services/digitalTwin/simulation'
 import { useScenario } from './ScenarioState'
@@ -43,6 +43,19 @@ const addDay = (iso: string) => new Date(Date.parse(iso + 'T12:00:00Z') + 864000
 /** The row with the view buttons and the critical notice is hidden for now. Set this to true, or put 'show' in localStorage under 'twinTopRow', to bring it back. */
 const TOP_ROW_VISIBLE = false
 const showTopRow = () => { if (TOP_ROW_VISIBLE) return true; try { return window.localStorage.getItem('twinTopRow') === 'show' } catch { return false } }
+/** The projection the summary sentence describes, for anything that wants to talk about it (Ask the twin). */
+export type SceneProjection = {
+    summary: string
+    weeks: number
+    backlogToday: number
+    backlogEnd: number
+    scenarioBacklogEnd: number
+    scenarioActive: boolean
+    queuesToday: Record<string, number>
+    queuesEnd: Record<string, number>
+    scenarioQueuesEnd: Record<string, number>
+}
+
 /** What each team's count means today, in that team's own words. */
 const READY: Record<string, string> = { delivery: 'due to deliver', hod: 'to approve', cc: 'to validate', me: 'to check' }
 const ARCH_H = 498, WIDE_FROM = 900
@@ -55,7 +68,18 @@ const AY = { top: 195, side: 300, core: 300, topCard: 58, sideCard: 405 } as con
  * change, with the "if nothing changes" value kept beside them. The slider moves through the simulated weeks.
  * On a wide page the arch spreads across the whole width; on a narrow one the teams become a two-column grid. Follows the site's theme.
  */
-export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecords, deliveryOwners, smes }: { outside: SceneStation[]; onSeeAll: () => void; peek: Record<string, { total: number; lines: string[] }>; notice?: React.ReactNode; nav?: React.ReactNode; deliveryRecords: number; deliveryOwners: Record<string, number>; smes: { count: number } }) {
+export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecords, deliveryOwners, smes, onOpenStage, onHistory, onAssumptions, highlight = [], renderSummary }: {
+    outside: SceneStation[]; onSeeAll: () => void; peek: Record<string, { total: number; lines: string[] }>; notice?: React.ReactNode; nav?: React.ReactNode
+    deliveryRecords: number; deliveryOwners: Record<string, number>; smes: { count: number }
+    /** Opens one team's records over the scene. */
+    onOpenStage?: (key: string) => void
+    onHistory?: () => void
+    onAssumptions?: () => void
+    /** Teams to draw attention to, e.g. the ones an answer is about. */
+    highlight?: string[]
+    /** Replaces the summary sentence under the scene, e.g. with Ask the twin. */
+    renderSummary?: (projection: SceneProjection) => React.ReactNode
+}) {
     const reduced = useReducedMotion()
     const s = useScenario()
     const run = s.run
@@ -130,7 +154,7 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
     }
     const pile = (m: typeof MODULES[number], px: number, py: number, scale = 1) => {
         const f = facts(m)
-        return <g key={m.key} className={`ts-module ${f.level}`} role="img" aria-label={`${m.name}: ${f.q} ${m.unit} waiting in the model`} transform={`translate(${px} ${py}) scale(${scale})`}>
+        return <g key={m.key} className={`ts-module ${f.level}${highlight.includes(m.key) ? ' is-highlight' : ''}`} role="img" aria-label={`${m.name}: ${f.q} ${m.unit} waiting in the model`} transform={`translate(${px} ${py}) scale(${scale})`}>
                 <ellipse cx={0} cy={22} rx={62} ry={26} className="ts-pad" style={{ stroke: COLOUR[f.level] }} />
                 {active && f.ghost !== f.cubes && <g style={{ opacity: .35 }}><Pile cubes={f.ghost} colour="#9fb7dc" grey={f.greyCubes} /></g>}
                 <Pile cubes={f.cubes} colour={COLOUR[f.level]} grey={f.greyCubes} />
@@ -139,7 +163,8 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
     const cardBody = (m: typeof MODULES[number]) => {
         const f = facts(m), x = dial(m.stage)
         return <>
-            <header><i style={{ background: COLOUR[f.level] }} aria-hidden="true" /><span>{m.name}</span></header>
+            <header><i style={{ background: COLOUR[f.level] }} aria-hidden="true" /><span>{m.name}</span>
+                {onOpenStage && <button type="button" className="ts-see" onClick={() => onOpenStage(m.key)} aria-label={`See all ${m.name} records`}>See all <ArrowRightOutlined /></button>}</header>
             <div className="ts-num"><b>{f.q}</b><small>{k === 0 ? READY[m.stage] : `by ${dateText(k)}`}</small></div>
             <p className="ts-sub">{active && f.delta !== 0 ? <span className={f.delta < 0 ? 'good' : 'bad'}>{f.delta < 0 ? '▼' : '▲'} {Math.abs(f.delta)} {f.delta < 0 ? 'fewer' : 'more'} than if nothing changes</span> : k === 0 && m.stage === 'delivery' && start.later ? `${start.later} more scheduled for later days` : '\u00a0'}</p>
             {f.others > 0 && <p className="ts-sub ts-others"><i aria-hidden="true" />{f.others} more waiting on {start.waitingOn || 'others'}</p>}
@@ -172,7 +197,8 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
         <circle r={R + 6} className="ts-core-track" />
         <circle r={R + 6} className="ts-core-arc" strokeDasharray={circ} strokeDashoffset={circ * (1 - cleared)} transform="rotate(-90)" />
     </>
-    const coreText = <div className="ts-core-text"><b>{now.backlog}</b><span>interventions open</span><small>{k === 0 ? 'today' : `by ${dateText(k)}`}</small></div>
+    const coreText = <div className="ts-core-text"><b>{now.backlog}</b><span>interventions open</span><small>{k === 0 ? 'today' : `by ${dateText(k)}`}</small>
+        <button type="button" className="ts-see core" onClick={onSeeAll}>All stages <ArrowRightOutlined /></button></div>
     const coreDelta = <div className="ts-core-delta">
         {active && diff !== 0 ? <>If nothing changes: <b>{was.backlog}</b><em className={diff < 0 ? 'good' : 'bad'}> ({diff > 0 ? '+' : ''}{diff})</em></> : active ? <>Same as if nothing changes: <b>{was.backlog}</b></> : null}
     </div>
@@ -202,7 +228,7 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
         <div className="ts-core-text-pos" style={{ left: px(AX.core), top: AY.core }}>{coreText}</div>
         <div className="ts-pos" style={{ left: px(AX.core), top: AY.core + 118 }}>{coreDelta}</div>
         {smesCard({ position: 'absolute', transform: 'translate(-50%,-50%)', left: px(AX.smes), top: AY.topCard })}
-        {MODULES.map(m => <div key={m.key} className={`ts-card ts-pos ${facts(m).level}`} style={{ left: px(archX[m.key]), top: m.stage === 'hod' || m.stage === 'cc' ? AY.topCard : AY.sideCard }}>{cardBody(m)}</div>)}
+        {MODULES.map(m => <div key={m.key} className={`ts-card ts-pos ${facts(m).level}${highlight.includes(m.key) ? ' is-highlight' : ''}`} style={{ left: px(archX[m.key]), top: m.stage === 'hod' || m.stage === 'cc' ? AY.topCard : AY.sideCard }}>{cardBody(m)}</div>)}
         {outside[0] && pill(outside[0], { position: 'absolute', transform: 'translate(-50%,-50%)', left: px(.665), top: 392 })}
         {intake({ position: 'absolute', transform: 'translate(-50%,-50%)', left: px(AX.core), top: 468 })}
     </div>
@@ -217,7 +243,7 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
         <div className="ts-cols">
             {MODULES.flatMap((m, i) => [<div key={m.key} className="ts-col">
                 <svg className="ts-pile" viewBox="-90 -110 180 150" role="group" aria-label={m.name}>{pile(m, 0, 0)}</svg>
-                <div className={`ts-card ${facts(m).level}`}>{cardBody(m)}</div>
+                <div className={`ts-card ${facts(m).level}${highlight.includes(m.key) ? ' is-highlight' : ''}`}>{cardBody(m)}</div>
             </div>, ...(i === 0 ? [<div key="smes" className="ts-col"><svg className="ts-pile" viewBox="-90 -110 180 150" role="group" aria-label="SMEs">{smesPile(0, 0)}</svg>{smesCard()}</div>] : [])])}
         </div>
         <div className="ts-strip">{outside[0] && pill(outside[0])}{intake()}</div>
@@ -227,14 +253,30 @@ export function TwinScene({ outside, onSeeAll, peek, notice, nav, deliveryRecord
         {top}
         {wide ? arch : grid}
         <div className="ts-time">
+            {onHistory && <Button shape="round" size="small" icon={<HistoryOutlined />} onClick={onHistory} className="ts-time-history">Past weeks</Button>}
             <Button shape="circle" type="primary" aria-label={playing ? 'Pause' : 'Play the next weeks'} icon={playing ? <PauseOutlined /> : <CaretRightOutlined />} onClick={() => { if (k >= frames) setStep(0); setPlaying(p => !p) }} />
             <div className="ts-slide">
                 <Slider aria-label="Days ahead" min={0} max={frames} value={k} onChange={v => { setPlaying(false); setStep(v) }} tooltip={{ formatter: v => (v === undefined ? '' : v === 0 ? 'Today' : dateText(v)) }} />
                 <div className="ts-axis"><span>Today</span><span>{dateText(frames)} · {s.assumptions.weeks} weeks ahead</span></div>
             </div>
             <Button shape="round" size="small" icon={<UndoOutlined />} disabled={!active} onClick={reset}>Reset dials</Button>
+            {onAssumptions && <Button shape="round" size="small" icon={<SlidersOutlined />} onClick={onAssumptions}>Assumptions</Button>}
         </div>
-        <p className="ts-headline">{headline(run.baseline, run.scenario, run.baselineAssumptions.inflowPerWeek, active)}
-        </p>
+        {(() => {
+            const summary = headline(run.baseline, run.scenario, run.baselineAssumptions.inflowPerWeek, active)
+            if (!renderSummary) return <p className="ts-headline">{summary}</p>
+            const last = (r: typeof run.baseline) => r.days[r.days.length - 1]
+            return renderSummary({
+                summary,
+                weeks: s.assumptions.weeks,
+                backlogToday: start.backlog,
+                backlogEnd: last(run.baseline).backlog,
+                scenarioBacklogEnd: last(run.scenario).backlog,
+                scenarioActive: active,
+                queuesToday: { ...start.queues },
+                queuesEnd: { ...last(run.baseline).queues },
+                scenarioQueuesEnd: { ...last(run.scenario).queues }
+            })
+        })()}
     </div>
 }

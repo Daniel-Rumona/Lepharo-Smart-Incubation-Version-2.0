@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./firebase";
 
 // QuantNow has no Firestore persistence of its own - the Finance page reads it
@@ -106,7 +106,7 @@ type RevenueRowWrite = {
   data: FirebaseFirestore.DocumentData;
 };
 
-export const revenueMetricsSyncCron = onSchedule(
+export const revenueMetricsSyncCron = scheduledJob("revenueMetricsSyncCron",
   {
     region: "us-central1",
     schedule: "0 5 * * *",

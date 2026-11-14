@@ -1,6 +1,7 @@
 require("../node26-shim.cjs");
 const { Timestamp } = require("firebase-admin").firestore;
 const crypto = require("node:crypto");
+const { sessionNote } = require("./sessionNotes.cjs");
 const VERSION = "1.0.0";
 const RUN = "dtseed_20261009_v1";
 const REF = "2026-10-09T08:00:00.000Z";
@@ -272,18 +273,12 @@ function generate() {
       const rate = [0.045, -0.025, 0, 0.015][i % 4],
         base = 20000 + i * 1700;
       revenue[month] = Math.round(base * (1 + rate * m));
+      // Staff follow the business: about one permanent post per R6,500 of monthly
+      // revenue, plus a temporary hand in some months. No intervention effect is
+      // built in, so the impact analysis only finds what the cohorts produce.
       headcount[month] = {
-        permanent: Math.max(
-          1,
-          3 +
-            (i % 7) +
-            (i % 4 === 0
-              ? Math.floor(m / 4)
-              : i % 4 === 1
-              ? -Math.floor(m / 5)
-              : 0)
-        ),
-        temporary: m % 3 === 0 ? 1 : 0,
+        permanent: Math.max(1, Math.round(revenue[month] / 6500)),
+        temporary: (i + m) % 3 === 0 ? 1 : 0,
       };
       put(
         "participantMonthlyMetrics",
@@ -705,9 +700,18 @@ function generate() {
                   : "scheduled",
               coverage: {
                 held: delivered || grouped ? true : future ? null : false,
+                // Realistic notes so the session prep brief has history to show.
                 outcomeSummary:
                   delivered || grouped
-                    ? "Synthetic session: operational records reviewed."
+                    ? sessionNote(iv.interventionTitle, sessionId).summary
+                    : null,
+                actions:
+                  delivered || grouped
+                    ? sessionNote(iv.interventionTitle, sessionId).actions
+                    : [],
+                nextFocus:
+                  delivered || grouped
+                    ? sessionNote(iv.interventionTitle, sessionId).nextFocus
                     : null,
                 coveredPoints:
                   delivered || grouped
@@ -789,10 +793,10 @@ function generate() {
         );
       }
       if (movId) {
+        // A MOV only exists once the facilitator completes the intervention, so it is never a draft;
+        // in_delivery gets no MOV at all (see movId above).
         const status =
-          scenario === "in_delivery"
-            ? "draft"
-            : scenario === "awaiting_smme"
+          scenario === "awaiting_smme"
             ? "awaiting_smme"
             : scenario === "awaiting_hod"
             ? "awaiting_hod"
@@ -857,7 +861,6 @@ function generate() {
         expectations.movStages[movId] =
           status === "approved" ? "hod_approved" : status;
         mov.resources = evidence;
-        if (status === "draft") mov.completedAt = null;
         if (status === "approved" && i % 5 !== 0) {
           const month = start.toDate().toISOString().slice(0, 7),
             key = `${s.programId}_${d}_${month}`;

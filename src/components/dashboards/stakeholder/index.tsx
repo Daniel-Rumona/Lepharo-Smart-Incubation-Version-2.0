@@ -15,7 +15,6 @@ import {
     message
 } from 'antd'
 import {
-    PlusOutlined,
     LineChartOutlined,
     TableOutlined,
     ProjectOutlined,
@@ -283,21 +282,12 @@ export const StakeholderEngagementDashboard: React.FC = () => {
                 title=' Stakeholder Engagement Dashboard'
                 subtitle='KPI overview, trends and breakdowns'
                 extraRight={
-                    <Space wrap>
-                        <Button
-                            icon={<TableOutlined />}
-                            onClick={() => navigate('/stakeholders/engagements')}
-                        >
-                            Open Engagement Log
-                        </Button>
-                        <Button
-                            type='primary'
-                            icon={<PlusOutlined />}
-                            onClick={() => navigate('/stakeholders/engagements?create=1')}
-                        >
-                            New Engagement
-                        </Button>
-                    </Space>
+                    <Button
+                        icon={<TableOutlined />}
+                        onClick={() => navigate('/operations/stakeholder')}
+                    >
+                        Open Engagement Log
+                    </Button>
                 }
             />
 

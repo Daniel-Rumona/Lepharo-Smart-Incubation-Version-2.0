@@ -5,7 +5,6 @@ import { logger } from 'firebase-functions'
 import { sendEmail } from './mail/mailer'
 import { logBrevoSend, sendViaBrevo } from './brevoClient'
 import { notifyInApp, uidForParticipant } from './inAppNotifications'
-import { BREVO_EGRESS } from './config'
 
 if (!admin.apps.length) admin.initializeApp()
 const db = admin.firestore()
@@ -1048,7 +1047,7 @@ export const sendApplicationReceivedEmail = onCall(
 )
 
 export const sendComplianceReminderEmail = onCall(
-  { ...BREVO_EGRESS, region: 'us-central1', cors: CALLABLE_CORS },
+  { region: 'us-central1', cors: CALLABLE_CORS },
   async (req) => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Login required.')
 

@@ -5,6 +5,9 @@ import Highcharts from 'highcharts'
 import * as XLSX from 'xlsx'
 import { type MoaVars } from '@/components/modals/Contracts/moa.pages'
 import { functionsBaseUrl } from '@/firebaseConfig'
+import dayjs from 'dayjs'
+import { activeJobsOn, type Job, type JobContractRecord } from '@/lib/jobs'
+import { asOfMonthEnd } from '@/lib/jobsData'
 
 export const FINANCE_API_BASE_URL = 'https://quantnow-sa1e.onrender.com'
 
@@ -270,18 +273,8 @@ export type MonthlyFinancePoint = {
     revenue: number
 }
 
-export type JobContract = {
-    id: string
-    applicationId?: string
-    employeeName?: string
-    position?: string
-    contractType?: 'permanent' | 'temporal'
-    contractEndDate?: any
-    uploadMonth?: string
-    uploadMonthDate?: any
-    createdAt?: any
-    updatedAt?: any
-}
+/** One hseJobContracts document (see src/lib/jobs.ts); temporary contracts are stored as 'temporal'. */
+export type JobContract = JobContractRecord
 
 export type ComplianceStats = {
     total: number
@@ -489,29 +482,9 @@ export const monthKeyFromValue = (value: any): string | null => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-export const jobContractMonth = (contract: JobContract) =>
-    monthKeyFromValue(contract.uploadMonthDate) ||
-    monthKeyFromValue(contract.uploadMonth) ||
-    monthKeyFromValue(contract.createdAt) ||
-    monthKeyFromValue(contract.updatedAt)
-
-export const countActiveJobsForMonth = (contracts: JobContract[], monthKey: string) => {
-    const active = new Map<string, JobContract>()
-
-    contracts.forEach(contract => {
-        const startKey = jobContractMonth(contract)
-        if (!startKey || startKey > monthKey) return
-
-        const end = toDateSafe(contract.contractEndDate)
-        if (end && end < new Date(`${monthKey}-01T00:00:00`)) return
-
-        const employeeKey = `${contract.applicationId || ''}::${String(contract.employeeName || '').trim().toLowerCase()}::${String(contract.position || '').trim().toLowerCase()}`
-        const current = active.get(employeeKey)
-        if (!current || String(jobContractMonth(current)) <= startKey) active.set(employeeKey, contract)
-    })
-
-    return active.size
-}
+/** Jobs (not documents) active at the end of a "YYYY-MM" month, or today while it runs (src/lib/jobs.ts). */
+export const countActiveJobsForMonth = (jobs: Job[], monthKey: string) =>
+    activeJobsOn(jobs, asOfMonthEnd(dayjs(`${monthKey}-01`))).length
 
 export const carryForwardMonthlyValues = (values: (number | null)[]) => {
     let latest: number | null = null

@@ -21,7 +21,9 @@ import {
     Rate,
     FloatButton,
     Spin,
-    theme
+    Dropdown,
+    theme,
+    type MenuProps
 } from 'antd'
 import {
     PlusOutlined,
@@ -35,7 +37,14 @@ import {
     InboxOutlined,
     LockOutlined,
     CheckOutlined,
-    CloseOutlined
+    CloseOutlined,
+    ArrowUpOutlined,
+    ArrowDownOutlined,
+    LeftOutlined,
+    RightOutlined,
+    UnorderedListOutlined,
+    MoreOutlined,
+    FilePdfOutlined
 } from '@ant-design/icons'
 import {
     doc,
@@ -43,9 +52,7 @@ import {
     addDoc,
     updateDoc,
     getDoc,
-    getDocs,
-    where,
-    query
+    deleteField
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import {
@@ -70,6 +77,11 @@ import ImportQuestionsModal, {
     type ImportQuestionsOptions
 } from '../modals/surveys/ImportQuestionsModal'
 import PreviewSurveyModal from '../modals/surveys/PreviewSurveyModal'
+import ExportDesignModal from '../modals/surveys/ExportDesignModal'
+import {
+    normalizeExportDesign,
+    type SurveyExportDesign
+} from '@/lib/surveyExportDesign'
 
 const { Title, Text } = Typography
 
@@ -98,15 +110,17 @@ interface SurveyTemplate {
     description: string
     fields: SurveyField[]
     status: 'draft' | 'published'
-    category: string
+    /** Older templates have one; the builder no longer sets it. */
+    category?: string
     createdAt: string
     updatedAt: string
     createdBy?: string
     programId?: string
     department?: string
+    /** How a printed response looks; see src/lib/surveyExportDesign.ts. */
+    exportDesign?: SurveyExportDesign
 }
 
-type ProgramRow = { id: string; name?: string; title?: string }
 
 const getProgramIdValue = (value: unknown): string | undefined => {
     if (!value) return undefined
@@ -144,8 +158,6 @@ const FIELD_TYPES = [
     { value: 'heading', label: 'Section Heading' }
 ]
 
-const SURVEY_CATEGORIES = ['Evaluation Form', 'Feedback Form'] as const
-
 const normalizeForDirty = (tpl: SurveyTemplate | null) => {
     if (!tpl) return null
     const {
@@ -154,16 +166,16 @@ const normalizeForDirty = (tpl: SurveyTemplate | null) => {
         description,
         fields,
         status,
-        category,
         programId,
-        department
+        department,
+        exportDesign
     } = tpl
     return {
+        exportDesign: exportDesign ? JSON.stringify(exportDesign) : undefined,
         id: id ?? undefined,
         title: title?.trim() || '',
         description: description?.trim() || '',
         status,
-        category,
         programId: getProgramIdValue(programId),
         department: department ?? undefined,
         fields: (fields || []).map(f => ({
@@ -308,9 +320,12 @@ const ChoiceOptionsEditor: React.FC<{
         id: string,
         updates: Partial<SurveyField>
     ) => void
+    /** Phones: one option per row so each option's text has the width. */
+    compact?: boolean
 }> = ({
     field,
-    onPatch
+    onPatch,
+    compact
 }) => {
         const { token } =
             theme.useToken()
@@ -321,8 +336,9 @@ const ChoiceOptionsEditor: React.FC<{
         const isScrollable =
             options.length > 8
 
-        const choiceGrid =
-            getChoiceGrid(
+        const choiceGrid = compact
+            ? { columns: 1, getSpan: () => 1 }
+            : getChoiceGrid(
                 options.length
             )
 
@@ -763,13 +779,21 @@ const FieldCard: React.FC<{
     ) => void
     onDuplicate: (id: string) => void
     onDelete: (id: string) => void
+    /** Absent at the top / bottom of the list. */
+    onMoveUp?: () => void
+    onMoveDown?: () => void
+    /** Phones: tighter padding so the question gets the width. */
+    compact?: boolean
 }> = React.memo(
     ({
         field,
         number,
         onPatch,
         onDuplicate,
-        onDelete
+        onDelete,
+        onMoveUp,
+        onMoveDown,
+        compact
     }) => {
         const { token } = theme.useToken()
 
@@ -777,7 +801,7 @@ const FieldCard: React.FC<{
             <MotionCard
                 size='small'
                 bodyStyle={{
-                    padding: 28
+                    padding: compact ? 16 : 28
                 }}
             >
                 {/* TOP */}
@@ -792,7 +816,7 @@ const FieldCard: React.FC<{
                 >
                     <Text
                         style={{
-                            fontSize: 30,
+                            fontSize: compact ? 22 : 30,
                             lineHeight: 1,
                             fontWeight: 700,
                             color: token.colorTextTertiary,
@@ -803,6 +827,27 @@ const FieldCard: React.FC<{
                     </Text>
 
                     <Space size={8}>
+                        {/* Reordering by button, which works on touch where dragging doesn't. */}
+                        <Tooltip title='Move up'>
+                            <Button
+                                shape='circle'
+                                icon={<ArrowUpOutlined />}
+                                disabled={!onMoveUp}
+                                onClick={onMoveUp}
+                                aria-label='Move question up'
+                            />
+                        </Tooltip>
+
+                        <Tooltip title='Move down'>
+                            <Button
+                                shape='circle'
+                                icon={<ArrowDownOutlined />}
+                                disabled={!onMoveDown}
+                                onClick={onMoveDown}
+                                aria-label='Move question down'
+                            />
+                        </Tooltip>
+
                         <Tooltip title='Duplicate question'>
                             <Button
                                 shape='circle'
@@ -916,6 +961,7 @@ const FieldCard: React.FC<{
                         <ChoiceOptionsEditor
                             field={field}
                             onPatch={onPatch}
+                            compact={compact}
                         />
                     ) : (
                         <FieldPreview
@@ -954,9 +1000,6 @@ export default function SurveyBuilder() {
     const routeTemplateId = (params?.id as string) || null
     const { activeProgramId } = useActiveProgramId()
 
-    // NEW: programs list
-    const [programs, setPrograms] = useState<ProgramRow[]>([])
-
     // state
     const [editingTemplateId, setEditingTemplateId] = useState<string | null>(
         routeTemplateId
@@ -970,9 +1013,14 @@ export default function SurveyBuilder() {
     const [loadingTemplate, setLoadingTemplate] = useState(!!routeTemplateId)
     const [outlineOpen, setOutlineOpen] = useState(false)
     const [surveySettingsOpen, setSurveySettingsOpen] = useState(false)
+    const [designModalOpen, setDesignModalOpen] = useState(false)
 
     const screens = Grid.useBreakpoint()
     const isMobile = !screens.md
+    // Below lg the header's secondary buttons drop their labels.
+    const compactHeader = !screens.lg
+    // Outline and settings panels sit beside the question only from xl; below
+    // that the outline is a bottom sheet and the settings sit under the question.
     const showDesktopSidePanel = !!screens.xl
 
     const [surveyData, setSurveyData] = useState<SurveyTemplate>({
@@ -980,7 +1028,6 @@ export default function SurveyBuilder() {
         description: '',
         fields: [],
         status: 'draft',
-        category: 'Evaluation Form',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         programId: undefined
@@ -1043,26 +1090,6 @@ export default function SurveyBuilder() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeProgramId])
-
-    // ---------- Load programs for the selector ----------
-    useEffect(() => {
-        const loadPrograms = async () => {
-            try {
-                // Assumes a 'programs' collection with at least { name/title }
-                // Adjust field names if your schema differs.
-                const qy = query(collection(db, 'programs'))
-                const snap = await getDocs(qy)
-                const list = snap.docs.map(d => ({
-                    id: d.id,
-                    ...(d.data() as any)
-                })) as ProgramRow[]
-                setPrograms(list)
-            } catch (e) {
-                console.error(e)
-            }
-        }
-        loadPrograms()
-    }, [])
 
     // ---------- Field ops ----------
     const addField = (type: string, presetLabel?: string) => {
@@ -1134,8 +1161,10 @@ export default function SurveyBuilder() {
     const importFields = (
         extracted: ExtractedSurveyField[],
         meta: ImportQuestionsMeta,
-        options: ImportQuestionsOptions
+        options: ImportQuestionsOptions,
+        design?: SurveyExportDesign
     ) => {
+        if (design) setSurveyData(prev => ({ ...prev, exportDesign: design }))
         if (extracted.length === 0) return
         const fields = extracted.map(toSurveyField)
 
@@ -1154,12 +1183,6 @@ export default function SurveyBuilder() {
                 }
                 if (meta.description && (options.replace || !prev.description.trim())) {
                     next.description = meta.description
-                }
-                if (
-                    meta.category &&
-                    SURVEY_CATEGORIES.includes(meta.category as (typeof SURVEY_CATEGORIES)[number])
-                ) {
-                    next.category = meta.category
                 }
             }
 
@@ -1223,6 +1246,19 @@ export default function SurveyBuilder() {
         if (selectedFieldId === id) setSelectedFieldId(null)
     }
 
+    /** One place up (-1) or down (+1); the button way to reorder, for touch. */
+    const moveField = (id: string, delta: -1 | 1) => {
+        setSurveyData(prev => {
+            const from = prev.fields.findIndex(f => f.id === id)
+            const to = from + delta
+            if (from < 0 || to < 0 || to >= prev.fields.length) return prev
+            const next = [...prev.fields]
+            const [moved] = next.splice(from, 1)
+            next.splice(to, 0, moved)
+            return { ...prev, fields: next }
+        })
+    }
+
     const handleDragEnd = (result: DropResult) => {
         if (!result.destination) return
         const src = result.source.index
@@ -1258,16 +1294,24 @@ export default function SurveyBuilder() {
         return { ...tpl, fields }
     }
 
-    const saveTemplate = async (status?: 'draft' | 'published') => {
-        if (!surveyData.title.trim()) return message.error('Give your survey a title.')
-        if (surveyData.fields.length === 0)
-            return message.error('Add at least one field.')
+    /** Resolves true only once Firestore has the template. */
+    const saveTemplate = async (status?: 'draft' | 'published'): Promise<boolean> => {
+        if (!surveyData.title.trim()) {
+            message.error('Give your survey a title.')
+            return false
+        }
+        if (surveyData.fields.length === 0) {
+            message.error('Add at least one field.')
+            return false
+        }
 
         const selectedProgramId =
             getProgramIdValue(surveyData.programId) || getProgramIdValue(activeProgramId)
 
-        if (!selectedProgramId)
-            return message.error('Select a Program for this survey.')
+        if (!selectedProgramId) {
+            message.error('Pick a programme in the header first.')
+            return false
+        }
 
         const normalizedFields = toFieldsArray(surveyData.fields)
 
@@ -1277,10 +1321,18 @@ export default function SurveyBuilder() {
             programId: selectedProgramId,
             status: status ?? surveyData.status,
             updatedAt: new Date().toISOString(),
-            department: user?.departmentId
+            // An edit keeps the template's own department (none = shared)
+            // and author; only a new template takes the editor's.
+            department: editingTemplateId
+                ? surveyData.department
+                : user?.departmentId,
+            createdBy: editingTemplateId ? surveyData.createdBy : user?.uid
         })
 
         const payload = pruneUndefinedDeep(payloadRaw) as SurveyTemplate
+        // A removed design has to be deleted explicitly on an existing doc.
+        const writePayload: Record<string, any> = { ...payload }
+        if (editingTemplateId && !payload.exportDesign) writePayload.exportDesign = deleteField()
 
         try {
             setSavingTemplate(true)
@@ -1289,7 +1341,7 @@ export default function SurveyBuilder() {
             if (editingTemplateId) {
                 await updateDoc(
                     doc(db, 'formTemplates', editingTemplateId),
-                    payload as any
+                    writePayload
                 )
                 message.success('Form template updated')
             } else {
@@ -1312,9 +1364,11 @@ export default function SurveyBuilder() {
 
             setSurveyData(nextState)
             setBaseline(nextState) // baseline matches state → isDirty becomes false
+            return true
         } catch (e) {
             console.error(e)
             message.error('Failed to save template')
+            return false
         } finally {
             setSavingTemplate(false)
         }
@@ -1351,7 +1405,8 @@ export default function SurveyBuilder() {
                 fields: toFieldsArray(tpl.fields),
                 // fallbacks
                 programId: getProgramIdValue(tpl.programId) ?? activeProgramId ?? undefined,
-                department: tpl.department ?? user?.departmentId ?? undefined
+                department: tpl.department || undefined,
+                exportDesign: normalizeExportDesign(tpl.exportDesign)
             }
 
             setSurveyData(hydrated)
@@ -1374,21 +1429,27 @@ export default function SurveyBuilder() {
     }, [routeTemplateId])
 
     const surveyTitle = surveyData.title.trim() || 'Untitled survey'
-    const selectedProgramId = getProgramIdValue(surveyData.programId)
-    const selectedProgram = programs.find(p => p.id === selectedProgramId)
-    const selectedProgramLabel = selectedProgram?.name || selectedProgram?.title || selectedProgramId
+    const saveLabel = surveyData.status === 'published' ? 'Save changes' : 'Save draft'
 
     const handleBack = () => {
         if (shouldPromptDraft) {
+            // A published template stays published; only a new or draft one
+            // is saved as a draft.
+            const isPublished = surveyData.status === 'published'
             Modal.confirm({
-                title: 'Save as draft before leaving?',
-                content:
-                    'Do you want to save this survey as a draft before going back to Templates?',
-                okText: 'Save draft',
+                title: isPublished
+                    ? 'Save changes before leaving?'
+                    : 'Save as draft before leaving?',
+                content: isPublished
+                    ? 'This survey is published. Save your changes before going back to Templates?'
+                    : 'Do you want to save this survey as a draft before going back to Templates?',
+                okText: isPublished ? 'Save changes' : 'Save draft',
                 cancelText: 'Discard & leave',
                 onOk: async () => {
-                    await saveTemplate('draft')
-                    navigate('/operations/surveys')
+                    // Stay on the builder when the save fails, so nothing is lost.
+                    if (await saveTemplate(surveyData.status)) {
+                        navigate('/operations/surveys')
+                    }
                 },
                 onCancel: () => {
                     navigate('/operations/surveys')
@@ -1422,96 +1483,6 @@ export default function SurveyBuilder() {
                     placeholder='Explain what this survey is for'
                 />
             </Form.Item>
-
-            <Form.Item
-                label='Category'
-                required
-            >
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                        gap: 10,
-                        width: '100%'
-                    }}
-                >
-                    {SURVEY_CATEGORIES.map(category => {
-                        const selected =
-                            surveyData.category === category
-
-                        return (
-                            <button
-                                key={category}
-                                type='button'
-                                onClick={() =>
-                                    setSurveyData(prev => ({
-                                        ...prev,
-                                        category
-                                    }))
-                                }
-                                style={{
-                                    width: '100%',
-                                    minHeight: 64,
-                                    padding: '12px 14px',
-                                    borderRadius: 14,
-                                    border: `1px solid ${selected
-                                        ? token.colorPrimary
-                                        : token.colorBorderSecondary
-                                        }`,
-                                    background: selected
-                                        ? token.colorPrimaryBg
-                                        : token.colorBgContainer,
-                                    color: selected
-                                        ? token.colorPrimary
-                                        : token.colorText,
-                                    fontWeight: selected
-                                        ? 600
-                                        : 500,
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    transition:
-                                        'all 0.2s ease',
-                                    boxShadow: selected
-                                        ? `0 4px 14px ${token.colorPrimaryBg}`
-                                        : 'none'
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        gap: 10
-                                    }}
-                                >
-                                    <span>
-                                        {category}
-                                    </span>
-
-                                    <div
-                                        style={{
-                                            width: 18,
-                                            height: 18,
-                                            borderRadius: '50%',
-                                            border: `2px solid ${selected
-                                                ? token.colorPrimary
-                                                : token.colorBorder
-                                                }`,
-                                            background: selected
-                                                ? token.colorPrimary
-                                                : 'transparent',
-                                            boxShadow: selected
-                                                ? `inset 0 0 0 4px ${token.colorBgContainer}`
-                                                : 'none',
-                                            flex: '0 0 auto'
-                                        }}
-                                    />
-                                </div>
-                            </button>
-                        )
-                    })}
-                </div>
-            </Form.Item>
         </Form>
     )
 
@@ -1534,15 +1505,19 @@ export default function SurveyBuilder() {
                                     key={field.id}
                                     draggableId={field.id}
                                     index={index}
+                                    // In the bottom sheet a drag fires while
+                                    // scrolling; the arrows reorder there.
+                                    isDragDisabled={!showDesktopSidePanel}
                                 >
                                     {draggable => (
                                         <div
                                             ref={draggable.innerRef}
                                             {...draggable.draggableProps}
                                             {...draggable.dragHandleProps}
-                                            onClick={() =>
+                                            onClick={() => {
                                                 setSelectedFieldId(field.id)
-                                            }
+                                                setOutlineOpen(false)
+                                            }}
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -1553,7 +1528,7 @@ export default function SurveyBuilder() {
                                                 padding: '7px 8px',
                                                 marginBottom: 3,
                                                 borderRadius: 10,
-                                                cursor: 'grab',
+                                                cursor: showDesktopSidePanel ? 'grab' : 'pointer',
                                                 userSelect: 'none',
 
                                                 background:
@@ -1611,6 +1586,30 @@ export default function SurveyBuilder() {
                                                     )?.label || field.type}
                                                 </Text>
                                             </div>
+
+                                            {!showDesktopSidePanel ? (
+                                                <Space
+                                                    size={4}
+                                                    onClick={event => event.stopPropagation()}
+                                                >
+                                                    <Button
+                                                        size='small'
+                                                        shape='circle'
+                                                        icon={<ArrowUpOutlined />}
+                                                        aria-label='Move up'
+                                                        disabled={index === 0}
+                                                        onClick={() => moveField(field.id, -1)}
+                                                    />
+                                                    <Button
+                                                        size='small'
+                                                        shape='circle'
+                                                        icon={<ArrowDownOutlined />}
+                                                        aria-label='Move down'
+                                                        disabled={index === surveyData.fields.length - 1}
+                                                        onClick={() => moveField(field.id, 1)}
+                                                    />
+                                                </Space>
+                                            ) : null}
                                         </div>
                                     )}
                                 </Draggable>
@@ -1686,24 +1685,10 @@ export default function SurveyBuilder() {
         </div>
     ) : null
 
-    const DesktopRightPanel = showDesktopSidePanel ? (
-        <div
-            style={{
-                minWidth: 0,
-                alignSelf: 'start',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12
-            }}
-        >
-            {/* SELECTED QUESTION */}
-            <MotionCard
-                size='small'
-                title='Selected question'
-                bodyStyle={{
-                    padding: 12
-                }}
-            >
+    // The selected question's type, required, placeholder and helper text:
+    // in the right panel on wide screens, under the question card otherwise.
+    const questionSettings = (
+        <>
                 {selectedField?.prefill ? (
                     <Space
                         direction='vertical'
@@ -1837,6 +1822,28 @@ export default function SurveyBuilder() {
                         description='No question selected'
                     />
                 )}
+        </>
+    )
+
+    const DesktopRightPanel = showDesktopSidePanel ? (
+        <div
+            style={{
+                minWidth: 0,
+                alignSelf: 'start',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+            }}
+        >
+            {/* SELECTED QUESTION */}
+            <MotionCard
+                size='small'
+                title='Selected question'
+                bodyStyle={{
+                    padding: 12
+                }}
+            >
+                {questionSettings}
             </MotionCard>
 
             {/* FORM SNAPSHOT */}
@@ -1959,12 +1966,14 @@ export default function SurveyBuilder() {
                 flex: '1 1 auto',
                 minHeight: 0,
                 width: '100%',
-                padding: isMobile
-                    ? '0 12px 16px'
-                    : '0 24px 20px'
+                padding: isMobile ? '0 12px' : '0 24px',
+                // Room under the content for the fixed bottom bar, when there is one.
+                paddingBottom: showDesktopSidePanel ? 20 : 'calc(84px + env(safe-area-inset-bottom))'
             }}
         >
-            {/* Header Section */}
+            {/* Header: back, the title (opens the title and description), and
+                the actions. Phones fold Import, Preview and Save into a menu;
+                below the widest layout Add question lives in the bottom bar. */}
             <MotionCard
                 size='small'
                 style={{
@@ -1982,174 +1991,181 @@ export default function SurveyBuilder() {
             >
                 <div
                     style={{
-                        position: 'relative',
-                        minHeight: isMobile ? 44 : 46,
+                        minHeight: 44,
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 12
+                        gap: isMobile ? 8 : 12
                     }}
                 >
-                    {/* LEFT */}
-                    <Space
-                        size={8}
-                        wrap={false}
-                        style={{
-                            position: 'relative',
-                            zIndex: 2,
-                            flex: '0 0 auto'
-                        }}
-                    >
+                    <Tooltip title={compactHeader ? 'Back to surveys' : undefined}>
                         <Button
-                            shape='round'
+                            shape={compactHeader ? 'circle' : 'round'}
                             icon={<ArrowLeftOutlined />}
                             onClick={handleBack}
+                            aria-label='Back to surveys'
+                            style={{ flex: '0 0 auto' }}
                         >
-                            Back
+                            {compactHeader ? null : 'Back'}
                         </Button>
+                    </Tooltip>
 
-                        <Button
-                            shape='round'
-                            icon={<FileSearchOutlined />}
-                            onClick={() =>
-                                setImportModalOpen(true)
-                            }
-                        >
-                            Import
-                        </Button>
-
-                        <Button
-                            type='primary'
-                            shape='round'
-                            icon={<PlusOutlined />}
-                            onClick={() =>
-                                setAddModalOpen(true)
-                            }
-                        >
-                            Add Question
-                        </Button>
-                    </Space>
-
-                    {/* CENTER */}
-                    <div
+                    <button
+                        type='button'
+                        onClick={() => setSurveySettingsOpen(true)}
+                        title='Edit the title and description'
                         style={{
-                            position: 'absolute',
-                            left: '50%',
-                            top: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            width: isMobile
-                                ? 'calc(100% - 310px)'
-                                : 'min(520px, 38vw)',
+                            flex: '1 1 auto',
                             minWidth: 0,
-                            textAlign: 'center',
-                            zIndex: 1
+                            padding: 0,
+                            margin: 0,
+                            border: 0,
+                            background: 'transparent',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            textAlign: isMobile ? 'left' : 'center'
                         }}
                     >
-                        <Tooltip title='Edit survey settings'>
-                            <button
-                                type='button'
-                                onClick={() => setSurveySettingsOpen(true)}
-                                style={{
-                                    width: '100%',
-                                    padding: 0,
-                                    margin: 0,
-                                    border: 0,
-                                    background: 'transparent',
-                                    color: 'inherit',
-                                    cursor: 'pointer',
-                                    textAlign: 'center'
-                                }}
-                            >
-                                <Title
-                                    level={4}
-                                    ellipsis={{
-                                        tooltip: surveyTitle
-                                    }}
-                                    style={{
-                                        margin: 0,
-                                        fontSize: isMobile ? 17 : 20,
-                                        lineHeight: 1.2
-                                    }}
-                                >
-                                    {surveyTitle}
-                                </Title>
+                        <Title
+                            level={4}
+                            ellipsis
+                            style={{
+                                margin: 0,
+                                fontSize: isMobile ? 16 : 20,
+                                lineHeight: 1.25
+                            }}
+                        >
+                            {surveyTitle}
+                        </Title>
+                        <Text
+                            type='secondary'
+                            ellipsis
+                            style={{
+                                display: 'block',
+                                marginTop: 2,
+                                fontSize: 12,
+                                lineHeight: 1.25
+                            }}
+                        >
+                            {surveyData.description ||
+                                `${isMobile ? 'Tap' : 'Click'} to add a description`}
+                        </Text>
+                    </button>
 
-                                {surveyData.description ? (
-                                    <Text
-                                        type='secondary'
-                                        ellipsis={{
-                                            tooltip: surveyData.description
-                                        }}
-                                        style={{
-                                            display: 'block',
-                                            marginTop: 2,
-                                            fontSize: 12,
-                                            lineHeight: 1.25
-                                        }}
-                                    >
-                                        {surveyData.description}
-                                    </Text>
-                                ) : (
-                                    <Text
-                                        type='secondary'
-                                        style={{
-                                            display: 'block',
-                                            marginTop: 2,
-                                            fontSize: 12,
-                                            lineHeight: 1.25
-                                        }}
-                                    >
-                                        Click to add a description
-                                    </Text>
-                                )}
-                            </button>
-                        </Tooltip>
-                    </div>
-
-                    {/* RIGHT */}
-                    <Space
-                        size={8}
-                        wrap={false}
-                        style={{
-                            position: 'relative',
-                            zIndex: 2,
-                            flex: '0 0 auto',
-                            marginLeft: 'auto'
-                        }}
-                    >
-                        {hasQuestions ? (
+                    {isMobile ? (
+                        <Dropdown
+                            trigger={['click']}
+                            placement='bottomRight'
+                            menu={{
+                                items: [
+                                    {
+                                        key: 'import',
+                                        icon: <FileSearchOutlined />,
+                                        label: 'Import questions',
+                                        onClick: () => setImportModalOpen(true)
+                                    },
+                                    {
+                                        key: 'design',
+                                        icon: <FilePdfOutlined />,
+                                        label: 'Print design',
+                                        onClick: () => setDesignModalOpen(true)
+                                    },
+                                    hasQuestions && {
+                                        key: 'preview',
+                                        icon: <EyeOutlined />,
+                                        label: 'Preview',
+                                        onClick: () => setIsPreviewVisible(true)
+                                    },
+                                    {
+                                        key: 'save',
+                                        icon: <SaveOutlined />,
+                                        label: saveLabel,
+                                        disabled: savingTemplate,
+                                        onClick: () => saveTemplate(surveyData.status)
+                                    }
+                                ].filter(Boolean) as MenuProps['items']
+                            }}
+                        >
                             <Button
-                                shape='round'
-                                icon={<EyeOutlined />}
-                                onClick={() =>
-                                    setIsPreviewVisible(true)
+                                shape='circle'
+                                icon={<MoreOutlined />}
+                                aria-label='More actions'
+                                style={{ flex: '0 0 auto' }}
+                            />
+                        </Dropdown>
+                    ) : (
+                        <Space size={8} wrap={false} style={{ flex: '0 0 auto' }}>
+                            <Tooltip title={compactHeader ? 'Import questions' : undefined}>
+                                <Button
+                                    shape={compactHeader ? 'circle' : 'round'}
+                                    icon={<FileSearchOutlined />}
+                                    onClick={() => setImportModalOpen(true)}
+                                    aria-label='Import questions'
+                                >
+                                    {compactHeader ? null : 'Import'}
+                                </Button>
+                            </Tooltip>
+
+                            <Tooltip
+                                title={
+                                    compactHeader
+                                        ? 'Print design'
+                                        : 'The letterhead and layout used when a response is printed'
                                 }
                             >
-                                Preview
+                                <Button
+                                    shape={compactHeader ? 'circle' : 'round'}
+                                    icon={<FilePdfOutlined />}
+                                    onClick={() => setDesignModalOpen(true)}
+                                    aria-label='Print design'
+                                >
+                                    {compactHeader ? null : surveyData.exportDesign ? 'Design ✓' : 'Design'}
+                                </Button>
+                            </Tooltip>
+
+                            {hasQuestions ? (
+                                <Tooltip title={compactHeader ? 'Preview' : undefined}>
+                                    <Button
+                                        shape={compactHeader ? 'circle' : 'round'}
+                                        icon={<EyeOutlined />}
+                                        onClick={() => setIsPreviewVisible(true)}
+                                        aria-label='Preview'
+                                    >
+                                        {compactHeader ? null : 'Preview'}
+                                    </Button>
+                                </Tooltip>
+                            ) : null}
+
+                            {showDesktopSidePanel ? (
+                                <Button
+                                    shape='round'
+                                    icon={<PlusOutlined />}
+                                    onClick={() => setAddModalOpen(true)}
+                                >
+                                    Add question
+                                </Button>
+                            ) : null}
+
+                            <Button
+                                shape='round'
+                                icon={<SaveOutlined />}
+                                loading={savingTemplate}
+                                onClick={() => saveTemplate(surveyData.status)}
+                            >
+                                {saveLabel}
                             </Button>
-                        ) : null}
+                        </Space>
+                    )}
 
-                        <Button
-                            shape='round'
-                            icon={<SaveOutlined />}
-                            loading={savingTemplate}
-                            onClick={() =>
-                                saveTemplate('draft')
-                            }
-                        >
-                            Save Draft
-                        </Button>
-
-                        <Button
-                            type='primary'
-                            shape='round'
-                            icon={<SendOutlined />}
-                            loading={savingTemplate}
-                            onClick={publishSurvey}
-                        >
-                            Publish
-                        </Button>
-                    </Space>
+                    <Button
+                        type='primary'
+                        shape='round'
+                        icon={<SendOutlined />}
+                        loading={savingTemplate}
+                        onClick={publishSurvey}
+                        style={{ flex: '0 0 auto' }}
+                    >
+                        Publish
+                    </Button>
                 </div>
             </MotionCard>
 
@@ -2175,13 +2191,38 @@ export default function SurveyBuilder() {
                     }}
                 >
                     {selectedField ? (
-                        <FieldCard
-                            field={selectedField}
-                            number={selectedFieldIndex + 1}
-                            onPatch={patchField}
-                            onDuplicate={duplicateField}
-                            onDelete={removeField}
-                        />
+                        <>
+                            <FieldCard
+                                field={selectedField}
+                                number={selectedFieldIndex + 1}
+                                onPatch={patchField}
+                                onDuplicate={duplicateField}
+                                onDelete={removeField}
+                                onMoveUp={
+                                    selectedFieldIndex > 0
+                                        ? () => moveField(selectedField.id, -1)
+                                        : undefined
+                                }
+                                onMoveDown={
+                                    selectedFieldIndex < surveyData.fields.length - 1
+                                        ? () => moveField(selectedField.id, 1)
+                                        : undefined
+                                }
+                                compact={isMobile}
+                            />
+
+                            {/* Without the right panel, the settings sit under the question. */}
+                            {!showDesktopSidePanel ? (
+                                <MotionCard
+                                    size='small'
+                                    title='Question settings'
+                                    style={{ marginTop: 14 }}
+                                    bodyStyle={{ padding: 12 }}
+                                >
+                                    {questionSettings}
+                                </MotionCard>
+                            ) : null}
+                        </>
                     ) : (
                         <MotionCard
                             size='small'
@@ -2239,23 +2280,78 @@ export default function SurveyBuilder() {
                 {DesktopRightPanel}
             </div>
 
-            {isMobile ? (
+            {/* Below the widest layout: step through questions, open the
+                outline and add, from a bar that stays at the bottom. */}
+            {!showDesktopSidePanel ? (
+                <div
+                    style={{
+                        // Pinned to the screen, centred, never wider than it.
+                        position: 'fixed',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        bottom: 'calc(12px + env(safe-area-inset-bottom))',
+                        width: 'min(980px, calc(100% - 24px))',
+                        boxSizing: 'border-box',
+                        zIndex: 20,
+                        padding: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: token.colorBgContainer,
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        borderRadius: 16,
+                        boxShadow: token.boxShadowSecondary
+                    }}
+                >
+                    <Button
+                        icon={<UnorderedListOutlined />}
+                        onClick={() => setOutlineOpen(true)}
+                        disabled={!surveyData.fields.length}
+                    >
+                        {surveyData.fields.length
+                            ? `${selectedFieldIndex >= 0 ? selectedFieldIndex + 1 : '–'} of ${surveyData.fields.length}`
+                            : 'Outline'}
+                    </Button>
+                    <Button
+                        shape='circle'
+                        icon={<LeftOutlined />}
+                        aria-label='Previous question'
+                        disabled={selectedFieldIndex <= 0}
+                        onClick={() =>
+                            setSelectedFieldId(surveyData.fields[selectedFieldIndex - 1]?.id ?? null)
+                        }
+                    />
+                    <Button
+                        shape='circle'
+                        icon={<RightOutlined />}
+                        aria-label='Next question'
+                        disabled={
+                            selectedFieldIndex < 0 ||
+                            selectedFieldIndex >= surveyData.fields.length - 1
+                        }
+                        onClick={() =>
+                            setSelectedFieldId(surveyData.fields[selectedFieldIndex + 1]?.id ?? null)
+                        }
+                    />
+                    <Button
+                        type='primary'
+                        icon={<PlusOutlined />}
+                        onClick={() => setAddModalOpen(true)}
+                        style={{ marginLeft: 'auto' }}
+                    >
+                        {isMobile ? 'Add' : 'Add question'}
+                    </Button>
+                </div>
+            ) : null}
+
+            {!showDesktopSidePanel ? (
                 <Drawer
-                    title='Form outline'
+                    title='Outline'
                     open={outlineOpen}
                     onClose={() => setOutlineOpen(false)}
                     placement='bottom'
                     height='75vh'
                     destroyOnClose={false}
-                    extra={
-                        <Button
-                            size='small'
-                            icon={<PlusOutlined />}
-                            onClick={() => setAddModalOpen(true)}
-                        >
-                            Add
-                        </Button>
-                    }
                 >
                     {outlineContent}
                 </Drawer>
@@ -2276,8 +2372,8 @@ export default function SurveyBuilder() {
             <ImportQuestionsModal
                 open={importModalOpen}
                 onClose={() => setImportModalOpen(false)}
-                category={surveyData.category}
                 hasExistingFields={surveyData.fields.length > 0}
+                hasExistingDesign={!!surveyData.exportDesign}
                 onImport={importFields}
             />
 
@@ -2289,12 +2385,25 @@ export default function SurveyBuilder() {
                 onClose={() => setIsPreviewVisible(false)}
             />
 
+            <ExportDesignModal
+                open={designModalOpen}
+                onClose={() => setDesignModalOpen(false)}
+                value={surveyData.exportDesign}
+                surveyTitle={surveyTitle}
+                surveyDescription={surveyData.description}
+                fields={surveyData.fields}
+                onSave={exportDesign =>
+                    setSurveyData(prev => ({ ...prev, exportDesign, updatedAt: new Date().toISOString() }))
+                }
+            />
+
             {SurveySettingsModal}
 
             <FloatButton.BackTop
                 visibilityHeight={320}
                 tooltip='Back to top'
-                style={{ right: 24, bottom: 24 }}
+                // Clears the bottom bar where there is one.
+                style={{ right: 24, bottom: showDesktopSidePanel ? 24 : 88 }}
             />
         </div>
     )

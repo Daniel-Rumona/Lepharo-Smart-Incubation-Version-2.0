@@ -5,7 +5,8 @@ import { SortSelect, type SortOption } from '@/components/workspace'
 import { motion, useReducedMotion } from 'framer-motion'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { ApplicantAvatar } from './ApplicantAvatar'
-import { STATUS_META, displayName, scoreTone, type Application } from './applicationData'
+import { STALLED_REMINDER_DAYS, STATUS_META, displayName, pendingDays, scoreTone, type Application } from './applicationData'
+import { WaitingTag } from './ApplicationDetail'
 import type { ApplicationSort } from './ApplicationFilters'
 
 const PAGE_SIZE = 12
@@ -96,6 +97,7 @@ export const ApplicationList: React.FC<Props> = ({
                                         <Tag color={STATUS_META[app.applicationStatus].color} bordered={false}>
                                             {STATUS_META[app.applicationStatus].label}
                                         </Tag>
+                                        {(pendingDays(app) ?? 0) >= STALLED_REMINDER_DAYS && <WaitingTag app={app} />}
                                     </div>
                                 </motion.button>
                             )

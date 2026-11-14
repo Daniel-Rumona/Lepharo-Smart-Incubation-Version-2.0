@@ -1,0 +1,18 @@
+{
+  "countsByBranch": {
+    "TtIlYJ5EFS2gHgluBsos": 120,
+    "yYA7BNWDc6muS0FnhiaO": 115
+  },
+  "datasetHash": "8f11faa3f2a8e0a64e924703f51c042ad5f662536ca191675e2ed38d4d9d95af",
+  "excluded": {
+    "cancelled_or_declined": 30,
+    "future": 15,
+    "not_attended": 5
+  },
+  "inquiries": 235,
+  "originalInquiries": 0,
+  "parentSeedRunId": "dtseed_20261009_v1",
+  "seedRunId": "dtseed_20261009_walkins_v1",
+  "syntheticActors": 2,
+  "toCreate": 0
+}

@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { APP_BASE_URL, db, sendStatusChangeNotification } from "./emailShared";
 import { suppressRecordNotifications } from "./syntheticData";
 
@@ -50,7 +50,7 @@ async function resolveDepartmentRecipients(departmentId: string): Promise<{ uid:
   return recipients;
 }
 
-export const kpiManualUpdateReminderCron = onSchedule(
+export const kpiManualUpdateReminderCron = scheduledJob("kpiManualUpdateReminderCron",
   {
     region: "us-central1",
     schedule: "0 7 * * *",

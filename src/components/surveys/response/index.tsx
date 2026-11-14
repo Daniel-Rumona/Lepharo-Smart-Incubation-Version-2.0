@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Card,
     Form,
@@ -25,18 +25,9 @@ import {
     SendOutlined
 } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-    collection,
-    collectionGroup,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    updateDoc,
-    where,
-    Timestamp
-} from 'firebase/firestore'
+import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs, { Dayjs } from 'dayjs'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -60,7 +51,17 @@ const { TextArea } = Input
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
-type ResponseType = 'multiple' | 'scale' | 'short'
+type ResponseType =
+    | 'multiple'
+    | 'scale'
+    | 'short'
+    | 'textarea'
+    | 'select'
+    | 'email'
+    | 'number'
+    | 'date'
+    | 'file'
+    | 'heading'
 
 type Question = {
     id: string
@@ -81,6 +82,7 @@ type SentSurveyDoc = {
     title?: string
     description?: string
     templateId?: string
+    dueDate?: Timestamp | null
     // some installs also keep questions here (optional)
     questions?: any[]
 }
@@ -114,7 +116,11 @@ function normalizeQuestions(raw?: any[]): Question[] {
         const type = q?.type ?? 'short'
         const id = q?.id ?? q?.key ?? `q_${i}`
         const questionText =
-            q?.questionText ?? q?.question ?? q?.label ?? `Question ${i + 1}`
+            q?.questionText ??
+            q?.question ??
+            q?.label ??
+            q?.title ??
+            `Question ${i + 1}`
 
         let options: string[] | undefined
         if (
@@ -134,17 +140,13 @@ function normalizeQuestions(raw?: any[]): Question[] {
 
         // map builder field types → responder types
         const mappedType: ResponseType =
-            q?.type === 'checkbox'
+            q?.type === 'checkbox' || q?.type === 'radio'
                 ? 'multiple'
-                : q?.type === 'radio'
-                    ? 'multiple'
-                    : q?.type === 'select'
-                        ? 'multiple'
-                        : q?.type === 'rating'
-                            ? 'scale'
-                            : q?.type === 'textarea'
-                                ? 'short'
-                                : (type as ResponseType)
+                : q?.type === 'rating'
+                    ? 'scale'
+                    : q?.type === 'text'
+                        ? 'short'
+                        : (type as ResponseType)
 
         const multipleMode: 'single' | 'multi' =
             q?.type === 'checkbox' ? 'multi' : 'single'
@@ -163,6 +165,15 @@ function normalizeQuestions(raw?: any[]): Question[] {
             options
         } as Question
     })
+}
+
+const fileNameFromUrl = (url: string) => {
+    try {
+        const path = decodeURIComponent(new URL(url).pathname)
+        return path.split('/').pop() || 'Uploaded file'
+    } catch {
+        return 'Uploaded file'
+    }
 }
 
 async function fetchTemplate(
@@ -201,30 +212,48 @@ const RespondSurvey: React.FC = () => {
 
     const [responseDocId, setResponseDocId] = useState<string | null>(null)
     const [response, setResponse] = useState<ResponseDoc | null>(null)
-    const [fileUploads, setFileUploads] = useState<Record<string, any>>({})
 
-    const [participantId, setParticipantId] = useState<string | null>(null)
+    // SMEs are identified by uid + participantId, never by email: the users
+    // doc carries the link (IdentityContext repairs a missing one).
+    const participantId: string | null = user?.participantId
+        ? String(user.participantId)
+        : null
+    // Training SMEs answer as a person, not as the company: participantId is
+    // the company's enrollment (shared with colleagues), so their copy is
+    // keyed by their trainingAttendees id. A director from before people were
+    // recorded has none and uses {enrollmentId}_director.
+    const isTrainingSme = user?.role === 'training_sme'
+    const profile = (user || {}) as Record<string, unknown>
+    const myAttendeeId = String(profile.trainingAttendeeId || '').trim()
+    const isTrainingEmployee = profile.trainingRole === 'employee'
+    const trainingPersonIds = useMemo(() => {
+        if (!isTrainingSme) return [] as string[]
+        const ids = [myAttendeeId]
+        if (!isTrainingEmployee && participantId) ids.push(`${participantId}_director`)
+        return Array.from(new Set(ids.filter(Boolean)))
+    }, [isTrainingSme, myAttendeeId, isTrainingEmployee, participantId])
+    const backPath = isTrainingSme ? '/training/surveys' : '/incubatee/documents/hub'
     // Kept alongside the id so profile-prefilled questions can read from it.
     const [participant, setParticipant] = useState<Record<string, any> | null>(
         null
     )
+    // The response doc exists only for invited SMEs; anything else is a
+    // survey this login was not sent.
+    const [notInvited, setNotInvited] = useState(false)
     const participantName = useMemo(() => response?.name || '', [response])
 
-    // Resolve participant by email (faster: direct where query)
     useEffect(() => {
+        // A training SME has no participants record to prefill from.
+        if (!participantId || isTrainingSme) {
+            setParticipant(null)
+            return
+        }
         let mounted = true
             ; (async () => {
                 try {
-                    if (!user?.email) return
-                    const qry = query(
-                        collection(db, 'participants'),
-                        where('email', '==', user.email)
-                    )
-                    const snap = await getDocs(qry)
-                    if (!mounted) return
-                    if (!snap.empty) {
-                        setParticipantId(snap.docs[0].id)
-                        setParticipant(snap.docs[0].data() as Record<string, any>)
+                    const snap = await getDoc(doc(db, 'participants', participantId))
+                    if (mounted && snap.exists()) {
+                        setParticipant(snap.data() as Record<string, any>)
                     }
                 } catch (err) {
                     console.error('participant lookup error', err)
@@ -233,14 +262,16 @@ const RespondSurvey: React.FC = () => {
         return () => {
             mounted = false
         }
-    }, [user?.email])
+    }, [participantId, isTrainingSme])
 
     // Load sent survey, my response, and template fallback
     useEffect(() => {
+        if (!user?.uid) return
         let mounted = true
             ; (async () => {
                 try {
                     setLoading(true)
+                    setNotInvited(false)
                     if (!surveyId) throw new Error('No survey id.')
 
                     // sent survey
@@ -250,38 +281,37 @@ const RespondSurvey: React.FC = () => {
                     if (!mounted) return
                     setSentSurvey(sData)
 
-                    // id for my response doc
-                    const myRespId = (participantId ||
-                        user?.id ||
-                        user?.email ||
-                        'anon') as string
-                    setResponseDocId(myRespId)
-
-                    // my response
-                    const rSnap = await getDoc(
-                        doc(db, 'sentForms', surveyId, 'responses', myRespId)
-                    )
-                    if (!mounted) return
-                    if (rSnap.exists()) {
-                        const rData = rSnap.data() as ResponseDoc
-                        setResponse(rData)
-                        if (!rData.completed && rData.answersDraft) {
-                            form.setFieldsValue(rData.answersDraft)
+                    // My response is keyed by participant id; very old ones by uid.
+                    const candidateIds = (
+                        isTrainingSme ? trainingPersonIds : [participantId, user.uid]
+                    ).filter((id): id is string => !!id)
+                    let rSnap = null
+                    for (const id of candidateIds) {
+                        const snap = await getDoc(
+                            doc(db, 'sentForms', surveyId, 'responses', id)
+                        )
+                        if (snap.exists()) {
+                            rSnap = snap
+                            break
                         }
-                        if (rData.completed) setSubmitted(true)
-                    } else {
-                        setResponse({
-                            participantId: myRespId,
-                            completed: false,
-                            questions: [],
-                            answersDraft: {}
-                        })
                     }
+                    if (!mounted) return
+
+                    if (!rSnap) {
+                        setResponseDocId(null)
+                        setResponse(null)
+                        setNotInvited(true)
+                        return
+                    }
+
+                    const rData = rSnap.data() as ResponseDoc
+                    setResponseDocId(rSnap.id)
+                    setResponse(rData)
+                    if (rData.completed) setSubmitted(true)
 
                     // If we *don't* already have questions on response/sent, hydrate from template
                     const hasRespQs =
-                        Array.isArray((rSnap.data() as any)?.questions) &&
-                        (rSnap.data() as any)?.questions?.length
+                        Array.isArray(rData?.questions) && rData.questions.length > 0
                     const hasSentQs =
                         Array.isArray(sData?.questions) && (sData?.questions?.length || 0) > 0
 
@@ -292,7 +322,7 @@ const RespondSurvey: React.FC = () => {
                 } catch (e: any) {
                     console.error(e)
                     message.error(e?.message || 'Failed to load survey.')
-                    navigate('/operations/surveys')
+                    navigate(backPath)
                 } finally {
                     if (mounted) setLoading(false)
                 }
@@ -300,8 +330,7 @@ const RespondSurvey: React.FC = () => {
         return () => {
             mounted = false
         }
-        // Re-run if participantId resolves later (common on first paint)
-    }, [surveyId, participantId, user?.id, user?.email, form, navigate])
+    }, [surveyId, participantId, user?.uid, navigate, isTrainingSme, trainingPersonIds, backPath])
 
     // Final questions resolver (priority: response → sent → template(fields|questions))
     const questions = useMemo(() => {
@@ -311,35 +340,44 @@ const RespondSurvey: React.FC = () => {
         const fromSent = normalizeQuestions(sentSurvey?.questions)
         if (fromSent.length) return fromSent
 
-        const raw =
+        return normalizeQuestions(
             (template?.fields as any[]) || (template?.questions as any[]) || []
-        const mapped = raw.map((f: any, i: number) => ({
-            id: f?.id ?? `q_${i}`,
-            type:
-                f?.type === 'checkbox'
-                    ? 'multiple'
-                    : f?.type === 'radio'
-                        ? 'multiple'
-                        : f?.type === 'select'
-                            ? 'multiple'
-                            : f?.type === 'rating'
-                                ? 'scale'
-                                : f?.type === 'textarea'
-                                    ? 'short'
-                                    : f?.type ?? 'short',
-            questionText:
-                f?.questionText ?? f?.label ?? f?.title ?? `Question ${i + 1}`,
-            required: !!f?.required,
-            options: Array.isArray(f?.options) ? f.options : undefined,
-            multipleMode: f?.type === 'checkbox' ? 'multi' : 'single',
-            min: f?.min,
-            max: f?.max,
-            step: f?.step,
-            placeholder: f?.placeholder,
-            prefill: f?.prefill
-        }))
-        return normalizeQuestions(mapped)
+        )
     }, [response?.questions, sentSurvey?.questions, template])
+
+    /**
+     * Restore a saved draft once the questions are known, turning stored
+     * values back into what each control expects: ISO strings into dayjs for
+     * date pickers, and an uploaded file's URL into an Upload file list.
+     */
+    const draftRestored = useRef(false)
+    useEffect(() => {
+        if (draftRestored.current || loading || submitted) return
+        const draft = response?.answersDraft
+        if (!draft || !Object.keys(draft).length || !questions.length) return
+        draftRestored.current = true
+
+        const typeById = new Map(questions.map(q => [q.id, q.type]))
+        const values: Record<string, any> = {}
+        for (const [id, value] of Object.entries(draft)) {
+            const type = typeById.get(id)
+            if (type === 'date') {
+                const parsed = value ? dayjs(value) : null
+                values[id] = parsed?.isValid() ? parsed : undefined
+            } else if (type === 'file') {
+                values[id] =
+                    typeof value === 'string' && value
+                        ? [{ uid: id, name: fileNameFromUrl(value), status: 'done', url: value }]
+                        : undefined
+            } else {
+                values[id] = value
+            }
+        }
+        form.setFieldsValue(values)
+    }, [loading, submitted, response, questions, form])
+
+    const closesAt = sentSurvey?.dueDate?.toDate?.() ?? null
+    const isClosed = !!closesAt && Date.now() > closesAt.getTime()
 
     /**
      * Seed profile-answered questions.
@@ -378,21 +416,38 @@ const RespondSurvey: React.FC = () => {
     const normalizeValue = (v: any) =>
         dayjs.isDayjs(v) ? (v as Dayjs).toISOString() : v
 
+    /**
+     * Firestore-ready answers: dates as ISO strings, a file question as the
+     * URL of its upload (new files are uploaded here, a restored one keeps its
+     * URL), and blanks dropped since Firestore rejects `undefined`.
+     */
     const collectValues = async () => {
-        const raw = form.getFieldsValue(true)
+        const raw = form.getFieldsValue(true) as Record<string, any>
+        const typeById = new Map(questions.map(q => [q.id, q.type]))
         const out: Record<string, any> = {}
-        for (const [k, v] of Object.entries(raw)) out[k] = normalizeValue(v)
 
-        // handle file uploads (Firebase Storage)
-        for (const [fieldId, info] of Object.entries(fileUploads)) {
-            const f = info?.fileList?.[0]?.originFileObj as File | undefined
-            if (!f || !surveyId || !responseDocId) continue
-            const storageRef = ref(
-                storage,
-                `survey_uploads/${surveyId}/${responseDocId}/${fieldId}/${f.name}`
-            )
-            const snap = await uploadBytes(storageRef, f)
-            out[fieldId] = await getDownloadURL(snap.ref)
+        for (const [k, v] of Object.entries(raw)) {
+            if (typeById.get(k) === 'file') {
+                const item = Array.isArray(v) ? v[0] : undefined
+                const file = item?.originFileObj as File | undefined
+                if (file && surveyId && responseDocId) {
+                    const storageRef = ref(
+                        storage,
+                        `survey_uploads/${surveyId}/${responseDocId}/${k}/${file.name}`
+                    )
+                    const snap = await uploadBytes(storageRef, file, withOwner({}, { participantId }))
+                    out[k] = await getDownloadURL(snap.ref)
+                    // Keep the URL so a later save doesn't upload it again.
+                    form.setFieldValue(k, [
+                        { uid: k, name: file.name, status: 'done', url: out[k] }
+                    ])
+                } else if (item?.url) {
+                    out[k] = item.url
+                }
+                continue
+            }
+            const value = normalizeValue(v)
+            if (value !== undefined) out[k] = value
         }
         return out
     }
@@ -659,9 +714,6 @@ const RespondSurvey: React.FC = () => {
                         listType='text'
                         maxCount={1}
                         beforeUpload={() => false}
-                        onChange={info =>
-                            setFileUploads(prev => ({ ...prev, [q.id]: info }))
-                        }
                     >
                         <Button icon={<UploadOutlined />}>Upload File</Button>
                     </Upload>
@@ -703,6 +755,45 @@ const RespondSurvey: React.FC = () => {
         )
     }
 
+    const backToSurveys = (
+        <Button
+            icon={<ArrowLeftOutlined />}
+            variant='filled'
+            color='primary'
+            key='back'
+            style={roundBtn}
+            onClick={() => navigate(backPath)}
+        >
+            Back to Surveys
+        </Button>
+    )
+
+    if (notInvited) {
+        return (
+            <MotionCard style={{ minHeight: '100vh' }}>
+                <Result
+                    status='info'
+                    title='This survey was not sent to you'
+                    subTitle={title}
+                    extra={[backToSurveys]}
+                />
+            </MotionCard>
+        )
+    }
+
+    if (isClosed && !submitted) {
+        return (
+            <MotionCard style={{ minHeight: '100vh' }}>
+                <Result
+                    status='warning'
+                    title='This survey has closed'
+                    subTitle={`Responses were due by ${dayjs(closesAt).format('D MMM YYYY')}.`}
+                    extra={[backToSurveys]}
+                />
+            </MotionCard>
+        )
+    }
+
     if (submitted) {
         return (
             <MotionCard style={{ minHeight: '100vh' }}>
@@ -717,7 +808,7 @@ const RespondSurvey: React.FC = () => {
                             color='primary'
                             key='back'
                             style={roundBtn}
-                            onClick={() => navigate('/incubatee/documents/hub')}
+                            onClick={() => navigate(backPath)}
                         >
                             Back to Surveys
                         </Button>
@@ -743,7 +834,7 @@ const RespondSurvey: React.FC = () => {
                     variant='filled'
                     color='primary'
                     style={roundBtn}
-                    onClick={() => navigate('/incubatee/documents/hub')}
+                    onClick={() => navigate(backPath)}
                 >
                     Back to Surveys
                 </Button>

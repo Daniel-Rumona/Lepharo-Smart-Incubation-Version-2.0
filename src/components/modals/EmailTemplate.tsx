@@ -107,7 +107,7 @@ export default function EmailTemplateModal ({
     {
       key: 'interventions',
       label: 'Interventions',
-      path: '/consultant/allocated'
+      path: '/incubatee/interventions'
     }
   ] as const
 

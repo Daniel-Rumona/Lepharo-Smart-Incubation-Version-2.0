@@ -18,7 +18,7 @@ import { isDepartmentInRole } from "./departmentRoles";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Collection = "movDocuments" | "consolidatedMOVs" | "assignedInterventions";
-type Target = { collection: Collection; id: string };
+export type Target = { collection: Collection; id: string };
 type Role = "HOD" | "Facilitator" | "SME" | "CC" | "M&E";
 
 /** One group of people who get one tailored message. */
@@ -37,7 +37,7 @@ const clean = (value: unknown) => String(value ?? "").trim();
  * Same people who may open the Control Tower: ROM and M&E (operations
  * department users), project admins, and system admins.
  */
-async function canRemind(caller: Record<string, any>): Promise<boolean> {
+export async function canRemind(caller: Record<string, any>): Promise<boolean> {
   const role = clean(caller.role).toLowerCase();
   if (role === "system_admin" || role === "projectadmin") return true;
   if (role !== "operations") return false;
@@ -129,11 +129,11 @@ async function resolveGroups(target: Target, doc: Record<string, any>, request: 
     case "awaiting-confirmation":
       return { groups: compact([await smeGroup(doc, "confirm completion of this intervention")]), empty: "No contact email was found for this SME." };
     case "in-delivery":
-      return { groups: compact([await facilitatorGroup(doc, "/coordinator/allocated", "deliver and record this intervention")]), empty: "No facilitator email found." };
+      return { groups: compact([await facilitatorGroup(doc, "/allocated", "deliver and record this intervention")]), empty: "No facilitator email found." };
     case "declined":
       return {
         groups: compact([
-          await facilitatorGroup(doc, "/coordinator/allocated", "reschedule this intervention - the SME declined"),
+          await facilitatorGroup(doc, "/allocated", "reschedule this intervention - the SME declined"),
           await hodGroup(doc, "/operations/assignments", "follow up on this intervention - the SME declined"),
         ]),
         empty: "Neither the facilitator nor a HOD could be found.",
@@ -141,7 +141,7 @@ async function resolveGroups(target: Target, doc: Record<string, any>, request: 
     case "rejected":
       return {
         groups: compact([
-          await facilitatorGroup(doc, "/coordinator/allocated", "redo or correct this intervention - the SME rejected completion"),
+          await facilitatorGroup(doc, "/allocated", "redo or correct this intervention - the SME rejected completion"),
           await hodGroup(doc, "/operations/assignments", "follow up on this intervention - the SME rejected completion"),
         ]),
         empty: "Neither the facilitator nor a HOD could be found.",
@@ -200,16 +200,50 @@ export const remindMovOwner = onCall({ timeoutSeconds: 60 }, async (request) => 
     throw new HttpsError("resource-exhausted", `Already reminded today by ${by}. Try again tomorrow.`);
   }
 
-  const { groups, empty } = await resolveGroups(target, doc, request.data || {});
+  const callerName = clean(caller.name || caller.displayName || caller.email) || "A colleague";
+  const result = await sendMovReminder(ref, target, doc, request.data || {}, { uid: callerUid, name: callerName }, note);
+  return { sent: result.sent, owner: result.audience, audience: result.audience };
+});
+
+export type ReminderSent = { sent: number; audience: string; uids: string[] };
+
+/**
+ * Tells whoever has to act next on the record, by email and in-app, and logs it on the record.
+ * The Control Tower's nudge and chasers (chasers.ts) both send through here, so a chased person
+ * gets the same message whoever asked. Throws HttpsError when there is nobody to remind.
+ */
+export async function sendMovReminder(
+  ref: FirebaseFirestore.DocumentReference,
+  target: Target,
+  doc: Record<string, any>,
+  request: Record<string, any>,
+  sender: { uid: string; name: string; email?: string },
+  note: string,
+  extra: { chaserId?: string; footer?: string; skipSender?: boolean } = {}
+): Promise<ReminderSent> {
+  const resolved = await resolveGroups(target, doc, request);
+  const { empty } = resolved;
+  // A HOD chasing their own department's queried MOVs isn't nudged by their own chaser.
+  const senderEmail = clean(sender.email).toLowerCase();
+  const groups = extra.skipSender
+    ? resolved.groups
+      .map((group) => ({
+        ...group,
+        emails: group.emails.filter((email) => clean(email).toLowerCase() !== senderEmail),
+        uids: group.uids.filter((uid) => uid !== sender.uid),
+      }))
+      .filter((group) => group.emails.length > 0)
+    : resolved.groups;
   if (!groups.length) throw new HttpsError("failed-precondition", empty);
 
-  const callerName = clean(caller.name || caller.displayName || caller.email) || "A colleague";
   const base = APP_BASE_URL.replace(/\/$/, "");
   const subject = describe(target, doc);
 
   for (const group of groups) {
     const text =
-      `${callerName} is asking for your action: please ${group.ask} - ${subject}.` + (note ? ` Note: "${note}"` : "");
+      `${sender.name} is asking for your action: please ${group.ask} - ${subject}.` +
+      (note ? ` Note: "${note}"` : "") +
+      (extra.footer ? ` ${extra.footer}` : "");
     const content = buildPackReminderEmail(group.role, text, `${base}${group.path}`);
     try {
       await sendStatusChangeNotification(group.emails, content.subject, content.html, content.text);
@@ -234,16 +268,16 @@ export const remindMovOwner = onCall({ timeoutSeconds: 60 }, async (request) => 
   const audience = groups.map((g) => g.role).join(" + ");
   const entry = {
     at: admin.firestore.Timestamp.now(),
-    byUid: callerUid,
-    byName: callerName,
+    byUid: sender.uid,
+    byName: sender.name,
     owner: audience,
     note: note || null,
     count: groups.reduce((sum, g) => sum + g.emails.length, 0),
+    ...(extra.chaserId ? { chaserId: extra.chaserId } : {}),
   };
   await ref.update({
     lastManualReminder: entry,
     manualReminders: admin.firestore.FieldValue.arrayUnion(entry),
   });
-
-  return { sent: entry.count, owner: audience, audience };
-});
+  return { sent: entry.count, audience, uids: Array.from(new Set(groups.flatMap((g) => g.uids))) };
+}

@@ -115,7 +115,7 @@ export const NOTIFICATION_REGISTRY: Record<string, NotificationTypeConfig> = {
             clean(after.intendedOutcome) ? `What we wanted to see: ${clean(after.intendedOutcome)}` : "",
             "How is it going? Tap one:",
           ],
-          "/coordinator/check-backs",
+          "/check-backs",
           actionButtonsHtml(after.actions, actionLinks)
         );
         return { subject: `Check-back due: ${title} (${sme})`, html, text };

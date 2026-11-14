@@ -27,7 +27,6 @@ export type FieldKey =
     | 'youthOwnedPercent'
     | 'disabilityOwnedPercent'
     | 'natureOfBusiness'
-    | 'productsServices'
     | 'sector'
     | 'office'
     | 'businessAddress'
@@ -52,9 +51,8 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
     femaleOwnedPercent: 'Women-owned %',
     youthOwnedPercent: 'Youth-owned %',
     disabilityOwnedPercent: 'Disability-owned %',
-    natureOfBusiness: 'Nature of business',
-    productsServices: 'Products / services',
-    sector: 'Sector',
+    natureOfBusiness: 'Nature of business (products / services)',
+    sector: 'Sector (core functional area)',
     office: 'Lepharo office (branch)',
     businessAddress: 'Business address',
     workshopAddress: 'Workshop / factory address',
@@ -81,9 +79,12 @@ const HEADER_RULES: { field: FieldKey; test: (h: string) => boolean }[] = [
     { field: 'youthOwnedPercent', test: h => h.includes('youth') },
     { field: 'disabilityOwnedPercent', test: h => h.includes('disab') },
     { field: 'blackOwnedPercent', test: h => h.includes('black owned') || h === 'ownership' },
-    { field: 'natureOfBusiness', test: h => h.includes('functional area') || h.includes('fuctional area') || h.includes('nature of business') },
-    { field: 'productsServices', test: h => h.includes('product') || h.includes('service') || h.includes('discription') || h.includes('description') },
-    { field: 'sector', test: h => h === 'sector' || h.includes('sector') },
+    // The branch lists' "Core Functional Area" is the sector; what the SME sells is its nature of business.
+    { field: 'sector', test: h => h.includes('sector') || h.includes('functional area') || h.includes('fuctional area') },
+    {
+        field: 'natureOfBusiness',
+        test: h => h.includes('nature of business') || h.includes('product') || h.includes('service') || h.includes('discription') || h.includes('description')
+    },
     { field: 'office', test: h => h.includes('lepharo office') || h === 'office' || h === 'branch' || h === 'hub' },
     { field: 'workshopAddress', test: h => h.includes('workshop') || h.includes('work shop') || h.includes('factory') },
     { field: 'businessAddress', test: h => h.includes('address') || h.includes('physical') || h.includes('location') },
@@ -98,7 +99,7 @@ const HEADER_RULES: { field: FieldKey; test: (h: string) => boolean }[] = [
 const SINGLE_FIELDS = new Set<FieldKey>([
     'companyName', 'director', 'idNumber', 'email', 'phone', 'registrationNumber', 'beeLevel',
     'blackOwnedPercent', 'femaleOwnedPercent', 'youthOwnedPercent', 'disabilityOwnedPercent',
-    'natureOfBusiness', 'productsServices', 'sector', 'office', 'businessAddress', 'workshopAddress', 'ward', 'group', 'status',
+    'natureOfBusiness', 'sector', 'office', 'businessAddress', 'workshopAddress', 'ward', 'group', 'status',
     'preAssessment', 'preIncubationContract'
 ])
 
@@ -118,9 +119,10 @@ export type IncubationGroup = 'A' | 'B' | 'C' | 'Graduated'
 /**
  * Where an SME is in incubation, as the branch lists record it (one sheet per
  * status). Not the A/B/C group. Most final first: when an SME is on two status
- * sheets, the later stage is kept and the clash is flagged.
+ * sheets, the later stage is kept and the clash is flagged. "Soft incubation"
+ * is not one: it's a kind of work (bricklaying…), so that sheet is a label.
  */
-export const SME_STATUSES = ['Exited', 'Potential exit', 'Dormant', 'Soft incubation', 'Active'] as const
+export const SME_STATUSES = ['Exited', 'Potential exit', 'Dormant', 'Active'] as const
 
 /** A status named in a sheet name or cell, if it's one of the known ones. */
 export const statusFromText = (value: string): string | null => {
@@ -128,7 +130,6 @@ export const statusFromText = (value: string): string | null => {
     if (/potential\s*exit/.test(v)) return 'Potential exit'
     if (/\bexit(ed)?\b/.test(v)) return 'Exited'
     if (/dormant|non\s*-?\s*active|inactive/.test(v)) return 'Dormant'
-    if (/soft\s*incubat/.test(v)) return 'Soft incubation'
     if (/^\s*active\s*$/.test(v)) return 'Active'
     return null
 }
@@ -145,9 +146,8 @@ export type SheetRole =
     | { kind: 'group'; group: IncubationGroup }
     /** These SMEs have a status (Exited, Dormant, Soft incubation…): import them and set it. */
     | { kind: 'status'; status: string }
-    /** A status or category the system has no field for: import and label them. */
+    /** A category the system has no field for (Bricks, Demisize, a funder): import and label them with the sheet name. */
     | { kind: 'label'; label: string }
-    | { kind: 'skip' }
 
 export type ColumnDef = {
     index: number
@@ -166,9 +166,10 @@ export type ParsedSheet = {
     columns: ColumnDef[]
     /** Data rows, each the trimmed cell text by column index. */
     rows: string[][]
+    /** What the sheet means, worked out from its name; not asked. */
     role: SheetRole
-    /** True when the role is only a guess from the sheet name and needs a look. */
-    roleIsGuess: boolean
+    /** Whether the person importing wants this sheet's SMEs. */
+    include: boolean
 }
 
 const groupFromText = (value: string): IncubationGroup | null => {
@@ -180,16 +181,19 @@ const groupFromText = (value: string): IncubationGroup | null => {
     return null
 }
 
-/** A first guess at what a sheet is. Only "Group X" is safe; anything else is flagged as a guess. */
-const suggestRole = (name: string, rowCount: number, largest: number): { role: SheetRole; guess: boolean } => {
-    if (!rowCount) return { role: { kind: 'skip' }, guess: false }
-    const n = name.trim()
+/**
+ * What a sheet is, from its name: "Group B" sets the group, an obvious status
+ * (Dormant, Exited, Potential exit, Active) sets the status, the biggest sheet
+ * is the full list, and any other sheet name is kept as a label as it is.
+ */
+const roleFor = (name: string, rowCount: number, largest: number): SheetRole => {
+    const n = name.trim().replace(/\s+/g, ' ')
     const group = /^group\s*([abc])$/i.exec(n)
-    if (group) return { role: { kind: 'group', group: group[1].toUpperCase() as IncubationGroup }, guess: false }
+    if (group) return { kind: 'group', group: group[1].toUpperCase() as IncubationGroup }
     const status = statusFromText(n)
-    if (status) return { role: { kind: 'status', status }, guess: false }
-    if (rowCount === largest) return { role: { kind: 'main' }, guess: true }
-    return { role: { kind: 'label', label: n.replace(/\s+/g, ' ') }, guess: true }
+    if (status) return { kind: 'status', status }
+    if (rowCount === largest) return { kind: 'main' }
+    return { kind: 'label', label: n }
 }
 
 // ---- reading a workbook ------------------------------------------------------
@@ -231,12 +235,42 @@ const contentField = (values: string[]) => {
     return null
 }
 
+/** Unheaded columns read past the last heading (a stray value or two beside the table). */
+const EXTRA_COLUMNS = 20
+/** How far along the header row headings are looked for. */
+const MAX_HEADINGS = 200
+
+/** Index of the last real heading in a row (Excel's own "Column273" table headings don't count), or -1. */
+const lastHeadingIn = (row: unknown[] | undefined) => {
+    if (!row) return -1
+    for (let i = row.length - 1; i >= 0; i--) {
+        const h = headerKey(row[i])
+        if (h && !/^column\s*\d+$/.test(h)) return i
+    }
+    return -1
+}
+
 export const parseWorkbook = (data: ArrayBuffer | Uint8Array): ParsedSheet[] => {
     const wb = XLSX.read(data, { type: 'array', cellDates: true })
     const drafts = wb.SheetNames.map(name => {
-        const raw = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: '', blankrows: false, raw: false })
+        const sheet = wb.Sheets[name]
+        const read = (range?: XLSX.Range) =>
+            XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', blankrows: false, raw: false, ...(range ? { range } : {}) })
+        const empty = { name, title: '', headerRowNumber: 0, columns: [] as ColumnDef[], rows: [] as string[][] }
+        if (!sheet?.['!ref']) return empty
+        const full = XLSX.utils.decode_range(sheet['!ref'])
+
+        // Sheets often claim every column up to XFD (a value dragged across a whole row), and
+        // reading them padded is slow and yields thousands of junk columns. Find the header in the
+        // first rows, then read only as wide as the headings (plus a few unheaded columns).
+        const head = read({ s: full.s, e: { r: Math.min(full.e.r, full.s.r + 26), c: Math.min(full.e.c, full.s.c + MAX_HEADINGS - 1) } })
+        const headAt = findHeaderRow(head)
+        if (headAt < 0) return empty
+        const lastHeading = Math.max(lastHeadingIn(head[headAt]), lastHeadingIn(head[headAt + 1]))
+        const raw = read({ s: full.s, e: { r: full.e.r, c: Math.min(full.e.c, full.s.c + lastHeading + EXTRA_COLUMNS) } })
+        // Found again: rows blank within the narrower read are dropped, which can shift the index.
         const h = findHeaderRow(raw)
-        if (h < 0) return { name, title: '', headerRowNumber: 0, columns: [] as ColumnDef[], rows: [] as string[][] }
+        if (h < 0) return empty
 
         const top = raw[h] || []
         const topCompanyCol = top.findIndex(cell => /company( name)?|business name/.test(headerKey(cell)))
@@ -310,8 +344,7 @@ export const parseWorkbook = (data: ArrayBuffer | Uint8Array): ParsedSheet[] => 
 
     const largest = Math.max(0, ...drafts.map(d => d.rows.length))
     return drafts.map(d => {
-        const { role, guess } = suggestRole(d.name, d.rows.length, largest)
-        return { ...d, role, roleIsGuess: guess }
+        return { ...d, role: roleFor(d.name, d.rows.length, largest), include: d.rows.length > 0 }
     })
 }
 
@@ -440,7 +473,6 @@ export type ImportedSme = {
     youthOwnedPercent: number | null
     disabilityOwnedPercent: number | null
     natureOfBusiness: string | null
-    productsServices: string | null
     sector: string | null
     office: string | null
     businessAddress: string | null
@@ -496,7 +528,6 @@ const rowToSme = (sheet: ParsedSheet, row: string[], rowNumber: number): Importe
         youthOwnedPercent: toPercent(by('youthOwnedPercent')),
         disabilityOwnedPercent: toPercent(by('disabilityOwnedPercent')),
         natureOfBusiness: clean(by('natureOfBusiness')) || null,
-        productsServices: clean(by('productsServices')) || null,
         sector: clean(by('sector')) || null,
         office: officeIsId ? null : officeCell || null,
         businessAddress: clean(by('businessAddress')) || null,
@@ -563,7 +594,7 @@ export const collectSmes = (sheets: ParsedSheet[]): ImportedSme[] => {
     // A name-keyed SME can match a registration-keyed one from another sheet.
     const nameIndex = new Map<string, string>()
     sheets
-        .filter(s => s.role.kind !== 'skip')
+        .filter(s => s.include && s.rows.length)
         .sort((a, b) => order(a) - order(b))
         .forEach(sheet => {
             sheet.rows.forEach((row, i) => {

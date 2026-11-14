@@ -34,6 +34,7 @@ const crypto = __importStar(require("crypto"));
 const firebase_1 = require("./firebase");
 const emailDelivery_1 = require("./emailDelivery");
 const departmentRoles_1 = require("./departmentRoles");
+const smeIdentity_1 = require("./smeIdentity");
 const DEFAULT_PASSWORD = "Password@1";
 const ALLOW_ORIGINS = new Set([
     "http://localhost:5173",
@@ -154,7 +155,6 @@ exports.createPlatformUser = (0, https_1.onRequest)({ region: "us-central1", inv
     const role = toBackendRole(body.role);
     const HR_ALLOWED_TARGET_ROLES = new Set([
         "operations",
-        "projectmanager",
         "coordinator",
         "projectadmin",
         "receptionist",
@@ -166,7 +166,7 @@ exports.createPlatformUser = (0, https_1.onRequest)({ region: "us-central1", inv
     }
     if (callerRole === "operations" &&
         !callerIsHrManager &&
-        !new Set(["coordinator", "projectmanager", "training_sme"]).has(role)) {
+        !new Set(["coordinator", "training_sme"]).has(role)) {
         res.status(403).json({ ok: false, error: "invalid_role_for_creator" });
         return;
     }
@@ -284,6 +284,18 @@ exports.createPlatformUser = (0, https_1.onRequest)({ region: "us-central1", inv
         userDoc.createdBy = caller.uid;
     }
     await firebase_1.db.collection("users").doc(authUser.uid).set(userDoc, { merge: true });
+    // An SME invited from its participant record is linked to it both ways
+    // (docs/sme-identity-migration-plan.md). A refusal is logged, not fatal:
+    // the invite still goes out and the SME can link on sign-in.
+    let smeLink = null;
+    const smeParticipantId = String(body.participantId || "").trim();
+    if (role === "incubatee" && smeParticipantId) {
+        const decision = await (0, smeIdentity_1.linkSmeIdentity)(authUser.uid, smeParticipantId);
+        smeLink = decision.ok ? "linked" : decision.reason;
+        if (!decision.ok) {
+            logger.warn("createPlatformUser: sme_link_refused", { uid: authUser.uid, participantId: smeParticipantId, reason: decision.reason });
+        }
+    }
     if (role === "operations") {
         const operationsPayload = {
             uid: authUser.uid,
@@ -411,6 +423,7 @@ exports.createPlatformUser = (0, https_1.onRequest)({ region: "us-central1", inv
         branchName,
         assignedPrograms,
         emailSent,
+        smeLink,
     });
 });
 exports.adminResetUserPassword = (0, https_1.onRequest)({ region: "us-central1", invoker: "public" }, async (req, res) => {

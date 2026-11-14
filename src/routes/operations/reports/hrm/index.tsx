@@ -19,6 +19,8 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { canViewControlReportData, filterReportRecords } from '@/utils/reportVisibility'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { countLeaveDays } from '@/routes/operations/hr/leave/types'
+import { isStaffRole } from '@/lib/roleLabels'
 
 // Init Highcharts modules (safe-guard for SSR)
 if (typeof Highcharts === 'function') {
@@ -243,9 +245,9 @@ const HRMReportsPage: React.FC = () => {
                 : D_USERS
 
             // exclude non-employees here (only incubatee per your instruction)
-            const NON_EMPLOYEE_ROLES = new Set(['incubatee'])
+            // Staff only: SMEs and training SMEs aren't employees.
             const employees = filterReportRecords(allUsers as unknown as Record<string, unknown>[], user?.email).filter(
-                u => !NON_EMPLOYEE_ROLES.has((u.role || '').toLowerCase())
+                u => isStaffRole(String(u.role || ''))
             ) as unknown as UserDoc[]
 
             // leave / timesheets
@@ -267,11 +269,8 @@ const HRMReportsPage: React.FC = () => {
             setLeaves(l.length ? l : D_LEAVE)
             setSheets(t.length ? t : D_SHEETS)
         } catch {
-            // fallback still excludes incubatees
-            const NON_EMPLOYEE_ROLES = new Set(['incubatee'])
-            setUsers(canViewControlReportData(user?.email) ? D_USERS.filter(
-                u => !NON_EMPLOYEE_ROLES.has((u.role || '').toLowerCase())
-            ) : [])
+            // The fallback is staff only too.
+            setUsers(canViewControlReportData(user?.email) ? D_USERS.filter(u => isStaffRole(u.role)) : [])
             setLeaves(D_LEAVE)
             setSheets(D_SHEETS)
         } finally {
@@ -312,11 +311,12 @@ const HRMReportsPage: React.FC = () => {
                 if (l.status !== 'approved') return
                 const f = dayjs(l.from),
                     t = dayjs(l.to)
-                // overlap
+                // Working days of the leave that fall in this month (leave
+                // starting on the 1st or ending on the last day counts too).
+                if (t.isBefore(start, 'day') || f.isAfter(end, 'day')) return
                 const s = f.isBefore(start) ? start : f
                 const e = t.isAfter(end) ? end : t
-                const d = e.diff(s, 'day') + 1
-                if (d > 0 && f.isBefore(end) && t.isAfter(start)) sum += d
+                sum += countLeaveDays(s.format('YYYY-MM-DD'), e.format('YYYY-MM-DD'))
             })
             return sum
         })

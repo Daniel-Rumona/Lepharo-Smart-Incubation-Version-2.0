@@ -6,7 +6,7 @@ import { useDepartmentRoles } from '@/services/departmentRoles'
 import dayjs, { Dayjs } from 'dayjs'
 import { ComplianceDoc, ComplianceStats, DeptGap, FINANCE_API_BASE_URL, Intervention, JobContract, MonthlyFinancePoint, Participant, SmePerformanceDetail, SmeRow, buildUploadedByMonth, canonicalComplianceId, directDocumentUrl, documentStoragePath, mergePrefUploaded, normalizeHeadcountMap, normalizeRevenueMap, standardComplianceName } from './participantsData'
 
-export type SmeSection = 'demographics' | 'performance' | 'interventions' | 'compliance'
+export type SmeSection = 'demographics' | 'performance' | 'interventions' | 'compliance' | 'readiness'
 
 /**
  * Everything shown in the detail workspace for the selected SME: performance history,

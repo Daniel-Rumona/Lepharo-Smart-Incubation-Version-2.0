@@ -8,6 +8,7 @@ import {
     Outlet,
     useParams,
     useNavigate,
+    useLocation,
     Navigate,
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -115,6 +116,7 @@ import { ChatSessionProvider } from "@/routes/chat/ChatSessionContext";
 // Hooks / Context / External
 // ───────────────────────────────────────────────────────────
 import { AuthSessionTracker } from "./components/AuthSessionTracker";
+import { UsageTracker } from "./components/UsageTracker";
 import MandatoryDailyClockIn from "./components/attendance/MandatoryDailyClockIn";
 import { LoginPromptProvider } from "./contexts/LoginPromptContext";
 import { WhatsNewModal } from "./components/shared/WhatsNewModal";
@@ -134,6 +136,8 @@ import InvoiceRequestPrompt from "./components/shared/InvoiceRequestPrompt";
 // eagerly imported above.
 const AdminDashboard = lazy(() => import("./routes/admin/dashboard"));
 const AdminEmailMonitor = lazy(() => import("./routes/admin/email"));
+const AdminUsageStatistics = lazy(() => import("./routes/admin/usage"));
+const AdminStorage = lazy(() => import("./routes/admin/storage"));
 const AdminLeaveManagement = lazy(() => import("./routes/operations/hr/leave"));
 const AllocatedInterventions = lazy(() => import("@/routes/shared/allocated"));
 const CheckBacks = lazy(() => import("@/routes/shared/check-backs"));
@@ -143,6 +147,8 @@ const ApplicantLandingPage = lazy(() => import("./routes/applicant"));
 const ApplicantProfileForm = lazy(() => import("./routes/applicant/profile"));
 const ApplicationTracker = lazy(() => import("./routes/applicant/tracker"));
 const ApplicationsPage = lazy(() => import("./routes/applications"));
+const MarketLinkagePage = lazy(() => import("./routes/market-linkage"));
+const SmeOpportunitiesPage = lazy(() => import("./routes/incubatee/opportunities"));
 const Appointments = lazy(() => import("./routes/shared/appointments"));
 const BeneficiariesOverview = lazy(() => import("./routes/directors/reports"));
 const BranchManagement = lazy(() => import("@/components/branch-management/BranchManagement").then(m => ({ default: m.BranchManagement })));
@@ -165,8 +171,6 @@ const CoordinatorsPage = lazy(() => import("./routes/operations/coordinators").t
 const DashboardSwitcher = lazy(() => import("./routes/operations/dashboardSwitcher"));
 const DataExportPage = lazy(() => import("./routes/data-export"));
 const DataExportSettingsPage = lazy(() => import("./routes/admin/data-export-settings"));
-const DepartmentRolesPage = lazy(() => import("./routes/admin/department-roles"));
-const DepartmentManagement = lazy(() => import("@/components/department-management/DepartmentManagement").then(m => ({ default: m.DepartmentManagement })));
 const DiagnosticPlanBuilder = lazy(() => import("./routes/operations/plan/diagnostic"));
 const DiagnosticPlanConfirmations = lazy(() => import("./routes/operations/plan"));
 const DirectorDashboard = lazy(() => import("@/routes/directors/directorDashboard").then(m => ({ default: m.DirectorDashboard })));
@@ -183,6 +187,7 @@ const FinancePayments = lazy(() => import("./routes/operations/inhouse/payments/
 const FinanceReports = lazy(() => import("./routes/operations/inhouse/reports/FinanceReports"));
 const FinanceRequests = lazy(() => import("./routes/operations/inhouse/requested/FinanceRequest"));
 const FollowUpsList = lazy(() => import("@/routes/receptionist/follow-ups"));
+const CoordinatorFollowUps = lazy(() => import("@/routes/coordinator/follow-ups"));
 const FunderAnalytics = lazy(() => import("@/routes/funder/analytics/funderAnalytics"));
 const FunderDashboard = lazy(() => import("@/routes/funder/funderDashboard"));
 const GAPAnalysisDetailView = lazy(() => import("./routes/gap/view"));
@@ -202,6 +207,7 @@ const InterventionsAssignments = lazy(() => import("./routes/operations/assignme
 const InterventionDigitalTwin = lazy(() => import("./routes/oversight/digital-twin"));
 const InterventionsControlTower = lazy(() => import("./routes/oversight/interventions"));
 const InterventionsManager = lazy(() => import("./routes/operations/interventions"));
+const ImpactAnalyticsPage = lazy(() => import("./routes/impact"));
 const InterventionsRequests = lazy(() => import("./routes/operations/requests"));
 const InterventionsTrackingView = lazy(() => import("./routes/incubatee/interventions"));
 const InvoicesView = lazy(() => import("./routes/operations/inhouse/verifications"));
@@ -209,12 +215,10 @@ const JobsManagementPage = lazy(() => import("./routes/coordinator/interventions
 const KPIManager = lazy(() => import("./routes/kpis"));
 const KPITrackerView = lazy(() => import("./routes/kpis/KPITrackerView"));
 const LandingPage = lazy(() => import("./routes/landing"));
-const LeaveCalendar = lazy(() => import("./routes/operations/hr/leave/LeaveCalendar"));
 const LibraryPage = lazy(() => import("./routes/shared/library"));
 const LoginPage = lazy(() => import("@/routes/login").then(m => ({ default: m.LoginPage })));
 const MOAForm = lazy(() => import("./routes/incubatee/moa"));
 const MOVApprovalsForm = lazy(() => import("./routes/operations/movs"));
-const MarketLinkageManager = lazy(() => import("./routes/coordinator/interventions/linkages"));
 const MeetingCheckInPage = lazy(() => import("./components/shared/AppointmentCheckIn"));
 const MonitoringActivity = lazy(() => import("./routes/operations/monitoring/activity"));
 const MonitoringMOVApprovals = lazy(() => import("./routes/operations/monitoring/movs"));
@@ -226,7 +230,6 @@ const OperationsInquiriesPage = lazy(() => import("./routes/operations/inquiries
 const OperationsOnboardingDashboard = lazy(() => import("./routes/directors/operations"));
 const ParticipantFormalRegistration = lazy(() => import("./routes/registration/onboarding"));
 const ParticipantOnboardingForm = lazy(() => import("./routes/operations/participants/new/ParticipantOnboardingForm"));
-const ParticipantSuccess = lazy(() => import("./routes/operations/participants/success"));
 const ParticipantsFinancialView = lazy(() => import("./routes/operations/finance").then(m => ({ default: m.ParticipantsFinancialView })));
 const ProgramManager = lazy(() => import("./routes/programs"));
 const ProjectAdminEditInquiryPage = lazy(() => import("./routes/projectadmin/inquiries/[id]/edit"));
@@ -234,7 +237,6 @@ const ProjectAdminInquiryDetailPage = lazy(() => import("./routes/projectadmin/i
 const ProjectAdminReports = lazy(() => import("./routes/projectadmin/reports"));
 const FacilitiesManagementPage = lazy(() => import("./routes/projectadmin/facilities"));
 const ProposalPipeline = lazy(() => import("./routes/shared/proposal-pipeline"));
-const PurchaseRequestProcessor = lazy(() => import("./routes/projectmanager/inhouse/requests"));
 const QualityObjectiveManagement = lazy(() => import("./components/quality-objectives/QualityObjectiveManagement").then(m => ({ default: m.QualityObjectiveManagement })));
 const ReceptionistDashboardPage = lazy(() => import("@/routes/receptionist/dashboard"));
 const ReceptionistReports = lazy(() => import("@/routes/receptionist/reports"));
@@ -246,6 +248,7 @@ const Resources = lazy(() => import("./routes/resources"));
 const RespondSurvey = lazy(() => import("./components/surveys/response"));
 const RoadmapFlow = lazy(() => import("./routes/incubatee/roadmap"));
 const SMECoverageRegisterPage = lazy(() => import("./routes/operations/reports/monitoring/SMERiskRegister"));
+const DigitalTwinPage = lazy(() => import("./routes/twin"));
 const SMEOverview = lazy(() => import("./routes/shared/incubatees"));
 const SmeFeedbackPage = lazy(() => import("./routes/incubatee/feedback"));
 const StakeholderEngagementPage = lazy(() => import("./routes/operations/stakeholder"));
@@ -260,11 +263,15 @@ const AcademyRedirect = lazy(() => import("./components/courses/LearnerCatalog")
 const AddTraining = lazy(() => import("./components/trainings/AddTraining"));
 const SmeDashboard = lazy(() => import("./components/trainings/SmeDashboard"));
 const SmePlan = lazy(() => import("./components/trainings/SmePlan"));
+const SmeSurveys = lazy(() => import("./components/trainings/SmeSurveys"));
 const SmePeople = lazy(() => import("./components/trainings/SmePeople"));
 const EnrollSme = lazy(() => import("./components/trainings/EnrollSme"));
 const TrainingCertificates = lazy(() => import("./components/trainings/TrainingCertificates"));
 const VerifyCertificatePage = lazy(() => import("./components/trainings/VerifyCertificatePage"));
 const SurveysDetailsPage = lazy(() => import("./components/surveys/SurveysDetails"));
+const SurveysAccessGuard = lazy(() =>
+    import("./components/surveys/SurveysAccess").then(m => ({ default: m.SurveysAccessGuard }))
+);
 const SystemSetupForm = lazy(() => import("./routes/system"));
 const TasksModule = lazy(() => import("./components/tasks/TaskModule"));
 const TrainingDashboard = lazy(() => import("@/components/dashboards/training"));
@@ -301,9 +308,20 @@ const ConfirmedInterventionsWrapper = () => {
             open
             participantId={participantId as string}
             department={decodeURIComponent(department || "")}
-            onClose={() => navigate("/operations/plan")}
+            onClose={() => navigate("/plan")}
         />
     );
+};
+
+/**
+ * A page that used to live in one role's area and is now shared. Old links
+ * (stored notifications, sent emails, bookmarks) land on the same page, keeping
+ * the rest of the path, the query and the hash.
+ */
+const MovedRoute = ({ to }: { to: string }) => {
+    const { "*": rest = "" } = useParams();
+    const { search, hash } = useLocation();
+    return <Navigate to={`${to}${rest ? `/${rest}` : ""}${search}${hash}`} replace />;
 };
 
 const App = () => {
@@ -337,6 +355,7 @@ const App = () => {
                         <AntdApp>
                             <LoginPromptProvider>
                                 <AuthSessionTracker />
+                                <UsageTracker />
                                 <MandatoryDailyClockIn />
                                 <MandatoryMeetingCoverage />
                                 {/* HODs: finance has asked for a MOV pack invoice */}
@@ -369,6 +388,15 @@ const App = () => {
                                                 shell stays on screen while the chunk loads. */}
                                             <Suspense fallback={<RouteFallback />}>
                                                 <Routes>
+                                                    {/* Full screen, outside the app layout; the page itself admits staff, and SMEs to their own twin. */}
+                                                    <Route
+                                                        path="twin/:applicationId"
+                                                        element={
+                                                            <Authenticated key="digital-twin" fallback={<CatchAllNavigate to="/" />}>
+                                                                <DigitalTwinPage />
+                                                            </Authenticated>
+                                                        }
+                                                    />
                                                     <Route
                                                         element={
                                                             <Authenticated fallback={<CatchAllNavigate to="/" />}>
@@ -386,6 +414,8 @@ const App = () => {
                                                             <Route index element={<AdminDashboard />} />
                                                             <Route path="users" element={<UserManagement />} />
                                                             <Route path="email" element={<AdminEmailMonitor />} />
+                                                            <Route path="usage" element={<AdminUsageStatistics />} />
+                                                            <Route path="storage" element={<AdminStorage />} />
                                                             <Route
                                                                 path="features"
                                                                 element={<FeatureGovernancePage />}
@@ -394,9 +424,10 @@ const App = () => {
                                                                 path="data-export-settings"
                                                                 element={<DataExportSettingsPage />}
                                                             />
+                                                            {/* Roles are now set on each department in System Setup. */}
                                                             <Route
                                                                 path="department-roles"
-                                                                element={<DepartmentRolesPage />}
+                                                                element={<Navigate to="/system" replace />}
                                                             />
                                                         </Route>
                                                         {/* Project Admin Routes */}
@@ -408,7 +439,7 @@ const App = () => {
                                                             {/* No list page here: a project admin's "Inquiries → All" is the shared receptionist list. */}
                                                             <Route
                                                                 path="inquiries"
-                                                                element={<Navigate to="/receptionist/inquiries" replace />}
+                                                                element={<Navigate to="/inquiries" replace />}
                                                             />
                                                             <Route
                                                                 path="inquiries/:id"
@@ -436,10 +467,6 @@ const App = () => {
                                                             />
                                                             <Route path="digital-twin" element={<InterventionDigitalTwin />} />
                                                             <Route
-                                                                path="success-challenges"
-                                                                element={<SuccessChallengesPage />}
-                                                            />
-                                                            <Route
                                                                 path="facilities"
                                                                 element={<FacilitiesManagementPage />}
                                                             />
@@ -455,9 +482,10 @@ const App = () => {
                                                                 path="branches"
                                                                 element={<BranchManagement />}
                                                             />
+                                                            {/* Departments are managed in System Setup. */}
                                                             <Route
                                                                 path="departments"
-                                                                element={<DepartmentManagement />}
+                                                                element={<Navigate to="/system" replace />}
                                                             />
                                                             <Route
                                                                 path="strategic"
@@ -486,13 +514,6 @@ const App = () => {
                                                             />
                                                             <Route path="tasks" element={<TasksModule />} />
                                                         </Route>
-                                                        {/* Project Manager Routes */}
-                                                        <Route path="projectmanager">
-                                                            <Route
-                                                                path="inhouse/requests"
-                                                                element={<PurchaseRequestProcessor />}
-                                                            />
-                                                        </Route>
                                                         {/* Training SME portal (role: training_sme). courses/* is the shared
                                                             learner side of the Academy for every role. */}
                                                         <Route path="training">
@@ -501,6 +522,8 @@ const App = () => {
                                                             <Route path="courses/:id" element={<LearnerCoursePage />} />
                                                             <Route path="agenda" element={<SmePlan />} />
                                                             <Route path="people" element={<SmePeople />} />
+                                                            <Route path="surveys" element={<SmeSurveys />} />
+                                                            <Route path="surveys/:surveyId" element={<RespondSurvey />} />
                                                             {/* Older portal links: appointments and the plan now live in the agenda */}
                                                             <Route path="appointments" element={<Navigate to="/training/agenda" replace />} />
                                                             <Route path="plan" element={<Navigate to="/training/agenda" replace />} />
@@ -522,6 +545,7 @@ const App = () => {
                                                                 path="feedback"
                                                                 element={<SmeFeedbackPage />}
                                                             />
+                                                            <Route path="opportunities" element={<SmeOpportunitiesPage />} />
                                                             <Route
                                                                 path="metrics"
                                                                 element={<MonthlyPerformanceForm />}
@@ -552,13 +576,10 @@ const App = () => {
                                                         {/* Coordinator Routes */}
                                                         <Route path="coordinator">
                                                             <Route index element={<CoordinatorDashboard />} />
+                                                            <Route path="follow-ups" element={<CoordinatorFollowUps />} />
                                                             <Route
                                                                 path="feedback"
                                                                 element={<FeedbackWorkspace />}
-                                                            />
-                                                            <Route
-                                                                path="interventions/Linkages"
-                                                                element={<MarketLinkageManager />}
                                                             />
                                                             <Route
                                                                 path="interventions/wellness"
@@ -572,62 +593,16 @@ const App = () => {
                                                                 path="analytics"
                                                                 element={<CoordinatorAnalytics />}
                                                             />
-                                                            <Route
-                                                                path="allocated/history"
-                                                                element={
-                                                                    <Navigate to="/coordinator/allocated" replace />
-                                                                }
-                                                            />
                                                             <Route path="movs" element={<CoordinatorMOVs />} />
-                                                            <Route path="check-backs" element={<CheckBacks />} />
-                                                            <Route path="allocated">
-                                                                <Route
-                                                                    index
-                                                                    element={<AllocatedInterventions />}
-                                                                />
-                                                            </Route>
                                                         </Route>
 
                                                         {/* Operations Routes */}
                                                         <Route path="operations">
                                                             <Route index element={<DashboardSwitcher />} />
                                                             <Route path="library" element={<LibraryPage />} />
-                                                            <Route path="participants">
-                                                                <Route
-                                                                    path="new/:id"
-                                                                    element={<ParticipantOnboardingForm />}
-                                                                />
-                                                                <Route
-                                                                    path="participants/risk"
-                                                                    element={
-                                                                        <SMECoverageRegisterPage parentPadding={24} />
-                                                                    }
-                                                                />
-                                                                <Route
-                                                                    path="success"
-                                                                    element={<ParticipantSuccess />}
-                                                                />
-                                                            </Route>
                                                             <Route
                                                                 path="stakeholder"
                                                                 element={<StakeholderEngagementPage />}
-                                                            />
-                                                            <Route
-                                                                path="hr/leave"
-                                                                element={<AdminLeaveManagement />}
-                                                            />
-                                                            <Route
-                                                                path="hr/leave/calendar"
-                                                                element={<LeaveCalendar />}
-                                                            />
-                                                            <Route path="tasks" element={<TasksModule />} />
-                                                            <Route
-                                                                path="documentation"
-                                                                element={<DocumentationHub />}
-                                                            />
-                                                            <Route
-                                                                path="success-challenges"
-                                                                element={<SuccessChallengesPage />}
                                                             />
                                                             <Route
                                                                 path="hr/employees"
@@ -643,15 +618,27 @@ const App = () => {
                                                             />
                                                             <Route
                                                                 path="surveys"
-                                                                element={<SurveysDetailsPage />}
+                                                                element={
+                                                                    <SurveysAccessGuard>
+                                                                        <SurveysDetailsPage />
+                                                                    </SurveysAccessGuard>
+                                                                }
                                                             />
                                                             <Route
                                                                 path="surveys/builder"
-                                                                element={<SurveyBuilder />}
+                                                                element={
+                                                                    <SurveysAccessGuard>
+                                                                        <SurveyBuilder />
+                                                                    </SurveysAccessGuard>
+                                                                }
                                                             />
                                                             <Route
                                                                 path="surveys/builder/:id"
-                                                                element={<SurveyBuilder />}
+                                                                element={
+                                                                    <SurveysAccessGuard>
+                                                                        <SurveyBuilder />
+                                                                    </SurveysAccessGuard>
+                                                                }
                                                             />
                                                             <Route
                                                                 path="impact"
@@ -707,46 +694,17 @@ const App = () => {
                                                                 element={<InterventionsRequests />}
                                                             />
                                                             <Route
-                                                                path="plan"
-                                                                element={<DiagnosticPlanConfirmations />}
-                                                            />
-                                                            <Route
-                                                                path="diagnostic-plan"
-                                                                element={<DiagnosticPlanBuilder />}
-                                                            />
-                                                            <Route
-                                                                path="plan/confirmed/:participantId/:department"
-                                                                element={<ConfirmedInterventionsWrapper />}
-                                                            />
-                                                            <Route
                                                                 path="assignments"
                                                                 element={<InterventionsAssignments />}
-                                                            />
-                                                            <Route
-                                                                path="/operations/participants/risk"
-                                                                element={
-                                                                    <SMECoverageRegisterPage parentPadding={24} />
-                                                                }
                                                             />
                                                             <Route
                                                                 path="interventions"
                                                                 element={<InterventionsManager />}
                                                             />
                                                             <Route
-                                                                path="finance"
-                                                                element={<ParticipantsFinancialView />}
-                                                            />
-                                                            <Route
                                                                 path="groups"
                                                                 element={<GroupMovementTimeline />}
                                                             />
-                                                            <Route path="gap">
-                                                                <Route index element={<GAPAnalysisTable />} />
-                                                                <Route
-                                                                    path=":id"
-                                                                    element={<GAPAnalysisDetailView />}
-                                                                />
-                                                            </Route>
                                                             <Route path="coordinators">
                                                                 <Route index element={<CoordinatorsPage />} />
                                                                 <Route
@@ -760,10 +718,6 @@ const App = () => {
                                                                 element={<OperationsInquiriesPage />}
                                                             />
                                                             <Route path="reports" element={<ReportSwitcher />} />
-                                                            <Route
-                                                                path="reports/collaborative/*"
-                                                                element={<CollaborativeReportsModule />}
-                                                            />
                                                         </Route>
 
                                                         {/* Receptionist Routes */}
@@ -771,19 +725,6 @@ const App = () => {
                                                             <Route
                                                                 index
                                                                 element={<ReceptionistDashboardPage />}
-                                                            />
-                                                            <Route path="inquiries" element={<InquiriesList />} />
-                                                            <Route
-                                                                path="inquiries/new"
-                                                                element={<NewInquiry />}
-                                                            />
-                                                            <Route
-                                                                path="inquiries/:id"
-                                                                element={<InquiryDetailPage />}
-                                                            />
-                                                            <Route
-                                                                path="inquiries/:id/edit"
-                                                                element={<EditInquiry />}
                                                             />
                                                             <Route path="contacts" element={<ContactsList />} />
                                                             <Route
@@ -796,10 +737,44 @@ const App = () => {
                                                             />
                                                         </Route>
 
-                                                        {/* Shared Routes */}
+                                                        {/* Shared Routes: pages more than one role uses. Each role's own
+                                                            area (/operations, /coordinator, ...) holds only that role's pages. */}
                                                         <Route
                                                             path="interventions"
                                                             element={<InterventionDatabaseView />}
+                                                        />
+                                                        <Route path="gap">
+                                                            <Route index element={<GAPAnalysisTable />} />
+                                                            <Route path=":id" element={<GAPAnalysisDetailView />} />
+                                                        </Route>
+                                                        <Route path="plan">
+                                                            <Route index element={<DiagnosticPlanConfirmations />} />
+                                                            <Route path="build" element={<DiagnosticPlanBuilder />} />
+                                                            <Route
+                                                                path="confirmed/:participantId/:department"
+                                                                element={<ConfirmedInterventionsWrapper />}
+                                                            />
+                                                        </Route>
+                                                        <Route path="inquiries">
+                                                            <Route index element={<InquiriesList />} />
+                                                            <Route path="new" element={<NewInquiry />} />
+                                                            <Route path=":id" element={<InquiryDetailPage />} />
+                                                            <Route path=":id/edit" element={<EditInquiry />} />
+                                                        </Route>
+                                                        <Route path="allocated" element={<AllocatedInterventions />} />
+                                                        <Route path="allocated/history" element={<Navigate to="/allocated" replace />} />
+                                                        <Route path="check-backs" element={<CheckBacks />} />
+                                                        <Route path="success-challenges" element={<SuccessChallengesPage />} />
+                                                        <Route path="documentation" element={<DocumentationHub />} />
+                                                        <Route path="finance" element={<ParticipantsFinancialView />} />
+                                                        <Route path="tasks" element={<TasksModule />} />
+                                                        <Route
+                                                            path="reports/collaborative/*"
+                                                            element={<CollaborativeReportsModule />}
+                                                        />
+                                                        <Route
+                                                            path="participants/risk"
+                                                            element={<SMECoverageRegisterPage parentPadding={24} />}
                                                         />
 
                                                         <Route
@@ -832,6 +807,8 @@ const App = () => {
                                                         <Route path="calendar" element={<MyCalendarPage />} />
                                                         <Route path="timesheet" element={<ClockinPage />} />
                                                         <Route path="leave" element={<EmployeeLeave />} />
+                                                        <Route path="leave-management" element={<AdminLeaveManagement />} />
+                                                        <Route path="leave-management/calendar" element={<Navigate to="/leave-management?view=calendar" replace />} />
                                                         <Route path="performance" element={<EmployeePerformancePage />} />
                                                         <Route
                                                             path="data-export"
@@ -839,12 +816,14 @@ const App = () => {
                                                         />
                                                         <Route path="tutorials" element={<TutorialsPage />} />
                                                         <Route path="chat" element={<Chat />} />
+                                                        <Route path="impact" element={<ImpactAnalyticsPage />} />
                                                         <Route path="system" element={<SystemSetupForm />} />
 
                                                         <Route
                                                             path="applications"
                                                             element={<ApplicationsPage />}
                                                         />
+                                                        <Route path="market-linkage" element={<MarketLinkagePage />} />
                                                         <Route path="resources">
                                                             <Route index element={<Resources />} />
                                                             <Route
@@ -858,6 +837,24 @@ const App = () => {
                                                             element={<ProposalPipeline />}
                                                         />
                                                     </Route>
+                                                    {/* Shared pages' old addresses inside a role's area. Outside the
+                                                        workspace layout so they redirect before its role check. */}
+                                                    <Route path="operations/gap/*" element={<MovedRoute to="/gap" />} />
+                                                    <Route path="operations/plan/*" element={<MovedRoute to="/plan" />} />
+                                                    <Route path="operations/diagnostic-plan" element={<MovedRoute to="/plan/build" />} />
+                                                    <Route path="operations/success-challenges" element={<MovedRoute to="/success-challenges" />} />
+                                                    <Route path="projectadmin/success-challenges" element={<MovedRoute to="/success-challenges" />} />
+                                                    <Route path="operations/participants/risk" element={<MovedRoute to="/participants/risk" />} />
+                                                    <Route path="operations/hr/leave/*" element={<MovedRoute to="/leave-management" />} />
+                                                    <Route path="operations/participants/new/*" element={<MovedRoute to="/participants/new" />} />
+                                                    <Route path="operations/documentation" element={<MovedRoute to="/documentation" />} />
+                                                    <Route path="operations/finance" element={<MovedRoute to="/finance" />} />
+                                                    <Route path="operations/tasks" element={<MovedRoute to="/tasks" />} />
+                                                    <Route path="operations/reports/collaborative/*" element={<MovedRoute to="/reports/collaborative" />} />
+                                                    <Route path="receptionist/inquiries/*" element={<MovedRoute to="/inquiries" />} />
+                                                    <Route path="coordinator/allocated/*" element={<MovedRoute to="/allocated" />} />
+                                                    <Route path="coordinator/check-backs" element={<MovedRoute to="/check-backs" />} />
+
                                                     {/* Applicant portal routes. The user remains an "incubatee" in
                                                 Firestore; applicant is a journey stage, not a role. */}
                                                     <Route

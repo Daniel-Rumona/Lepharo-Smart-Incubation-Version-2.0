@@ -22,7 +22,7 @@ test('an explicit flag wins; with none, staff must change and SMEs need not', ()
 })
 
 test('a default password shows ONLY the password step, for every role', () => {
-    for (const role of ['incubatee', 'director', 'operations', 'consultant', 'system_admin']) {
+    for (const role of ['incubatee', 'director', 'operations', 'coordinator', 'system_admin']) {
         assert.deepEqual(welcomeStepKeys({ role, passwordOnly: true, mustRegisterCompany: true }), ['password'])
     }
 })
@@ -39,7 +39,7 @@ test('without a default password the normal steps run, never including the passw
 })
 
 test('every role signs POPIA, after the signature it is signed with', () => {
-    for (const role of ['incubatee', 'director', 'operations', 'consultant', 'system_admin']) {
+    for (const role of ['incubatee', 'director', 'operations', 'coordinator', 'system_admin']) {
         const keys = welcomeStepKeys({ role, passwordOnly: false, mustRegisterCompany: true })
         assert.ok(keys.includes('popia'), role)
         assert.ok(keys.indexOf('signature') < keys.indexOf('popia'), role)

@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireMoaAfter3Months = void 0;
 // functions/src/moaFlag.ts
-const scheduler_1 = require("firebase-functions/v2/scheduler");
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const inAppNotifications_1 = require("./inAppNotifications");
@@ -35,7 +35,7 @@ async function resolveRecipient(data) {
  * the programme for 3+ months (and haven't signed MOA yet).
  * Also clears the flag if MOA is found later.
  */
-exports.requireMoaAfter3Months = (0, scheduler_1.onSchedule)({ schedule: 'every 24 hours', timeZone: 'Africa/Johannesburg' }, async () => {
+exports.requireMoaAfter3Months = (0, cronHeartbeat_1.scheduledJob)("requireMoaAfter3Months", { schedule: 'every 24 hours', timeZone: 'Africa/Johannesburg' }, async () => {
     const threshold = threeMonthsAgo();
     // You may need a composite index (applicationStatus + acceptedAt).
     const snap = await emailShared_1.db

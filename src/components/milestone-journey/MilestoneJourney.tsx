@@ -21,6 +21,10 @@ import { MotionCard } from "@/components/dashboards/metrics/Header";
 import { useColorMode } from "@/contexts/ThemeContext";
 import {
   CalendarOutlined,
+  DollarOutlined,
+  RiseOutlined,
+  FallOutlined,
+  SafetyCertificateOutlined,
   CheckCircleOutlined,
   CloseOutlined,
   EnvironmentOutlined,
@@ -41,6 +45,12 @@ import {
   type JourneyMonth,
   type JourneyScope,
 } from "@/services/milestoneJourneyService";
+import {
+  loadJourneyPerformance,
+  type JourneyMover,
+  type JourneyPerformance,
+  type JourneySmeRef,
+} from "@/services/journeyPerformanceService";
 
 const { RangePicker } = DatePicker;
 const { Text, Title } = Typography;
@@ -92,10 +102,14 @@ const useJourneyTokens = (): JourneyTokens => {
 };
 
 // "complete" is the closing step after the last chapter; it belongs to no month.
-type SlideKey = "overview" | "done" | "appointments" | "smes" | "feedback" | "complete";
+type SlideKey = "overview" | "done" | "appointments" | "smes" | "feedback" | "revenue" | "jobs" | "complete";
 
 /** The pages a chapter is made of. A page only exists when the month has something for it. */
-const monthSlides = (month: JourneyMonth | undefined, scope: JourneyScope): SlideKey[] => {
+const monthSlides = (
+  month: JourneyMonth | undefined,
+  scope: JourneyScope,
+  performance: JourneyPerformance = {}
+): SlideKey[] => {
   const slides: SlideKey[] = ["overview"];
   if (!month) return slides;
   if (month.activities.some((activity) => activity.kind !== "appointment")) slides.push("done");
@@ -103,7 +117,21 @@ const monthSlides = (month: JourneyMonth | undefined, scope: JourneyScope): Slid
   if (scope === "operations" && month.participants.some((participant) => participant.name))
     slides.push("smes");
   if (scope === "operations" && month.feedback.length > 0) slides.push("feedback");
+  // Department chapters: Financial Compliance sees reported revenue, HSE reported jobs.
+  if (performance.revenue?.[month.key]?.reported) slides.push("revenue");
+  if (performance.jobs?.[month.key]?.total) slides.push("jobs");
   return slides;
+};
+
+/** Page titles for the top-row chapter label. */
+const SLIDE_TITLES: Record<Exclude<SlideKey, "complete">, string> = {
+  overview: "The month in numbers",
+  done: "What was done",
+  appointments: "Appointments",
+  smes: "SMEs helped",
+  feedback: "What SMEs said about us",
+  revenue: "Revenue reported",
+  jobs: "Jobs reported",
 };
 
 const serifDisplay = "Georgia, 'Iowan Old Style', 'Palatino Linotype', serif";
@@ -127,6 +155,34 @@ const joinClauses = (clauses: string[]) =>
     : clauses.length === 2
     ? clauses.join(" and ")
     : `${clauses.slice(0, -1).join(", ")}, and ${clauses[clauses.length - 1]}`;
+
+/** Short rand amount for headline figures: R 2.50M, R 812K. */
+const randCompact = (value: number) => {
+  const n = Number(value || 0);
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `R ${(n / 1_000_000).toFixed(2)}M`;
+  if (abs >= 10_000) return `R ${(n / 1_000).toFixed(0)}K`;
+  return `R ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+};
+const randFull = (value: number) =>
+  `R ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const previousMonthLabel = (monthKey: string) =>
+  dayjs(`${monthKey}-01`).subtract(1, "month").format("MMM YYYY");
+const revenueSentence = (
+  label: string,
+  monthKey: string,
+  month: { reported: number; expected: number; total: number; changePercent: number | null }
+) => {
+  const change =
+    month.changePercent === null
+      ? ""
+      : `, ${month.changePercent >= 0 ? "up" : "down"} ${Math.abs(month.changePercent)}% on ${previousMonthLabel(monthKey)}`;
+  const who =
+    month.expected > month.reported
+      ? `${month.reported} of ${month.expected} SMEs`
+      : `${month.reported} SME${plural(month.reported)}`;
+  return `In ${label}, ${who} reported ${randCompact(month.total)} in revenue${change}.`;
+};
 
 // Builds the "In {month}, you..." sentence straight from the month's own
 // numbers — nothing here is aggregated across the range, so it changes with
@@ -359,6 +415,11 @@ export type MilestoneJourneyProps = {
    * owns open/close. `inline` means the caller already animates the reveal.
    */
   controlled?: { open: boolean; onClose: () => void; inline?: boolean };
+  /**
+   * Reporting period from the page that opens the journey (the analytics
+   * page). When given, the journey follows it and shows no date picker of its own.
+   */
+  dateRange?: [Dayjs, Dayjs] | null;
 };
 
 export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
@@ -370,6 +431,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
   programId,
   triggerOnly = false,
   controlled,
+  dateRange,
 }) => {
   const { loading, months } = useJourneyMonths(
     scope,
@@ -395,10 +457,46 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     if (controlled) controlled.onClose();
     else setInternalOpen(false);
   };
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([
+  const [ownRange, setRange] = useState<[Dayjs, Dayjs]>([
     dayjs().subtract(5, "month").startOf("month"),
     dayjs().endOf("month"),
   ]);
+  // The page's period wins when it passes one; the picker only shows otherwise.
+  const rangeIsInherited = Boolean(dateRange?.[0] && dateRange?.[1]);
+  const range = useMemo<[Dayjs, Dayjs]>(
+    () => (rangeIsInherited ? [dateRange![0], dateRange![1]] : ownRange),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rangeIsInherited, dateRange?.[0]?.valueOf(), dateRange?.[1]?.valueOf(), ownRange]
+  );
+
+  // Department chapters (revenue for Financial Compliance, jobs for HSE). Loaded
+  // only once the journey is open, so a page with just the trigger stays light.
+  const [departmentFigures, setDepartmentFigures] = useState<JourneyPerformance>({});
+  const figureDepartmentIds = useMemo(
+    () =>
+      scope === "operations"
+        ? Array.from(new Set([...(departmentIds || []), departmentId || ""].filter(Boolean)))
+        : [],
+    [scope, departmentIds, departmentId]
+  );
+  useEffect(() => {
+    if (!open || !figureDepartmentIds.length) {
+      setDepartmentFigures({});
+      return;
+    }
+    let cancelled = false;
+    loadJourneyPerformance({ departmentIds: figureDepartmentIds, programId, range })
+      .then((result) => {
+        if (!cancelled) setDepartmentFigures(result);
+      })
+      .catch((error) => {
+        console.error("Failed to load journey revenue and jobs:", error);
+        if (!cancelled) setDepartmentFigures({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, figureDepartmentIds, programId, range]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeSlide, setActiveSlide] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -549,7 +647,10 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     );
   };
 
-  const slides = useMemo(() => monthSlides(activeMonth, scope), [activeMonth, scope]);
+  const slides = useMemo(
+    () => monthSlides(activeMonth, scope, departmentFigures),
+    [activeMonth, scope, departmentFigures]
+  );
   const slideKey: SlideKey = complete
     ? "complete"
     : slides[Math.min(activeSlide, slides.length - 1)] ?? "overview";
@@ -609,7 +710,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     const previousIndex = activeIndex - 1;
     if (previousIndex < 0) return;
     setActiveIndex(previousIndex);
-    setActiveSlide(monthSlides(visibleMonths[previousIndex], scope).length - 1);
+    setActiveSlide(monthSlides(visibleMonths[previousIndex], scope, departmentFigures).length - 1);
   };
 
   useEffect(() => {
@@ -651,6 +752,262 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     atFinalChapter,
     complete,
   ]);
+
+  // Department chapters for the active month.
+  const revenueMonth = activeMonth ? departmentFigures.revenue?.[activeMonth.key] : undefined;
+  const jobsMonth = activeMonth ? departmentFigures.jobs?.[activeMonth.key] : undefined;
+
+  // One-screen layout for the department chapters (revenue, jobs): the
+  // headline, a slim figure strip, who moved most, who did not report, and
+  // the month in the context of the period. Nothing scrolls or pages.
+  const renderPerformancePage = ({
+    headline,
+    strip,
+    movers,
+    formatChange,
+    formatValue,
+    missing,
+    missingLabel,
+    trend,
+    trendLabel,
+    formatTrend,
+  }: {
+    headline: string;
+    strip: Array<{ key: string; label: string; value: React.ReactNode; colour?: string }>;
+    movers: { risers: JourneyMover[]; fallers: JourneyMover[] };
+    formatChange: (change: number) => string;
+    formatValue: (value: number) => string;
+    missing: JourneySmeRef[];
+    missingLabel: string;
+    trend: Array<{ key: string; label: string; value: number | null }>;
+    trendLabel: string;
+    formatTrend: (value: number) => string;
+  }) => {
+    const panel: React.CSSProperties = {
+      padding: "16px 18px",
+      borderRadius: 16,
+      border: `1px solid ${tokens.line}`,
+      background: tokens.paperRaised,
+      textAlign: "left",
+      minWidth: 0,
+    };
+    const heading: React.CSSProperties = {
+      display: "block",
+      fontSize: 11,
+      letterSpacing: 1,
+      fontWeight: 600,
+      textTransform: "uppercase",
+      color: tokens.teal,
+      marginBottom: 10,
+    };
+    const largest = Math.max(
+      1,
+      ...[...movers.risers, ...movers.fallers].map((mover) => Math.abs(mover.change))
+    );
+    const moverRow = (mover: JourneyMover, colour: string) => (
+      <div
+        key={mover.id}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr) auto",
+          alignItems: "center",
+          gap: 10,
+          padding: "4px 0",
+        }}
+      >
+        <Text ellipsis style={{ color: tokens.ink, fontSize: 13 }} title={`${mover.name} · ${formatValue(mover.value)}`}>
+          {mover.name}
+        </Text>
+        <div style={{ height: 8, borderRadius: 999, background: `${tokens.line}`, overflow: "hidden" }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.max(6, (Math.abs(mover.change) / largest) * 100)}%` }}
+            transition={{ duration: reduceMotion ? 0 : 0.6 }}
+            style={{ height: "100%", borderRadius: 999, background: colour }}
+          />
+        </div>
+        <Text strong style={{ color: colour, fontSize: 13, minWidth: 48, textAlign: "right" }}>
+          {formatChange(mover.change)}
+        </Text>
+      </div>
+    );
+    const trendMax = Math.max(1, ...trend.map((point) => point.value ?? 0));
+    const shownMissing = missing.slice(0, 10);
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 18,
+          width: "100%",
+          maxWidth: 1100,
+          margin: "0 auto",
+        }}
+      >
+        <Title
+          level={3}
+          style={{
+            margin: 0,
+            fontFamily: serifDisplay,
+            color: tokens.ink,
+            fontWeight: 400,
+            lineHeight: 1.35,
+            maxWidth: 860,
+          }}
+        >
+          {headline}
+        </Title>
+
+        {/* Figure strip */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "10px 0",
+            ...panel,
+            padding: "12px 8px",
+            width: "100%",
+          }}
+        >
+          {strip.map((item, index) => (
+            <div
+              key={item.key}
+              style={{
+                flex: "1 1 140px",
+                textAlign: "center",
+                padding: "2px 12px",
+                borderLeft: index ? `1px solid ${tokens.line}` : "none",
+              }}
+            >
+              <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15, color: item.colour || tokens.ink, whiteSpace: "nowrap" }}>
+                {item.value}
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {item.label}
+              </Text>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: screens.md ? "minmax(0, 3fr) minmax(0, 2fr)" : "minmax(0, 1fr)",
+            gap: 16,
+            width: "100%",
+          }}
+        >
+          {/* Biggest movers */}
+          <div style={panel}>
+            <span style={heading}>Biggest movers</span>
+            {movers.risers.length || movers.fallers.length ? (
+              <div style={{ display: "grid", gridTemplateColumns: screens.lg ? "1fr 1fr" : "1fr", gap: "4px 24px" }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <RiseOutlined style={{ color: tokens.teal }} /> Rising
+                  </Text>
+                  {movers.risers.length ? (
+                    movers.risers.map((mover) => moverRow(mover, tokens.teal))
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: 12 }}>No rises</Text>
+                  )}
+                </div>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <FallOutlined style={{ color: tokens.coral }} /> Falling
+                  </Text>
+                  {movers.fallers.length ? (
+                    movers.fallers.map((mover) => moverRow(mover, tokens.coral))
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: 12 }}>No falls</Text>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <Text type="secondary">No changes on the month before.</Text>
+            )}
+          </div>
+
+          {/* Who did not report */}
+          <div style={panel}>
+            <span style={heading}>
+              {missingLabel}
+              {missing.length ? ` · ${missing.length}` : ""}
+            </span>
+            {missing.length ? (
+              <>
+                <Space size={[6, 6]} wrap>
+                  {shownMissing.map((sme) => (
+                    <Tag
+                      key={sme.id}
+                      style={{
+                        margin: 0,
+                        border: "none",
+                        borderRadius: 999,
+                        background: tokens.coralSoft,
+                        color: tokens.coral,
+                      }}
+                    >
+                      {sme.name}
+                    </Tag>
+                  ))}
+                </Space>
+                {missing.length > shownMissing.length ? (
+                  <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 8 }}>
+                    and {missing.length - shownMissing.length} more
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <CheckCircleOutlined style={{ fontSize: 22, color: tokens.teal }} />
+                <Text style={{ color: tokens.ink }}>Everyone reported</Text>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* The month within the period */}
+        {trend.length > 1 ? (
+          <div style={{ ...panel, width: "100%" }}>
+            <span style={heading}>{trendLabel}</span>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 92 }}>
+              {trend.map((point) => {
+                const active = point.key === activeMonth?.key;
+                const height = point.value ? Math.max(6, (point.value / trendMax) * 56) : 3;
+                return (
+                  <div key={point.key} style={{ flex: "1 1 0", minWidth: 0, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: tokens.ink, opacity: active ? 1 : 0.55, fontWeight: active ? 700 : 400, marginBottom: 4, whiteSpace: "nowrap" }}>
+                      {point.value === null ? "" : formatTrend(point.value)}
+                    </div>
+                    <div
+                      style={{
+                        height,
+                        borderRadius: 6,
+                        background: active ? tokens.teal : tokens.tealSoft,
+                      }}
+                    />
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: active ? 700 : 400 }}>
+                      {point.label}
+                    </Text>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  // The chapter and page now playing, shown in the top row.
+  const chapterLabel =
+    !complete && activeMonth
+      ? `Chapter ${activeIndex + 1} of ${visibleMonths.length} · ${SLIDE_TITLES[slideKey as Exclude<SlideKey, "complete">]}`
+      : null;
 
   const title =
     scope === "sme" ? "My milestone journey" : "Department milestone journey";
@@ -783,14 +1140,18 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
           ) : !visibleMonths.length ? (
             <>
               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-                {rangePicker}
+                {rangeIsInherited ? null : rangePicker}
                 {closeButton}
               </div>
               <div style={{ flex: "1 1 auto", display: "grid", placeItems: "center" }}>
                 <Result
                   status="info"
                   title="No verified milestones for this period"
-                  subTitle="Try a wider date range, or check back once activity has been recorded."
+                  subTitle={
+                    rangeIsInherited
+                      ? "Choose a wider period on the page, or check back once activity has been recorded."
+                      : "Try a wider date range, or check back once activity has been recorded."
+                  }
                 />
               </div>
             </>
@@ -815,7 +1176,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                 }}
               >
                 <Space size={8} wrap>
-                  {rangePicker}
+                  {rangeIsInherited ? null : rangePicker}
                     <Space size={8}>
                       <Button
                         shape="circle"
@@ -867,6 +1228,21 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                       )}
                     </Space>
                 </Space>
+                {chapterLabel ? (
+                  <Text
+                    style={{
+                      flex: "1 1 auto",
+                      textAlign: "center",
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      color: tokens.teal,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {chapterLabel}
+                  </Text>
+                ) : null}
                 {closeButton}
               </div>
 
@@ -998,16 +1374,6 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                               padding: "24px 0 12px",
                             }}
                           >
-                              <Text
-                              style={{
-                                fontSize: 11,
-                                letterSpacing: 1,
-                                color: tokens.teal,
-                                fontWeight: 600,
-                              }}
-                            >
-                              CHAPTER {activeIndex + 1} OF {visibleMonths.length} · THE MONTH IN NUMBERS
-                            </Text>
                             <Title
                               level={3}
                               style={{
@@ -1107,16 +1473,6 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
 
                         {slideKey === "done" && (
                           <>
-                              <Text
-                                style={{
-                                  fontSize: 11,
-                                  letterSpacing: 1,
-                                  color: tokens.teal,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · WHAT WAS DONE
-                              </Text>
                             {renderCardGrid(
                               doneItems.map((activity) => ({
                                 id: activity.id,
@@ -1132,16 +1488,6 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
 
                         {slideKey === "appointments" && (
                           <>
-                              <Text
-                                style={{
-                                  fontSize: 11,
-                                  letterSpacing: 1,
-                                  color: tokens.teal,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · APPOINTMENTS
-                              </Text>
                             {renderCardGrid(
                               appointmentItems.map((activity) => {
                                 const invited = activity.invited ?? 0;
@@ -1207,16 +1553,6 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
 
                         {slideKey === "smes" && (
                           <>
-                              <Text
-                                style={{
-                                  fontSize: 11,
-                                  letterSpacing: 1,
-                                  color: tokens.teal,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · SMEs HELPED
-                              </Text>
                             {renderCardGrid(
                               smeItems.map((sme) => ({ ...sme, colour: tokens.amber }))
                             )}
@@ -1225,17 +1561,6 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
 
                         {slideKey === "feedback" && (
                             <div>
-                              <Text
-                                strong
-                                style={{
-                                  color: tokens.ink,
-                                  fontFamily: serifDisplay,
-                                  fontSize: 17,
-                                }}
-                              >
-                                CHAPTER {activeIndex + 1} OF{" "}
-                                {visibleMonths.length} · WHAT SMEs said about us
-                              </Text>
                               <div
                                 style={{
                                   display: "grid",
@@ -1328,6 +1653,82 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                               </div>
                             </div>
                           )}
+
+                        {slideKey === "revenue" && revenueMonth &&
+                          renderPerformancePage({
+                            headline: revenueSentence(activeMonth.label, activeMonth.key, revenueMonth),
+                            strip: [
+                              {
+                                key: "reported",
+                                label: "SMEs reported",
+                                value: `${revenueMonth.reported} / ${revenueMonth.expected}`,
+                              },
+                              {
+                                key: "total",
+                                label: "Revenue reported",
+                                value: randCompact(revenueMonth.total),
+                              },
+                              {
+                                key: "change",
+                                label: `On ${previousMonthLabel(activeMonth.key)}`,
+                                value:
+                                  revenueMonth.changePercent === null
+                                    ? "—"
+                                    : `${revenueMonth.changePercent > 0 ? "+" : ""}${revenueMonth.changePercent}%`,
+                                colour:
+                                  revenueMonth.changePercent === null || revenueMonth.changePercent === 0
+                                    ? undefined
+                                    : revenueMonth.changePercent > 0
+                                    ? tokens.teal
+                                    : tokens.coral,
+                              },
+                            ],
+                            movers: revenueMonth,
+                            formatChange: (change) => `${change > 0 ? "+" : ""}${change}%`,
+                            formatValue: randFull,
+                            missing: revenueMonth.missing,
+                            missingLabel: "Didn't report",
+                            trend: visibleMonths.map((month) => ({
+                              key: month.key,
+                              label: dayjs(`${month.key}-01`).format("MMM"),
+                              value: departmentFigures.revenue?.[month.key]?.total ?? null,
+                            })),
+                            trendLabel: "Revenue reported by month",
+                            formatTrend: randCompact,
+                          })}
+
+                        {slideKey === "jobs" && jobsMonth &&
+                          renderPerformancePage({
+                            headline: `In ${activeMonth.label}, ${jobsMonth.reported} of ${jobsMonth.expected} SME${plural(jobsMonth.expected)} reported jobs. ${jobsMonth.total} job${plural(jobsMonth.total)} in place: ${jobsMonth.permanent} permanent and ${jobsMonth.temporary} temporary.`,
+                            strip: [
+                              {
+                                key: "reported",
+                                label: "SMEs reported",
+                                value: `${jobsMonth.reported} / ${jobsMonth.expected}`,
+                              },
+                              { key: "total", label: "Jobs in place", value: jobsMonth.total },
+                              { key: "permanent", label: "Permanent", value: jobsMonth.permanent },
+                              { key: "temporary", label: "Temporary", value: jobsMonth.temporary },
+                              {
+                                key: "added",
+                                label: "New this month",
+                                value: jobsMonth.added,
+                                colour: jobsMonth.added ? tokens.teal : undefined,
+                              },
+                            ],
+                            movers: jobsMonth,
+                            formatChange: (change) => `${change > 0 ? "+" : ""}${change} job${Math.abs(change) === 1 ? "" : "s"}`,
+                            formatValue: (value) => `${value} job${plural(value)}`,
+                            missing: jobsMonth.missing,
+                            missingLabel: "No jobs update",
+                            trend: visibleMonths.map((month) => ({
+                              key: month.key,
+                              label: dayjs(`${month.key}-01`).format("MMM"),
+                              value: departmentFigures.jobs?.[month.key]?.total ?? null,
+                            })),
+                            trendLabel: "Jobs in place by month",
+                            formatTrend: (value) => String(value),
+                          })}
 
                       </Space>
                     </Card>

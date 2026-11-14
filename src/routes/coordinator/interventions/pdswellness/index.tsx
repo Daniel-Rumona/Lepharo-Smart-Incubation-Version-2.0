@@ -873,7 +873,7 @@ const PDSWellnessInterventionPage: React.FC = () => {
         const u: any = user || {}
         return u.name || u.displayName || u.fullName || u.email || 'Me'
     }, [user])
-    const myRole = (user as any)?.role || 'consultant'
+    const myRole = (user as any)?.role || 'coordinator'
 
     // Subscribe to canonical assignments owned by this assignee
     useEffect(() => {

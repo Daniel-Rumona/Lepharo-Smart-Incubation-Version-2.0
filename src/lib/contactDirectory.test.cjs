@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
+const Module = require('node:module')
+const test = require('node:test')
+const ts = require('typescript')
+const load = (file, imports = {}) => {
+  const path = join(__dirname, file); const mod = new Module(path, module)
+  mod.require = id => imports[id] || require(id)
+  mod._compile(ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, path)
+  return mod.exports
+}
+const source = load('../utils/inquirySource.ts')
+const { buildContactDirectory } = load('contactDirectory.ts', { '@/utils/inquirySource': source })
+const inquiry = (id, overrides = {}) => ({ id, contactInfo: { firstName: 'A', lastName: 'Person', email: 'a@example.com' }, sourceType: 'Non-Incubatee', submittedAt: new Date('2026-11-06'), classification: 'General', ...overrides })
+const saved = (overrides = {}) => ({ id: 'saved', branchId: 'branch', name: 'A Person', email: 'a@example.com', phone: '', company: '', category: 'Funder', linkedInquiryIds: [], ...overrides })
+test('manual contacts appear without inquiries', () => { const [contact] = buildContactDirectory([], [saved()]); assert.equal(contact.category, 'Funder'); assert.equal(contact.latest, undefined); assert.equal(contact.inquiries.length, 0) })
+test('saved category and details override inferred contact, merging email case and whitespace', () => { const [contact] = buildContactDirectory([inquiry('a'), inquiry('b', { contactInfo: { email: ' A@EXAMPLE.COM ' } })], [saved({ name: 'Updated' })]); assert.equal(contact.name, 'Updated'); assert.equal(contact.category, 'Funder'); assert.equal(contact.inquiries.length, 2) })
+test('editing an email retains linked inquiry history', () => { const result = buildContactDirectory([inquiry('a')], [saved({ email: 'new@example.com', linkedInquiryIds: ['a'] })]); assert.equal(result.length, 1); assert.equal(result[0].inquiries.length, 1) })
+test('phone-only inquiries merge by normalised phone', () => { const result = buildContactDirectory([inquiry('a', { contactInfo: { phone: '+27 82 123 4567' } })], [saved({ email: '', phone: '+27821234567' })]); assert.equal(result.length, 1); assert.equal(result[0].inquiries.length, 1) })
+test('only explicit evidence categorises inquiry contacts', () => { assert.equal(buildContactDirectory([inquiry('a')], [])[0].category, 'Unclassified'); assert.equal(buildContactDirectory([inquiry('a', { classification: 'Potential' })], [])[0].category, 'Potential Incubatee'); assert.equal(buildContactDirectory([inquiry('a', { sourceType: 'Incubatee' })], [])[0].category, 'Incubatee') })
+test('latest inquiry remains newest regardless of input order', () => { const [contact] = buildContactDirectory([inquiry('old', { submittedAt: new Date('2025-01-01') }), inquiry('new')], []); assert.equal(contact.latest.id, 'new') })

@@ -1,21 +1,21 @@
+import { scheduledJob } from "./cronHeartbeat";
+import { holdForDigest } from "./dailyBrief";
 import * as logger from "firebase-functions/logger";
 import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { suppressRecordNotifications } from "./syntheticData";
 import { buildSmmeDpReminderEmail } from "./emailHelpers";
 import { admin, db, getTransporter, getProgramName, getParticipantName, APP_BASE_URL, safeStr, getMERecipients, DevPlanEditRequestDoc } from "./emailShared";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
 import { notifyInApp, uidForParticipant } from "./inAppNotifications";
 import { uidsForEmails } from "./movRecipients";
-import { BREVO_EGRESS } from "./config";
 import { departmentHasRole, loadDepartmentRoles, type DepartmentRoleKey } from "./departmentRoles";
 
 const normalizeEmail = (v: any) => (typeof v === "string" ? v.trim().toLowerCase() : "");
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 
 export const remindSmmeDpConfirmation = onRequest(
-  { ...BREVO_EGRESS, region: "us-central1", cors: true },
+  { region: "us-central1", cors: true },
   (req, res) => {
     (async () => {
       let programId: string | undefined;
@@ -226,7 +226,7 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
 
   if (!pendingByDept.size) return { departmentsWithPending: 0, totalDeptEmails: 0, totalPendingAssignments: 0 };
 
-  const planUrl = `${APP_BASE_URL.replace(/\/$/, '')}/operations/plan`;
+  const planUrl = `${APP_BASE_URL.replace(/\/$/, '')}/plan`;
   let totalDeptEmails = 0;
   let totalPendingAssignments = 0;
 
@@ -261,8 +261,16 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
       items.map(it => `- ${it.beneficiaryName} (${it.programName || 'Program'})`).join('\n') +
       `\nLink: ${planUrl}\nRegards,\nLepharo Smart Inc AI`;
 
-    for (const r of recipients) {
-      await transporter.sendMail({ from, to: r.email, subject, html, text });
+    // People on daily digest get this in their morning brief instead.
+    const emailNow = await holdForDigest(recipients.map(r => r.email), {
+      category: 'devplan',
+      title: `${items.length} development plan${items.length === 1 ? '' : 's'} to confirm in ${deptName}`,
+      detail: items.slice(0, 3).map(it => it.beneficiaryName).join(', ') + (items.length > 3 ? ` and ${items.length - 3} more` : ''),
+      link: '/plan',
+      dedupeKey: `devplan:${deptName}`,
+    });
+    for (const email of emailNow) {
+      await transporter.sendMail({ from, to: email, subject, html, text });
       totalDeptEmails++;
     }
   }
@@ -293,13 +301,22 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
     `\nTotal SME–department assignments pending: ${totalPendingAssignments}\nRegards,\nLepharo Smart Inc AI`;
 
   const summaryRecipients = ['mel@lepharo.co.za', 'daniel@quantilytix.co.za', 'egar@lepharo.co.za'];
-  await transporter.sendMail({
-    from,
-    to: summaryRecipients.join(','),
-    subject: summarySubject,
-    html: summaryHtml,
-    text: summaryText,
+  const summaryNow = await holdForDigest(summaryRecipients, {
+    category: 'devplan',
+    title: `${totalPendingAssignments} development plan confirmation${totalPendingAssignments === 1 ? '' : 's'} pending across ${pendingByDept.size} department${pendingByDept.size === 1 ? '' : 's'}`,
+    detail: [...pendingByDept.values()].slice(0, 4).map(({ dept: { name: deptName }, items }) => `${deptName}: ${items.length}`).join(' · '),
+    link: '/plan',
+    dedupeKey: 'devplan:summary',
   });
+  if (summaryNow.length) {
+    await transporter.sendMail({
+      from,
+      to: summaryNow.join(','),
+      subject: summarySubject,
+      html: summaryHtml,
+      text: summaryText,
+    });
+  }
 
   logger.info('devPlanReminder.done', { trigger: triggerLabel, departmentsWithPending: pendingByDept.size, totalDeptEmails, totalPendingAssignments });
   return { departmentsWithPending: pendingByDept.size, totalDeptEmails, totalPendingAssignments };
@@ -481,7 +498,7 @@ function buildDevPlanEditRequestDecisionEmail(opts: {
   requestReason: string;
   requestId: string;
 }) {
-  const url = `${APP_BASE_URL.replace(/\/$/, "")}/operations/plan`;
+  const url = `${APP_BASE_URL.replace(/\/$/, "")}/plan`;
   const ok = opts.decision === "approved";
   const subject = ok
     ? `Edit Request Approved: ${opts.participantName}`
@@ -543,7 +560,7 @@ export const sendDevPlanReminders = onRequest({ region: 'us-central1', cors: tru
   }
 });
 
-export const devPlanReminderCron = onSchedule(
+export const devPlanReminderCron = scheduledJob("devPlanReminderCron",
   {
     region: 'us-central1',
     schedule: '0 9 * * *',

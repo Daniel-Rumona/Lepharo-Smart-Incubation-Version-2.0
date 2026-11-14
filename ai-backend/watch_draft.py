@@ -12,12 +12,9 @@ from typing import Any, Optional
 
 WATCH_MARKER = "<<<WATCH_JSON>>>"
 WATCH_TYPES = ("sme_risk", "impact_reportable", "intervention_done")
-# Roles that may set watches (watchesLogic.visibilityFor).
-WATCH_ROLES = {
-    "director", "operations", "system_admin", "superadmin",
-    "projectadmin", "receptionist", "funder",
-    "coordinator", "consultant", "mentor", "facilitator", "advisor",
-}
+# Roles that may set watches (watchesLogic.visibilityFor). Receptionists run the front desk: nothing
+# a watch follows (SME risk, impact, finished interventions) is theirs to act on.
+WATCH_ROLES = {"director", "operations", "system_admin", "projectadmin", "funder", "coordinator"}
 TEXT_FIELDS = ("participantName", "participantId", "programName", "programId", "interventionTitle", "interventionId")
 MAX_TEXT = 120
 

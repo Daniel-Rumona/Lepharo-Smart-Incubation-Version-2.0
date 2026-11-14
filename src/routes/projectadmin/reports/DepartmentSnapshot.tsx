@@ -24,7 +24,15 @@ const DepartmentSnapshot: React.FC<{
     onSelect: (department: string | null) => void
     /** Shown under the list for the selected department (its status chart). */
     detail?: React.ReactNode
-}> = ({ items, selected, onSelect, detail }) => {
+    /** The line above `detail`, explaining it. */
+    detailHint?: string
+}> = ({
+    items,
+    selected,
+    onSelect,
+    detail,
+    detailHint = 'Interventions by status. The activity chart below shows this department too.'
+}) => {
     const [sort, setSort] = useState<SortKey>('behind')
 
     const rows = useMemo(() => {
@@ -154,7 +162,7 @@ const DepartmentSnapshot: React.FC<{
                 <div className="ds-detail">
                     <div className="ds-detail-head">
                         <strong>{selected}</strong>
-                        <span className="ds-muted">Interventions by status. The activity chart below shows this department too.</span>
+                        <span className="ds-muted">{detailHint}</span>
                         <Button size="small" type="text" icon={<CloseOutlined />} aria-label="Close department" onClick={() => onSelect(null)} />
                     </div>
                     {detail}

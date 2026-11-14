@@ -1102,3 +1102,33 @@ html[data-theme='dark'] .ts-sub .good, html[data-theme='dark'] .ts-core-delta .g
 .ts-grid .ts-core, .ts-grid .ts-col, .ts-grid .ts-strip { animation:ts-rise .7s ease-out both; }
 .ts-grid .ts-col:nth-child(2) { animation-delay:.15s; } .ts-grid .ts-col:nth-child(3) { animation-delay:.3s; } .ts-grid .ts-col:nth-child(4) { animation-delay:.45s; } .ts-grid .ts-col:nth-child(5) { animation-delay:.6s; } .ts-grid .ts-strip { animation-delay:.75s; }
 @media(prefers-reduced-motion:reduce) { .ts-svg > *, .ts-core-text-pos, .ts-pos, .ts-stage .ts-card, .ts-stage .ts-intake, .ts-stage .ts-outside, .ts-grid .ts-core, .ts-grid .ts-col, .ts-grid .ts-strip { animation:none; } }
+
+/* ---- One page: views open over the scene, Ask the twin under it ---- */
+/* Each team opens its own records; the core opens every stage. */
+.ts-see { margin-left:auto; border:0; background:none; padding:0; font:inherit; font-size:11.5px; color:var(--ts-flow); cursor:pointer; display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+.ts-see:hover, .ts-see:focus-visible { text-decoration:underline; }
+.ts-see .anticon { font-size:10px; }
+.ts-see.core { margin:4px 0 0; color:var(--ts-core-ink); opacity:.9; pointer-events:auto; text-shadow:inherit; }
+/* Teams an answer is about. */
+.ts-card.is-highlight { border-color:var(--ts-flow); box-shadow:0 0 0 3px color-mix(in srgb,var(--ts-flow) 28%,transparent), 0 14px 30px -20px var(--ts-shadow); }
+.ts-module.is-highlight .ts-pad { stroke-width:3.4; fill-opacity:1; animation:tw-pulse 1.6s ease-in-out infinite; }
+@keyframes tw-pulse { 50% { stroke-opacity:.35; } }
+.ts-time { flex-wrap:wrap; }
+@media(max-width:640px) { .ts-time .ts-slide { flex-basis:100%; order:-1; } }
+.twin-bar-overlay { margin:0 0 14px; }
+/* Ask the twin: the summary line, or the latest answer in its place, then the field. */
+.tw-ask { display:grid; gap:10px; justify-items:center; }
+.tw-answer { width:min(640px,100%); padding:12px 14px; border:1px solid var(--ts-card-line); border-radius:16px; background:var(--ts-card); display:grid; gap:8px; }
+.tw-answer-q { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ts-muted); }
+.tw-answer-q > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tw-answer-text { margin:0; font-size:14px; line-height:1.5; color:var(--ts-ink); }
+.tw-answer-applied { margin:0; font-size:13px; line-height:1.45; color:var(--ts-muted); }
+.tw-link { border:0; background:none; padding:0; font:inherit; font-size:12px; color:var(--ts-flow); cursor:pointer; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.tw-action { justify-self:start; display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border:1px solid var(--ts-flow); border-radius:999px; background:transparent; color:var(--ts-flow); font:inherit; font-size:12.5px; cursor:pointer; }
+.tw-action:hover { background:color-mix(in srgb,var(--ts-flow) 10%,transparent); } .tw-action:disabled { opacity:.5; cursor:default; }
+.tw-earlier ul { margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--ts-muted); display:grid; gap:4px; } .tw-earlier b { color:var(--ts-ink); font-weight:600; }
+.tw-ask-form { width:100%; }
+.tw-suggest { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; width:min(640px,100%); }
+.tw-suggest button { border:1px solid var(--ts-card-line); border-radius:999px; background:var(--ts-card); color:var(--ts-ink); font:inherit; font-size:12px; padding:3px 10px; cursor:pointer; }
+.tw-suggest button:hover { border-color:var(--ts-flow); color:var(--ts-flow); }
+@media(prefers-reduced-motion:reduce) { .ts-module.is-highlight .ts-pad { animation:none; } }

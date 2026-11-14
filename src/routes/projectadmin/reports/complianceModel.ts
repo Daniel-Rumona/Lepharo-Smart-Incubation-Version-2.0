@@ -10,6 +10,7 @@
  */
 import {
     canonicalAgreementId,
+    complianceTitleKey,
     normalizeComplianceId,
     type AgreementTemplate,
     type ComplianceRequirement
@@ -139,9 +140,13 @@ export function buildComplianceModel({
         )
         // Uploads by key; later entries (the subcollection) win, as on the Compliance page.
         const uploads = new Map<string, any>()
+        // Older uploads saved with only a title, for the title fallback below.
+        const uploadsByTitle = new Map<string, any>()
         record.uploads.forEach(upload => {
             const key = uploadKey(upload)
             if (key) uploads.set(key, upload)
+            const title = complianceTitleKey(upload?.type || upload?.documentName || upload?.title)
+            if (title) uploadsByTitle.set(title, upload)
         })
 
         // ---- Onboarding documents
@@ -226,7 +231,7 @@ export function buildComplianceModel({
         let compliant = documents.length > 0
         documents.forEach(requirement => {
             const key = requirement.presetId || requirement.id
-            const upload = uploads.get(key)
+            const upload = uploads.get(key) ?? uploadsByTitle.get(complianceTitleKey(requirement.title))
             const bucket = upload ? bucketOf(uploadStatus(upload)) : 'missing'
             if (!programme.rows.has(key)) {
                 programme.rows.set(key, { key, title: requirement.title, required: 0, valid: 0, expiring: 0, pending: 0, attention: 0, missing: 0 })

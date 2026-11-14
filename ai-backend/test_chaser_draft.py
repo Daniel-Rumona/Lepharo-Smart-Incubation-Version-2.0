@@ -24,6 +24,10 @@ class SanitizeChaserTests(unittest.TestCase):
         self.assertEqual(len(draft["participantNames"][1]), 120)
         self.assertEqual(len(draft["participantNames"]), 3)
 
+    def test_a_head_of_department_is_told_they_chase_queried_movs(self):
+        self.assertIn('"stage": "queried"', chaser_directive(department_only=True))
+        self.assertNotIn("head of department", chaser_directive())
+
     def test_the_directive_names_the_marker(self):
         self.assertIn(CHASER_MARKER, chaser_directive())
 

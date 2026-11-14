@@ -714,13 +714,19 @@ const ProjectAdminReports: React.FC = () => {
 
     const complianceTrendOptions: Highcharts.Options | null = complianceModel
         ? {
-            chart: { type: "column", height: 240 },
+            // No fixed height: the chart fills its card beside Onboarding compliance.
+            chart: { type: "column" },
             title: { text: "" },
             credits: { enabled: false },
             xAxis: { categories: complianceModel.trend.categories },
             yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
             tooltip: { shared: true },
-            plotOptions: { column: { borderRadius: 3, dataLabels: { enabled: true } } },
+            plotOptions: {
+                column: {
+                    borderRadius: 3,
+                    dataLabels: { enabled: true, filter: { property: "y", operator: ">", value: 0 } },
+                },
+            },
             series: [
                 { type: "column", name: "Onboarded", data: complianceModel.trend.onboarded },
                 { type: "column", name: "GAP Analysis signed", data: complianceModel.trend.gap },
@@ -1745,7 +1751,7 @@ const ProjectAdminReports: React.FC = () => {
                         menu={{
                             items: [
                                 { key: "play", icon: <PlayCircleOutlined />, label: "Play" },
-                                { key: "executive", icon: <FilePptOutlined />, label: "Executive report" },
+                                { key: "executive", icon: <FilePptOutlined />, label: "Executive & National reports" },
                             ],
                             onClick: ({ key }) => (key === "play" ? setPlayerOpen(true) : setExecutiveReportOpen(true)),
                         }}

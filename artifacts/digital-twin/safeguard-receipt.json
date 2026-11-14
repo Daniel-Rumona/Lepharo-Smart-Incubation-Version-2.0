@@ -1,0 +1,483 @@
+{
+  "projectId": "lepharo-smart-inc",
+  "deploymentVerifiedAt": "2026-10-09T15:24:36.556Z",
+  "functionSetHash": "5d7a24f7d76c0a1bd84d458769040eb5b751d91719499fef2b2103e067c5d89c",
+  "functions": [
+    {
+      "id": "onInquiryCreatedNotifyStaff",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T15:23:52.537228384Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791559336972671",
+          "object": "onInquiryCreatedNotifyStaff/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "inquiries/{inquiryId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "notifyInquirySpecialist",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T15:23:52.627145495Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791559415698307",
+          "object": "notifyInquirySpecialist/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "onApplicationDecisionEmail",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:33.008387576Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557699005311",
+          "object": "onApplicationDecisionEmail/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "applications/{appId}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "onAppointmentWriteNotifyIncubatee",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:24.764865016Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769198761",
+          "object": "onAppointmentWriteNotifyIncubatee/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "appointments/{apptId}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "appointmentCompletionNotifier",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:35.422341558Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769495808",
+          "object": "appointmentCompletionNotifier/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "onAssignedInterventionEmail",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:33.854469085Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557770761280",
+          "object": "onAssignedInterventionEmail/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "assignedInterventions/{assignmentId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "onAssignmentConfirmedScheduleFollowUp",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:25.177047922Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769961047",
+          "object": "onAssignmentConfirmedScheduleFollowUp/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "assignedInterventions/{assignmentId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "outcomeFollowUpReminderCron",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:31.295493996Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557770712606",
+          "object": "outcomeFollowUpReminderCron/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "onOutcomeFollowUpAnswered",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:35.475639859Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557770454629",
+          "object": "onOutcomeFollowUpAnswered/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "outcomeFollowUps/{followUpId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "movStageReminderCron",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:32.681623875Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769856807",
+          "object": "movStageReminderCron/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "workflowQueryReminderCron",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:24.636122185Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557768982638",
+          "object": "workflowQueryReminderCron/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "complianceExpiryReminderCron",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:31.998444153Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769576932",
+          "object": "complianceExpiryReminderCron/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "requireMoaAfter3Months",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:24.710788433Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769507827",
+          "object": "requireMoaAfter3Months/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "devPlanReminderCron",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:31.085642233Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769807476",
+          "object": "devPlanReminderCron/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "sendDevPlanReminders",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:31.105160375Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769502238",
+          "object": "sendDevPlanReminders/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "remindSmmeDpConfirmation",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:35.309360679Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769766273",
+          "object": "remindSmmeDpConfirmation/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "onNotificationCreatedEmail",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:33.342263668Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557770148455",
+          "object": "onNotificationCreatedEmail/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "notifications/{notificationId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "onNotificationCreatedPush",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:24.965693932Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769528790",
+          "object": "onNotificationCreatedPush/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "notifications/{notificationId}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "remindMovOwner",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T15:07:38.702227778Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791558383489033",
+          "object": "remindMovOwner/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "sendInterventionReminderEmail",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:34.772857369Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557769460633",
+          "object": "sendInterventionReminderEmail/function-source.zip"
+        }
+      }
+    },
+    {
+      "id": "syncAssignedInterventionsDenorm",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:56:36.130650681Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557770819177",
+          "object": "syncAssignedInterventionsDenorm/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "assignedInterventions/{assignedId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "syncProgramToBranchCoordinators",
+      "region": "us-central1",
+      "state": "ACTIVE",
+      "updatedAt": "2026-10-09T14:58:31.669713232Z",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-200270560997-us-central1",
+          "generation": "1791557859926377",
+          "object": "syncProgramToBranchCoordinators/function-source.zip"
+        }
+      },
+      "eventTrigger": {
+        "eventFilters": [
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          },
+          {
+            "attribute": "document",
+            "operator": "match-path-pattern",
+            "value": "programs/{programId}"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          }
+        ]
+      }
+    }
+  ],
+  "sourceHashes": {
+    "emailInquiries.ts": "b51ec88537cfe04a3e3abb64d54a707272c2003fd0e367ed5b58bc036409507f",
+    "inquiryReferral.ts": "8ece569216f0697bc371c5a5408b85e2d518869c77600dff8ef8c01f6ecf17cc",
+    "syntheticData.ts": "f37df929dbbe5a1de7f1b664789a16ee0ab367499655d582053f7557e4a1206e",
+    "emailApplications.ts": "becf274b0c3077fbb91e7edef8da2cfffda8f2bed224b1e70aabd6fef452eb8c",
+    "emailAppointments.ts": "7f0deb7b94be0d31453c10717f14ff6a28b0a066b73955b69696969f598d5605",
+    "workflowEmailFunctions.ts": "1374b5d09db4401b07bfd68835fbef0a954664ce887be728014ece215b148b60",
+    "outcomeFollowUps.ts": "9bb21e9af0e3a73f1a938f4ba97a9651625e18e9abefedc5689fa46d8d7bb487",
+    "movStageReminders.ts": "0d8f0f1084aa119e642c8532a6d88bad7c4ce2ddb2fc7ff37026b5bb34161c32",
+    "workflowQueryReminders.ts": "aec9726d0478e8aad1aa86a87f7194923fa1e62b9028ae070042d62f06913735",
+    "complianceExpiry.ts": "6db2f7d692df98b096514775f10552bb20d54ac16f95432d8be0aa50f5343bef",
+    "moaFlag.ts": "6030dd210c2d535e226629c97e98df3c28b3efdb83aa562172acf5bd1105aec9",
+    "emailDevPlan.ts": "20dd885631901d0d4874ffff8e6c03578d3141fa1c05f48207d5704b63dd30cd",
+    "notificationEmailFanout.ts": "1f459a39e337dc1c97816fa8b3293f17f89328405476e47aedac9da76f2560f2",
+    "pushNotifications.ts": "d85d0dc7db464dfd78e4a2d10d6c786c0c37301f2a43890a6f5c81afe2264a05",
+    "movReminders.ts": "1fda72da6ad89ac294edea33a8cb17f5d2e67681ceb1aadfc7a642c40d01a6ee",
+    "syncAssignedInterventions.ts": "cc523dd0bafecda48ba35001d1023a2584f5051581b9d15293dd65e819717591",
+    "whatsappCheckBack.ts": "01694508784c92ead0c136d377430c84b9fbf28b8dbdcdc0c5cdf182d51c2961",
+    "syncCoordinatorPrograms.ts": "ff0e1cac91a3c9c89dbc32f0dd430a59c150f61cd1c0190763bf37c5a7092153"
+  }
+}

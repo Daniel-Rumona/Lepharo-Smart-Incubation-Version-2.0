@@ -6,7 +6,7 @@ import { normaliseIntent, type IntentContext, type ScenarioIntent } from './scen
 const viteEnv: Record<string, string | undefined> | undefined = import.meta?.env
 const AI_BASE_URL = String(
     viteEnv?.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 /**

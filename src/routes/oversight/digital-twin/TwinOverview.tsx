@@ -5,7 +5,7 @@ import { ApartmentOutlined, ArrowRightOutlined, WarningOutlined, ExperimentOutli
 import type { ProcessModel } from '@/services/digitalTwin/processTwin'
 import { summariseWaits, WAIT_TARGET_DAYS, type WaitSummary } from '@/services/digitalTwin/twinTargets'
 import { processGroups } from './ProcessMap'
-import { TwinScene, type SceneStation } from './TwinScene'
+import { TwinScene, type SceneProjection, type SceneStation } from './TwinScene'
 
 /** The teams an intervention passes through, in flow order. The MOV is created when the facilitator completes the intervention, and starts with the SME's signature. */
 const TEAMS: Array<{ key: string; name: string; unit: string; who: string; groups: Array<[string, string]> }> = [
@@ -26,7 +26,10 @@ const R = 92, CIRC = 2 * Math.PI * R, ALERT_SECONDS = 5
 /** One intervention that needs a look now; "Look" opens its details. */
 type Alert = { key: string; tone: 'hot' | 'warn'; title: string; detail: string; itemKey: string }
 
-export function TwinOverview({ model, clock, onInspect, onNavigate }: { model: ProcessModel; clock: number; onInspect: (itemKey: string) => void; onNavigate: (view: 'current' | 'history' | 'scenarios') => void }) {
+export function TwinOverview({ model, clock, onInspect, onNavigate, onOpenStage, highlight, renderSummary }: {
+    model: ProcessModel; clock: number; onInspect: (itemKey: string) => void; onNavigate: (view: 'current' | 'history' | 'scenarios') => void
+    onOpenStage?: (key: string) => void; highlight?: string[]; renderSummary?: (projection: SceneProjection) => React.ReactNode
+}) {
     const [alertAt, setAlertAt] = useState(0), [paused, setPaused] = useState(false)
     const reduced = useReducedMotion()
     const view = useMemo(() => {
@@ -109,6 +112,8 @@ export function TwinOverview({ model, clock, onInspect, onNavigate }: { model: P
     </nav>
 
     return <section className="ov" aria-label="Intervention overview">
-        <TwinScene nav={nav} notice={alertBlock} deliveryRecords={teams[0].count} deliveryOwners={deliveryOwners} smes={{ count: smeCount }} outside={[station(attention)]} peek={peek} onSeeAll={() => { onNavigate('current') }} />
+        <TwinScene nav={nav} notice={alertBlock} deliveryRecords={teams[0].count} deliveryOwners={deliveryOwners} smes={{ count: smeCount }} outside={[station(attention)]} peek={peek} onSeeAll={() => { onNavigate('current') }}
+            onOpenStage={onOpenStage} onHistory={() => { onNavigate('history') }} onAssumptions={() => { onNavigate('scenarios') }}
+            highlight={highlight} renderSummary={renderSummary} />
     </section>
 }

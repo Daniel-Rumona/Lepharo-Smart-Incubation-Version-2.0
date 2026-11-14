@@ -2,6 +2,7 @@ import { admin, db } from "./firebase";
 import { candidatePhoneValues, clean, normalizePhone } from "./whatsappCommon";
 import { isDepartmentInRole } from "./departmentRoles";
 import { participantComplianceRecords, requirementStates } from "./complianceExpiry";
+import { FindScope, findScope, isOpenAssignment, smesWithConfirmedPlans, smesWithOpenWork } from "./findSmeLogic";
 
 /**
  * Staff side of the Lepharo WhatsApp gateway. The ai-backend decides what a staff
@@ -49,7 +50,7 @@ export const roleGroupOf = (role: unknown): RoleGroup => {
   if (["operations", "headofdepartment", "headsofdepartment"].includes(key)) return "hod";
   if (["projectadmin", "coordinator"].includes(key)) return "coordinator";
   if (key === "receptionist") return "receptionist";
-  if (["employee", "consultant", "projectmanager", "auxiliary"].includes(key)) return "employee";
+  if (key === "employee") return "employee";
   if (["funder", "government"].includes(key)) return "external";
   return "unknown";
 };
@@ -226,10 +227,10 @@ async function programmeContext(identity: StaffIdentity): Promise<ProgrammeConte
   return { options, allowAll, selected, needsChoice: !valid || clean(data.programChosenOn) !== todaySast() };
 }
 
-type ProgrammeFilter = { ids: Set<string> | null; label: string | null };
+export type ProgrammeFilter = { ids: Set<string> | null; label: string | null };
 
 /** Programme ids a read is limited to (null: no limit) and the name to show with the result. */
-async function programmeFilter(identity: StaffIdentity): Promise<ProgrammeFilter> {
+export async function programmeFilter(identity: StaffIdentity): Promise<ProgrammeFilter> {
   const { options, allowAll, selected } = await programmeContext(identity);
   if (selected) return { ids: new Set([selected.id]), label: selected.name };
   // No programmes configured for this person: keep the reads as they were rather than empty them.
@@ -238,7 +239,7 @@ async function programmeFilter(identity: StaffIdentity): Promise<ProgrammeFilter
   return { ids: new Set(options.map((option) => option.id)), label: null };
 }
 
-const inProgramme = (filter: ProgrammeFilter, programId: unknown) => !filter.ids || filter.ids.has(clean(programId));
+export const inProgramme = (filter: ProgrammeFilter, programId: unknown) => !filter.ids || filter.ids.has(clean(programId));
 
 /** SMEs with an accepted application to one of the programmes. */
 async function acceptedParticipantIds(programIds: Set<string>): Promise<Set<string>> {
@@ -400,7 +401,8 @@ async function staffOverview(identity: StaffIdentity): Promise<GatewayResult> {
 }
 
 async function governanceSummary(identity: StaffIdentity): Promise<GatewayResult> {
-  if (!["system_admin", "director"].includes(identity.roleGroup)) return fail(403, "not_permitted");
+  // Feature governance is the system administrators' (directors get Performance instead).
+  if (identity.roleGroup !== "system_admin") return fail(403, "not_permitted");
 
   const [features, meetings] = await Promise.all([
     db.collection("featureGovernance").get(),
@@ -486,7 +488,37 @@ async function searchParticipants(identity: StaffIdentity, query: string): Promi
 
   const programme = await programmeFilter(identity);
   const enrolled = programme.ids ? await acceptedParticipantIds(programme.ids) : null;
-  return ok({ participants: await findParticipants(needle, enrolled), programme: programme.label });
+  const scope = findScope(identity);
+  const reachable = await findableSmes(identity, scope, programme);
+  const allowed = reachable && enrolled ? new Set(Array.from(reachable).filter((id) => enrolled.has(id))) : reachable || enrolled;
+  const participants = await findParticipants(needle, allowed);
+  return ok({ participants, programme: programme.label, scope, ...(participants.length ? {} : { note: NOT_FOUND_NOTE[scope] }) });
+}
+
+// Why a search found nothing, so the assistant can say so instead of "no such SME".
+const NOT_FOUND_NOTE: Record<FindScope, string> = {
+  own_work: "Only SMEs you have open interventions with can be found.",
+  department_plans: "Only SMEs whose development plan both your department and the SME have signed off can be found.",
+  programmes: "Only SMEs on your programmes can be found.",
+};
+
+/** The SMEs this person may find (findSmeLogic.ts), or null for everyone on their programmes. */
+async function findableSmes(identity: StaffIdentity, scope: FindScope, programme: ProgrammeFilter): Promise<Set<string> | null> {
+  if (scope === "own_work") {
+    const rows: any[] = [];
+    for (const id of ownerIds(identity)) {
+      (await db.collection("assignedInterventions").where("assigneeId", "==", id).limit(500).get()).docs
+        .forEach((doc) => rows.push(doc.data()));
+    }
+    return smesWithOpenWork(rows.filter((row) => inProgramme(programme, row.programId)));
+  }
+  if (scope === "department_plans") {
+    const plans = (await db.collection("diagnosticPlans").get()).docs
+      .filter((doc) => inProgramme(programme, doc.data().programId))
+      .map((doc) => ({ id: doc.id, data: doc.data() }));
+    return smesWithConfirmedPlans(plans, identity.departmentId || "");
+  }
+  return null;
 }
 
 /** SMEs whose name contains every word of the needle, limited to the enrolled ids when given. */
@@ -716,7 +748,7 @@ async function smeDocument(identity: StaffIdentity, payload: any): Promise<Gatew
   });
 }
 
-const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"];
+const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"]; // the same list as findSmeLogic.isOpenAssignment
 
 async function searchAssignments(identity: StaffIdentity, payload: any): Promise<GatewayResult> {
   if (!SCHEDULERS.includes(identity.roleGroup)) return fail(403, "not_permitted");
@@ -725,9 +757,14 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
   if (!participantId && needle.length < 2) return fail(400, "query_required");
   const programme = await programmeFilter(identity);
 
+  // A head of department sees their department's interventions for the SME, whoever they're assigned to
+  // (they assign the work); everyone else sees their own.
+  const department = findScope(identity) === "department_plans" ? identity.departmentId : null;
   let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   if (participantId) {
     docs = (await db.collection("assignedInterventions").where("participantId", "==", participantId).limit(100).get()).docs;
+  } else if (department) {
+    docs = (await db.collection("assignedInterventions").where("departmentId", "==", department).limit(1000).get()).docs;
   } else {
     const found = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
     for (const id of ownerIds(identity)) {
@@ -739,8 +776,8 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
 
   const assignments = docs
     .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
-    .filter((row) => !INACTIVE_ASSIGNMENT.includes(clean(row.assignmentStatus).toLowerCase()))
-    .filter((row) => isOwnedBy(identity, row.assigneeId))
+    .filter((row) => isOpenAssignment(row))
+    .filter((row) => (department ? clean(row.departmentId) === department : isOwnedBy(identity, row.assigneeId)))
     .filter((row) => inProgramme(programme, row.programId))
     .filter((row) => !needle || clean(row.participantName).toLowerCase().includes(needle))
     .slice(0, 8)
@@ -753,6 +790,8 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
       assigneeName: clean(row.assigneeName) || null,
       cycleKey: clean(row.cycleKey) || null,
       grouped: clean(row.type) === "grouped" || !!clean(row.groupKey),
+      // Only the person it's assigned to can book it from WhatsApp.
+      yours: isOwnedBy(identity, row.assigneeId),
     }));
   return ok({ assignments });
 }

@@ -5,6 +5,7 @@ import {
     Col,
     DatePicker,
     Form,
+    Grid,
     Input,
     Progress,
     Row,
@@ -37,12 +38,15 @@ import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 import {
     collection,
+    doc,
+    getDoc,
     getDocs,
     query,
     where
 } from 'firebase/firestore'
 
 import { useAuth } from '@/hooks/useAuth'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { inquiryService } from '@/services/inquiryService'
 import { branchService } from '@/services/branchService'
 import {
@@ -195,12 +199,16 @@ const priorities: InquiryPriority[] = [
     'Urgent'
 ]
 
+// SMEs aren't offered video calls. In person means they come to the centre,
+// so its label says so; the saved value stays 'In-person'.
 const followUpMethods: FollowUpMethod[] = [
     'Phone',
     'Email',
-    'In-person',
-    'Video Call'
+    'In-person'
 ]
+
+const followUpMethodLabel = (method?: FollowUpMethod | string) =>
+    method === 'In-person' ? 'In person (you visit the centre)' : method
 
 const serviceCompatibilityMap: Partial<
     Record<InquiryType, ServiceOfInterest>
@@ -219,9 +227,14 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
     onSubmitted
 }) => {
     const { token } = theme.useToken()
+    // Phones get a fuller layout: content from the top, larger choices and a
+    // taller description, so a step fills the screen rather than floating.
+    const isMobile = !Grid.useBreakpoint().md
     const [form] = Form.useForm()
     const navigate = useNavigate()
     const { user } = useAuth()
+    const { user: identity } = useFullIdentity()
+    const participantId = String(identity?.participantId || '')
 
     const [currentStep, setCurrentStep] =
         useState<ConversationStep>('inquiry')
@@ -401,55 +414,31 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
 
     // Contact details come exclusively from the applicant's participants
     // profile doc — not the auth/user record — since that's what they
-    // maintain on the Profile page. `user.email` is only used as the lookup
-    // key to find that doc; nothing from the auth identity is used as a
-    // fallback value.
+    // maintain on the Profile page. The doc is found by the login's
+    // participantId; an account not linked yet falls back to the email query
+    // the Profile page uses. (A query on `emailLower` used to run first: the
+    // participants rules can't allow it, so it failed and left every detail
+    // blank, which read as "missing" even though the profile was complete.)
     useEffect(() => {
         const loadParticipant =
             async () => {
-                if (!user?.email) return
+                let data: any = null
 
-                const emailLower =
-                    user.email.toLowerCase()
-
-                let snapshot =
-                    await getDocs(
-                        query(
-                            collection(
-                                db,
-                                'participants'
-                            ),
-                            where(
-                                'emailLower',
-                                '==',
-                                emailLower
-                            )
-                        )
-                    )
-
-                if (snapshot.empty) {
-                    snapshot =
-                        await getDocs(
-                            query(
-                                collection(
-                                    db,
-                                    'participants'
-                                ),
-                                where(
-                                    'email',
-                                    '==',
-                                    user.email
-                                )
-                            )
-                        )
+                if (participantId) {
+                    const participantSnap = await getDoc(doc(db, 'participants', participantId))
+                    if (participantSnap.exists()) data = participantSnap.data()
                 }
 
-                if (snapshot.empty) {
+                if (!data && user?.email) {
+                    const snapshot = await getDocs(
+                        query(collection(db, 'participants'), where('email', '==', user.email))
+                    )
+                    if (!snapshot.empty) data = snapshot.docs[0].data()
+                }
+
+                if (!data) {
                     return
                 }
-
-                const data =
-                    snapshot.docs[0].data() as any
 
                 const { first, last } =
                     parseName(data.participantName)
@@ -498,7 +487,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
         loadParticipant().catch(
             console.error
         )
-    }, [user?.email])
+    }, [participantId, user?.email])
 
     useEffect(() => {
         const loadBranches =
@@ -746,14 +735,15 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
             return
         }
 
+        // A name and one way to reach them. The profile holds the name as one
+        // field, so a single-word name has no last name, and an SME may sign
+        // in by phone with no email at all.
         if (
             !profileContact.firstName ||
-            !profileContact.lastName ||
-            !profileContact.email ||
-            !profileContact.phone
+            (!profileContact.email && !profileContact.phone)
         ) {
             message.error(
-                'Your profile is missing contact details we need (name, email or phone). Please complete your profile first.'
+                'Your profile needs your name and an email address or phone number. Please complete your profile first.'
             )
 
             return
@@ -857,7 +847,8 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                 await inquiryService.createInquiry(
                     inquiryData,
                     selectedBranch.id,
-                    user.uid
+                    user.uid,
+                    { fromPortal: true }
                 )
 
             if (embedded) {
@@ -912,8 +903,12 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
 
         form.resetFields()
 
+        // Company and position come from the profile; a new inquiry starts
+        // from them again rather than blank.
         form.setFieldsValue({
-            priority: 'Medium'
+            priority: 'Medium',
+            company: profileContact.company || undefined,
+            position: profileContact.position || undefined
         })
     }
 
@@ -978,7 +973,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
 
             <Row
                 data-guide="inquiry-type-grid"
-                gutter={[6, 6]}
+                gutter={isMobile ? [10, 10] : [6, 6]}
                 style={{
                     marginBottom: 14
                 }}
@@ -1010,20 +1005,23 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                                     )
                                 }
                                 style={{
-                                    height: 40,
+                                    height: isMobile ? (isOther ? 52 : 76) : 40,
                                     paddingInline: 10,
-                                    whiteSpace: 'normal'
+                                    whiteSpace: 'normal',
+                                    borderRadius: isMobile ? 16 : undefined
                                 }}
                             >
+                                {/* Phones: a tile with the icon over the label. */}
                                 <Space
-                                    size={6}
+                                    size={isMobile && !isOther ? 4 : 6}
                                     align="center"
+                                    direction={isMobile && !isOther ? 'vertical' : 'horizontal'}
                                 >
                                     <span
                                         style={{
                                             display: 'inline-flex',
                                             alignItems: 'center',
-                                            fontSize: 14
+                                            fontSize: isMobile ? 20 : 14
                                         }}
                                     >
                                         {option.icon}
@@ -1031,7 +1029,8 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
 
                                     <span
                                         style={{
-                                            fontSize: 12
+                                            fontSize: isMobile ? 13 : 12,
+                                            lineHeight: 1.25
                                         }}
                                     >
                                         {option.label}
@@ -1076,7 +1075,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                     ]}
                 >
                     <TextArea
-                        rows={3}
+                        rows={isMobile ? 6 : 3}
                         maxLength={1500}
                         showCount
                         placeholder="Briefly explain what you need assistance with..."
@@ -1152,7 +1151,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                                     }}
                                     styles={{
                                         body: {
-                                            padding: '10px 6px'
+                                            padding: isMobile ? '16px 6px' : '10px 6px'
                                         }
                                     }}
                                 >
@@ -1174,26 +1173,97 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                 </Row>
             </Form.Item>
 
-            <Form.Item
-                name="branchId"
-                label="Centre"
-                rules={[
-                    {
-                        required: true,
-                        message:
-                            'Please select a centre'
-                    }
-                ]}
-            >
-                <Select
-                    placeholder="Select centre"
-                    onChange={handleBranchChange}
-                    options={branches.map(branch => ({
-                        value: branch.id,
-                        label: branch.name
-                    }))}
-                />
-            </Form.Item>
+            {isMobile ? (
+                // Phones: centres as a 2-by-2 grid of cards to tap, like the
+                // priority choices, rather than a dropdown.
+                <>
+                    <Form.Item
+                        name="branchId"
+                        hidden
+                        rules={[
+                            {
+                                required: true,
+                                message:
+                                    'Please select a centre'
+                            }
+                        ]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item label="Centre">
+                        <Row gutter={[10, 10]}>
+                            {branches.map((branch, index) => {
+                                const selected = selectedBranch?.id === branch.id
+                                // With an odd number of centres the last one spans the row.
+                                const spansRow = branches.length % 2 === 1 && index === branches.length - 1
+
+                                return (
+                                    <Col key={branch.id} xs={spansRow ? 24 : 12}>
+                                        <Card
+                                            hoverable
+                                            size="small"
+                                            role="radio"
+                                            aria-checked={selected}
+                                            onClick={() => handleBranchChange(branch.id)}
+                                            style={{
+                                                height: '100%',
+                                                cursor: 'pointer',
+                                                borderRadius: 14,
+                                                borderColor: selected
+                                                    ? token.colorPrimary
+                                                    : token.colorBorderSecondary,
+                                                background: selected
+                                                    ? token.colorPrimaryBg
+                                                    : token.colorBgContainer,
+                                                boxShadow: selected
+                                                    ? `0 0 0 1px ${token.colorPrimary}`
+                                                    : 'none'
+                                            }}
+                                            styles={{ body: { padding: '14px 12px' } }}
+                                        >
+                                            <Text
+                                                strong
+                                                style={{
+                                                    display: 'block',
+                                                    textAlign: 'center',
+                                                    lineHeight: 1.3,
+                                                    color: selected
+                                                        ? token.colorPrimaryText
+                                                        : token.colorText
+                                                }}
+                                            >
+                                                {branch.name}
+                                            </Text>
+                                        </Card>
+                                    </Col>
+                                )
+                            })}
+                        </Row>
+                    </Form.Item>
+                </>
+            ) : (
+                <Form.Item
+                    name="branchId"
+                    label="Centre"
+                    rules={[
+                        {
+                            required: true,
+                            message:
+                                'Please select a centre'
+                        }
+                    ]}
+                >
+                    <Select
+                        placeholder="Select centre"
+                        onChange={handleBranchChange}
+                        options={branches.map(branch => ({
+                            value: branch.id,
+                            label: branch.name
+                        }))}
+                    />
+                </Form.Item>
+            )}
         </>
     )
 
@@ -1284,8 +1354,8 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                                     return (
                                         <Col
                                             key={method}
-                                            xs={12}
-                                            sm={6}
+                                            xs={method === 'In-person' ? 24 : 12}
+                                            sm={method === 'In-person' ? 12 : 6}
                                         >
                                             <Card
                                                 hoverable
@@ -1333,7 +1403,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                                                         fontSize: 12
                                                     }}
                                                 >
-                                                    {method}
+                                                    {followUpMethodLabel(method)}
                                                 </Text>
                                             </Card>
                                         </Col>
@@ -1754,9 +1824,7 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
 
                                                 <div>
                                                     <Text>
-                                                        {
-                                                            data.followUpMethod
-                                                        }
+                                                        {followUpMethodLabel(data.followUpMethod)}
                                                     </Text>
                                                 </div>
                                             </Col>
@@ -1817,13 +1885,16 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                 </Helmet>
 
                 <Card
+                    variant={isMobile ? 'borderless' : undefined}
                     style={{
                         width:
                             '100%',
                         maxWidth:
                             560,
                         textAlign:
-                            'center'
+                            'center',
+                        // Phones: straight on the page, no card.
+                        ...(isMobile ? { background: 'transparent', boxShadow: 'none' } : {})
                     }}
                 >
                     <CheckCircleOutlined
@@ -2004,18 +2075,13 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                 form={form}
                 layout="vertical"
                 requiredMark={false}
-                onFinish={
-                    onFinish
-                }
                 onKeyDown={event => {
-                    // Pressing Enter in any single-line input natively
-                    // submits the <form>, which ran onFinish (and its
-                    // "Failed to submit" catch-all) on whichever step the
-                    // user happened to be typing on. Only the review step's
-                    // button should be able to submit.
+                    // Pressing Enter in a single-line input natively submits
+                    // the <form>. Only the review step's button submits, so
+                    // Enter never does (textareas still take new lines).
                     if (
                         event.key === 'Enter' &&
-                        currentStep !== 'review'
+                        (event.target as HTMLElement).tagName !== 'TEXTAREA'
                     ) {
                         event.preventDefault()
                     }
@@ -2044,14 +2110,14 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                                 minHeight: 0,
                                 overflowY: 'auto',
                                 padding: '0 16px',
-                                // Short steps (e.g. routing, preferences)
-                                // otherwise sit pinned to the top with a lot
-                                // of empty space below — centre the block
-                                // instead, and it still scrolls normally
-                                // once content is taller than the screen.
+                                // Short steps on wider screens sit centred
+                                // rather than pinned to the top; on phones
+                                // they start at the top under the progress
+                                // bar and their choices grow to fill.
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: 'center'
+                                justifyContent: isMobile ? 'flex-start' : 'center',
+                                paddingTop: isMobile ? 8 : undefined
                             }
                     }
                 >
@@ -2097,12 +2163,13 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                         </Button>
                     )}
 
-                    {/* One stable element for the primary action — swapping
-                        in a fresh "submit" button here right after a click
-                        risks a stray tap landing on it (mobile fires the
-                        click slightly after touch, so the element under the
-                        finger can change out from under it), which is what
-                        was firing onFinish a step early. */}
+                    {/* One stable element for the primary action, and never a
+                        submit button. When Continue moves to review without
+                        anything to validate, React re-renders it before the
+                        browser finishes the same click; had it become
+                        type="submit" by then, that click submitted the form
+                        straight past the review. Submitting is an explicit
+                        call on review only. */}
                     <Button
                         data-guide={
                             currentStep !== 'review'
@@ -2111,17 +2178,13 @@ const ApplicantInquirySubmission: React.FC<SubmitProps> = ({
                         }
                         type="primary"
                         shape="round"
-                        htmlType={
-                            currentStep === 'review'
-                                ? 'submit'
-                                : 'button'
-                        }
+                        htmlType="button"
                         loading={
                             currentStep === 'review' && loading
                         }
                         onClick={
                             currentStep === 'review'
-                                ? undefined
+                                ? () => void onFinish()
                                 : goNext
                         }
                         style={{

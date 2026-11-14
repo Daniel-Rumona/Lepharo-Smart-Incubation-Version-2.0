@@ -49,7 +49,7 @@ import {
     MoreOutlined,
     EditOutlined,
     DeleteOutlined,
-    PoweroffOutlined, PictureOutlined,
+    PoweroffOutlined, PictureOutlined, StarOutlined,
     DownloadOutlined,
     FileTextOutlined,
     UploadOutlined,
@@ -65,7 +65,10 @@ import {
 import {
     collection,
     getDocs,
+    getDoc,
     doc,
+    setDoc,
+    serverTimestamp,
     updateDoc,
     deleteDoc,
     query,
@@ -99,6 +102,7 @@ import {
 } from '@/services/systemSettingsService'
 import {
     AgreementTemplate,
+    DEFAULT_PROGRAM_REQUIREMENTS_DOC,
     canonicalAgreementId,
     listAgreementTemplates
 } from '@/services/complianceResolver'
@@ -217,6 +221,9 @@ type RequiredDocTemplate = {
     expiryRule?: { months?: number | null } | null
     agreementId?: string
 }
+
+const REQUIRED_AT_APPLICATION_HINT =
+    'SMEs must provide this when they apply, before they can be considered for onboarding.'
 
 const inferDepartmentOwner = (title: string): string => {
     const t = title.toLowerCase()
@@ -822,9 +829,15 @@ const RequiredDocumentsStep: React.FC<{
                                         <Tag color={r.kind === 'agreement' ? 'purple' : 'blue'} style={{ margin: 0 }}>
                                             {r.kind === 'agreement' ? 'Agreement' : 'Upload'}
                                         </Tag>
-                                        <Tag color={r.requiredAtApplication ? 'green' : 'gold'} style={{ margin: 0 }}>
-                                            {r.requiredAtApplication ? 'Required at application' : 'Optional at application'}
-                                        </Tag>
+                                        <Tooltip
+                                            title={r.requiredAtApplication
+                                                ? REQUIRED_AT_APPLICATION_HINT
+                                                : 'Not needed to apply; the SME can provide it after onboarding.'}
+                                        >
+                                            <Tag color={r.requiredAtApplication ? 'green' : 'gold'} style={{ margin: 0 }}>
+                                                {r.requiredAtApplication ? 'Required at application' : 'Optional at application'}
+                                            </Tag>
+                                        </Tooltip>
                                         {r.hasExpiry && !r.expiryMonths ? (
                                             <Tooltip title='Edit this document and set how many months it stays valid.'>
                                                 <Tag color='orange' style={{ margin: 0 }}>
@@ -984,6 +997,7 @@ const RequiredDocumentsStep: React.FC<{
                         name='requiredAtApplication'
                         valuePropName='checked'
                         label='Required at application?'
+                        extra={REQUIRED_AT_APPLICATION_HINT}
                     >
                         <Checkbox />
                     </Form.Item>
@@ -1826,9 +1840,11 @@ const ProgramDetailsBody: React.FC<{
                                 <Tag color={d.kind === 'agreement' ? 'purple' : 'blue'}>
                                     {d.kind === 'agreement' ? 'Agreement' : 'Upload'}
                                 </Tag>
-                                <Tag color={d.requiredAtApplication ? 'green' : 'gold'}>
-                                    {d.requiredAtApplication ? 'Required' : 'Optional'}
-                                </Tag>
+                                <Tooltip title={d.requiredAtApplication ? REQUIRED_AT_APPLICATION_HINT : undefined}>
+                                    <Tag color={d.requiredAtApplication ? 'green' : 'gold'}>
+                                        {d.requiredAtApplication ? 'Required at application' : 'Optional at application'}
+                                    </Tag>
+                                </Tooltip>
                                 {d.hasExpiry && d.expiryMonths ? <Tag>{d.expiryMonths} mo</Tag> : null}
                             </Space>
                         </div>
@@ -2566,6 +2582,40 @@ const ProgramManager: React.FC = () => {
             }
         })
 
+    // Which programme's list is the shared default for programmes without their own.
+    const [defaultSourceId, setDefaultSourceId] = useState<string | null>(null)
+    useEffect(() => {
+        if (!canManagePrograms) return
+        getDoc(DEFAULT_PROGRAM_REQUIREMENTS_DOC)
+            .then(snap => setDefaultSourceId(snap.exists() ? (snap.data() as any).sourceProgramId || null : null))
+            .catch(err => console.error('Could not load the default requirements', err))
+    }, [canManagePrograms])
+
+    const confirmUseAsDefault = (record: any) =>
+        modal.confirm({
+            title: `Use ${record.name || 'this program'}'s requirements as the default?`,
+            content: `Programs without their own requirements will use these ${record.programRequirements.length} requirements for compliance and group progression. A program's own list always takes priority. Later edits to ${record.name || 'this program'} are not copied over until you set it as the default again.`,
+            okText: 'Use as default',
+            cancelText: 'Cancel',
+            centered: true,
+            onOk: async () => {
+                try {
+                    await setDoc(DEFAULT_PROGRAM_REQUIREMENTS_DOC, {
+                        requirements: record.programRequirements,
+                        sourceProgramId: record.id,
+                        sourceProgramName: record.name || null,
+                        updatedAt: serverTimestamp(),
+                        updatedBy: user?.email || null
+                    })
+                    setDefaultSourceId(record.id)
+                    message.success('Default requirements updated')
+                } catch (err) {
+                    console.error(err)
+                    message.error('Could not set the default requirements')
+                }
+            }
+        })
+
     /** Edit is the action; deactivating and deleting are rarer, so they sit in a menu. */
     const renderProgramActions = (record: any) => canManagePrograms && (
         <div className='prg-actions'>
@@ -2582,10 +2632,21 @@ const ProgramManager: React.FC = () => {
                             label: record.status === 'Inactive' ? 'Reactivate' : 'Deactivate',
                             disabled: togglingProgramId === record.id
                         },
+                        {
+                            key: 'default',
+                            icon: <StarOutlined />,
+                            label: defaultSourceId === record.id ? 'Default requirements (current)' : 'Use as default requirements',
+                            disabled: !record.programRequirements?.length
+                        },
                         { type: 'divider' },
                         { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true }
                     ],
-                    onClick: ({ key }) => (key === 'status' ? toggleProgramStatus(record) : confirmDelete(record))
+                    onClick: ({ key }) =>
+                        key === 'status'
+                            ? toggleProgramStatus(record)
+                            : key === 'default'
+                                ? confirmUseAsDefault(record)
+                                : confirmDelete(record)
                 }}
             >
                 <Button shape='circle' icon={<MoreOutlined />} aria-label='More actions' loading={togglingProgramId === record.id} />

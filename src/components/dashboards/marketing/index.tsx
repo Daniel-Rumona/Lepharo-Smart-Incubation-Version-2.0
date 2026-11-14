@@ -395,7 +395,7 @@ const MarketingDashboard: React.FC = () => {
 
                     <MotionCard
                         extra={
-                            <Button type="link" onClick={() => navigate('/operations/forms')}>
+                            <Button type="link" onClick={() => navigate('/operations/surveys')}>
                                 View All <ArrowRightOutlined />
                             </Button>
                         }

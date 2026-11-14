@@ -24,8 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.smeRiskScoringCron = exports.runSmeRiskScoring = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firebase_1 = require("./firebase");
 const syntheticData_1 = require("./syntheticData");
 const complianceExpiry_1 = require("./complianceExpiry");
@@ -65,7 +65,7 @@ const monthOf = (row) => {
     return date ? date.toISOString().slice(0, 7) : "";
 };
 async function runSmeRiskScoring(now = new Date()) {
-    const [applicationsSnapshot, participantsSnapshot, assignmentsSnapshot, appointmentsSnapshot, metricsSnapshot, followUpsSnapshot, queriesSnapshot, suppressionsSnapshot, snapshotsSnapshot, usersSnapshot, compliance, romDepartmentIds,] = await Promise.all([
+    const [applicationsSnapshot, participantsSnapshot, assignmentsSnapshot, appointmentsSnapshot, metricsSnapshot, followUpsSnapshot, queriesSnapshot, suppressionsSnapshot, snapshotsSnapshot, usersSnapshot, compliance, romDepartmentIds, plansSnapshot, departmentsSnapshot, closuresSnapshot,] = await Promise.all([
         firebase_1.db.collection("applications").where("applicationStatus", "in", ["accepted", "Accepted"]).get(),
         firebase_1.db.collection("participants").get(),
         firebase_1.db.collection("assignedInterventions").get(),
@@ -78,6 +78,9 @@ async function runSmeRiskScoring(now = new Date()) {
         firebase_1.db.collection("users").get(),
         (0, complianceExpiry_1.loadComplianceContext)(),
         (0, departmentRoles_1.departmentIdsForRole)("rom"),
+        firebase_1.db.collection("diagnosticPlans").get(),
+        firebase_1.db.collection("departments").get(),
+        firebase_1.db.collection("interventionClosures").where("status", "==", "closed").get(),
     ]);
     const participants = new Map(participantsSnapshot.docs.map((doc) => [doc.id, doc.data()]));
     const assignments = groupBy(assignmentsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })), (row) => clean(row.participantId));
@@ -87,6 +90,19 @@ async function runSmeRiskScoring(now = new Date()) {
     const queries = groupBy(queriesSnapshot.docs.map((doc) => doc.data()), (row) => clean(row.context?.participantId));
     const bounced = new Set(suppressionsSnapshot.docs.map((doc) => clean(doc.data().participantId)).filter(Boolean));
     const previous = new Map(snapshotsSnapshot.docs.map((doc) => [doc.id, doc.data()]));
+    // Department coverage, as the register reads it (smeRiskLogic departmentCoverage).
+    const planByParticipant = new Map(plansSnapshot.docs.map((doc) => [clean(doc.data().participantId), doc.data()]));
+    const departmentsById = Object.fromEntries(departmentsSnapshot.docs.map((doc) => [doc.id, doc.data()]));
+    const closedByParticipant = new Map();
+    closuresSnapshot.docs.forEach((doc) => {
+        const participantId = clean(doc.data().participantId);
+        const interventionId = clean(doc.data().interventionId);
+        if (!participantId || !interventionId)
+            return;
+        if (!closedByParticipant.has(participantId))
+            closedByParticipant.set(participantId, new Set());
+        closedByParticipant.get(participantId).add(interventionId);
+    });
     const users = usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
         .filter((user) => !["inactive", "disabled", "deleted"].includes(lower(user.status)));
     const uidOf = (user) => clean(user.uid) || user.id;
@@ -135,6 +151,12 @@ async function runSmeRiskScoring(now = new Date()) {
             openQueries: (queries.get(participantId) || []).length,
             emailBounced: bounced.has(participantId),
             compliance: counts,
+            joinedAt: (0, smeRiskLogic_1.smeJoinedAt)(application, participant),
+            coverage: {
+                plan: planByParticipant.get(participantId) || null,
+                departmentsById,
+                closedInterventionIds: closedByParticipant.get(participantId),
+            },
         }, now.getTime());
         const result = (0, smeRiskLogic_1.computeRiskScore)(inputs);
         const before = previous.get(participantId);
@@ -200,14 +222,14 @@ async function runSmeRiskScoring(now = new Date()) {
             participantId: alert.participantId,
             participantName: alert.name,
             programId: alert.programId || null,
-            link: "/operations/participants/risk",
+            link: "/participants/risk",
         });
         await firebase_1.db.collection(SNAPSHOTS).doc(alert.participantId).update({ alertedLevel: alert.level, alertedAt: firebase_1.admin.firestore.FieldValue.serverTimestamp() });
     }
     return { scored: writes.length, alerted: alerts.length };
 }
 exports.runSmeRiskScoring = runSmeRiskScoring;
-exports.smeRiskScoringCron = (0, scheduler_1.onSchedule)({
+exports.smeRiskScoringCron = (0, cronHeartbeat_1.scheduledJob)("smeRiskScoringCron", {
     region: "us-central1",
     schedule: "0 6 * * *",
     timeZone: "Africa/Johannesburg",

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Badge, Button, DatePicker, Dropdown, Input, Popover, Space } from 'antd'
+import { Badge, Button, DatePicker, Dropdown, Input, Popover } from 'antd'
 import { DownOutlined, DownloadOutlined, EyeInvisibleOutlined, FileExcelOutlined, FilterOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
@@ -110,21 +110,28 @@ export const ParticipantFilters: React.FC<Props> = ({
                 />
 
                 {canAdd && (
-                    <Space.Compact className='ws-toolbar-button'>
-                        <Button data-guide='sme-add-action' type='primary' icon={<PlusOutlined />} disabled={addDisabled} onClick={onAdd}>
-                            Add SME
-                        </Button>
-                        <Dropdown
-                            trigger={['click']}
+                    <Dropdown
+                        trigger={['click']}
+                        disabled={addDisabled}
+                        menu={{
+                            items: [
+                                { key: 'manual', icon: <PlusOutlined />, label: 'Add manually' },
+                                { key: 'import', icon: <FileExcelOutlined />, label: 'Import from Excel' }
+                            ],
+                            onClick: ({ key }) => (key === 'import' ? onImport() : onAdd())
+                        }}
+                    >
+                        <Button
+                            data-guide='sme-add-action'
+                            className='ws-toolbar-button'
+                            type='primary'
+                            icon={<PlusOutlined />}
                             disabled={addDisabled}
-                            menu={{
-                                items: [{ key: 'import', icon: <FileExcelOutlined />, label: 'Import from Excel…' }],
-                                onClick: onImport
-                            }}
+                            shape='round'
                         >
-                            <Button type='primary' icon={<DownOutlined />} disabled={addDisabled} aria-label='More ways to add SMEs' />
-                        </Dropdown>
-                    </Space.Compact>
+                            Add SME <DownOutlined />
+                        </Button>
+                    </Dropdown>
                 )}
                 {canAddDummy && (
                     <Button

@@ -27,7 +27,7 @@ interface InterventionsCompletionCardProps {
 
 const InterventionsCompletionCard: React.FC<
     InterventionsCompletionCardProps
-> = ({ filteredRows, allRows, dateRange }) => {
+> = ({ allRows, dateRange }) => {
     const buckets = useMemo(() => {
         const [start, end] = dateRange;
 
@@ -184,6 +184,11 @@ const InterventionsCompletionCard: React.FC<
         });
     }, [buckets, allRows]);
 
+    const hasActivity = bucketCounts.some(
+        (counts) =>
+            counts.assignments + counts.pending + counts.overdue + counts.completed > 0
+    );
+
     const chartOptions: Highcharts.Options = {
         chart: {
             type: "spline",
@@ -260,7 +265,11 @@ const InterventionsCompletionCard: React.FC<
                     style={cardStyle}
                     title="Interventions by Period"
                 >
-                    {filteredRows.length ? (
+                    {/* Empty only when the chart itself has nothing to draw. The
+                        series count work open, pending or overdue during the
+                        period, not only work created or completed in it, so
+                        checking filteredRows hid a chart that had data. */}
+                    {hasActivity ? (
                         <HighchartsReact
                             highcharts={Highcharts}
                             options={chartOptions}

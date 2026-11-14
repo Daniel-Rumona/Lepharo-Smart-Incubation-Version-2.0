@@ -329,9 +329,12 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <title>Revenue and Employees | Smart Incubation</title>
             </Helmet>
 
-            <MetricsGrid metrics={metrics} />
+            <div data-guide="sme-metrics-summary">
+                <MetricsGrid metrics={metrics} />
+            </div>
 
             <MotionCard
+                data-guide="sme-metrics-history"
                 className="metrics-history-card"
                 filterBar={filterBar}
                 filterBarProps={{

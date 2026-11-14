@@ -31,7 +31,6 @@ const firebase_functions_1 = require("firebase-functions");
 const mailer_1 = require("./mail/mailer");
 const brevoClient_1 = require("./brevoClient");
 const inAppNotifications_1 = require("./inAppNotifications");
-const config_1 = require("./config");
 if (!admin.apps.length)
     admin.initializeApp();
 const db = admin.firestore();
@@ -877,7 +876,7 @@ exports.sendApplicationReceivedEmail = (0, https_1.onCall)({ region: 'us-central
         throw new https_1.HttpsError('internal', 'Application confirmation email failed.');
     }
 });
-exports.sendComplianceReminderEmail = (0, https_1.onCall)({ ...config_1.BREVO_EGRESS, region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
+exports.sendComplianceReminderEmail = (0, https_1.onCall)({ region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
     if (!req.auth)
         throw new https_1.HttpsError('unauthenticated', 'Login required.');
     const to = safeLower(req.data?.email);

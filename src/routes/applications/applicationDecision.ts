@@ -2,6 +2,8 @@ import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, wh
 import { auth, db } from '@/firebase'
 import { ensureCompulsoryPlan } from '@/services/compulsoryInterventionService'
 import type { ApplicationStatus } from './applicationData'
+import dayjs, { type Dayjs } from 'dayjs'
+import { captureJobsBaseline, programmeStartOf } from '@/lib/jobs'
 
 /**
  * Writes an application decision and its side effects. Kept out of the
@@ -69,6 +71,22 @@ const addCompulsoryInterventions = async (applicationId: string) => {
     return toAdd.length
 }
 
+/**
+ * Freezes the SME's headcount at joining, from its participant record, so
+ * Jobs Created/Sustained don't move if the SME edits its profile history later
+ * (src/lib/jobs.ts). Null when the participant can't be read.
+ */
+const startingHeadcount = async (participantId: string | undefined, reference: Dayjs) => {
+    if (!participantId) return null
+    try {
+        const snap = await getDoc(doc(db, 'participants', participantId))
+        return snap.exists() ? captureJobsBaseline(snap.data(), reference) : null
+    } catch (e) {
+        console.error('[applications] could not read starting headcount:', e)
+        return null
+    }
+}
+
 export type DecisionResult = { addedInterventions: number }
 
 export const decideApplication = async (
@@ -98,6 +116,10 @@ export const decideApplication = async (
     if (status === 'accepted') {
         if (!app.acceptedAt) update.acceptedAt = serverTimestamp()
         update.rejectedAt = null
+        if (!app.jobsBaseline) {
+            const baseline = await startingHeadcount(app.participantId, (app.acceptedAt && programmeStartOf(app)) || dayjs())
+            if (baseline) update.jobsBaseline = baseline
+        }
     } else {
         update.rejectedAt = serverTimestamp()
         if (reason) update.rejectionReason = reason

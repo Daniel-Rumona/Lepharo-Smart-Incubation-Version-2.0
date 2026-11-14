@@ -14,14 +14,14 @@ import { resolveInquiryAudience, resolveInquiryChannel } from '@/utils/inquirySo
 import {
     getFullReportingMonths,
     getPreviousReportingMonths,
-    getUniqueJobsForPeriod,
     hasPeriodRevenueData,
     loadProgramFinanceSeries,
     periodLabel,
     signedPercent,
-    sumPeriodRevenue,
-    type JobContract
+    sumPeriodRevenue
 } from '@/components/dashboards/projectadmin/ProjectAdminProgramPulse'
+import { groupJobs } from '@/lib/jobs'
+import { activeInMonths, loadJobContracts } from '@/lib/jobsData'
 
 /*
   Everything the project admin report player tells, gathered in one pass. Each
@@ -313,15 +313,13 @@ export async function buildProjectAdminStory({ programId, branchId, range }: Sto
     const baseMonths = requested.length ? requested : [dayjs().subtract(1, 'month').startOf('month')]
     if (requested.length) story.periodLabel = periodLabel(requested)
 
-    const contracts = await safely('jobs', async () => {
-        const snap = await getDocs(query(collection(db, 'hseJobContracts'), ...programConstraint(programId)))
-        return snap.docs.map(item => ({ id: item.id, ...(item.data() as any) })) as JobContract[]
-    })
+    // One job per person per position, renewals and re-uploads included (src/lib/jobs.ts).
+    const groupedJobs = await safely('jobs', async () => groupJobs(await loadJobContracts(programId)))
     const finance = await safely('revenue', async () => (await loadProgramFinanceSeries(programId)).series)
 
     const measure = (months: Dayjs[]) => {
         const previous = getPreviousReportingMonths(months)
-        const jobs = contracts ? getUniqueJobsForPeriod(contracts, months) : undefined
+        const jobs = groupedJobs ? activeInMonths(groupedJobs, months) : undefined
         let revenue: NonNullable<NonNullable<ProjectAdminStory['performance']>['revenue']> | undefined
         if (finance) {
             let current = 0
@@ -354,7 +352,7 @@ export async function buildProjectAdminStory({ programId, branchId, range }: Sto
         return { jobs, revenue }
     }
 
-    if (contracts || finance) {
+    if (groupedJobs || finance) {
         let window = baseMonths
         let found = measure(window)
         for (let step = 0; step < 6 && !found.revenue && !(found.jobs && found.jobs.length); step += 1) {
@@ -374,7 +372,7 @@ export async function buildProjectAdminStory({ programId, branchId, range }: Sto
                 ? {
                     total: found.jobs.length,
                     permanent: found.jobs.filter(job => job.contractType === 'permanent').length,
-                    temporary: found.jobs.filter(job => job.contractType === 'temporal').length
+                    temporary: found.jobs.filter(job => job.contractType === 'temporary').length
                 }
                 : undefined,
             revenue: found.revenue,

@@ -1,6 +1,14 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { db } from '@/firebase'
+import { countProgrammeInPeriod, groupJobs, STORED_TEMPORARY, type ContractType } from '@/lib/jobs'
+import {
+  asOfPeriodEnd,
+  baselineNumbers,
+  loadJobContracts,
+  loadJobsBaselines,
+  type BaselinePart
+} from '@/lib/jobsData'
 
 /* ================= TYPES ================= */
 
@@ -70,11 +78,12 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
   // "Jobs Created"/"Jobs Sustained" live under the Business Metrics source in
   // the UI (so they share its normal field-picking flow, no separate source
   // card and no confusing count-mode prompt), but they're real HSE employment
-  // contracts, not self-reported monthly numbers - so they read from
-  // hseJobContracts and are always counted, regardless of whatever
-  // calculationType the wizard attached (it maps metrics+total_number to
-  // 'sum', which is right for every other metrics field, just not these two).
+  // contracts, not self-reported monthly numbers - so they are counted from
+  // hseJobContracts through src/lib/jobs.ts (computeJobsKpi), regardless of
+  // whatever calculationType the wizard attached.
   const isJobsField = kpi.sourceType === 'metrics' && (kpi.field === 'jobsCreated' || kpi.field === 'jobsSustained')
+
+  if (isJobsField) return computeJobsKpi(params)
 
   let data: any[] = []
 
@@ -89,9 +98,7 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
   }
 
   if (kpi.sourceType === 'metrics') {
-    data = isJobsField
-      ? await fetchJobContracts(programId, isAllPrograms)
-      : await fetchMetrics(programId, isAllPrograms)
+    data = await fetchMetrics(programId, isAllPrograms)
   }
 
   /* ================= HARD RULES ================= */
@@ -113,34 +120,18 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
 
   const { start, end } = resolvePeriod(periodType, periodKey)
 
-  if (isJobsField && kpi.field === 'jobsSustained') {
-    // "Sustained" isn't "happened during this period" like every other
-    // source - it's "already existed by the period's end, and hadn't
-    // expired yet": permanent contracts always count, temporal ones only
-    // while their end date is still on or after the period.
-    data = data.filter(d => {
-      const created = normalizeDate(d.createdAt || d.uploadMonthDate)
-      if (!created || created.isAfter(end)) return false
-      if (d.contractType === 'permanent') return true
-      const expiry = normalizeDate(d.contractEndDate)
-      return expiry ? !expiry.isBefore(end) : true
-    })
-  } else {
-    data = data.filter(d => {
-      const rawDate =
-        kpi.sourceType === 'interventions'
-          ? (d.completedAt || d.createdAt || d.updatedAt)
-          : isJobsField
-            ? (d.uploadMonthDate || d.createdAt)
-            : (d.createdAt || d.date || d.updatedAt)
+  data = data.filter(d => {
+    const rawDate =
+      kpi.sourceType === 'interventions'
+        ? (d.completedAt || d.createdAt || d.updatedAt)
+        : (d.createdAt || d.date || d.updatedAt)
 
-      const date = normalizeDate(rawDate)
-      if (!date) return false
-      // A reporting period includes both its first and last day. Strict comparisons
-      // dropped records stamped exactly at either boundary.
-      return !date.isBefore(start) && !date.isAfter(end)
-    })
-  }
+    const date = normalizeDate(rawDate)
+    if (!date) return false
+    // A reporting period includes both its first and last day. Strict comparisons
+    // dropped records stamped exactly at either boundary.
+    return !date.isBefore(start) && !date.isAfter(end)
+  })
 
   /* ================= USER FILTERS ================= */
 
@@ -152,9 +143,7 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
 
   let actual = 0
 
-  if (isJobsField) {
-    actual = data.length
-  } else if (kpi.calculationType === 'count') {
+  if (kpi.calculationType === 'count') {
     if (kpi.countMode === 'distinct') {
       const set = new Set(data.map(d => {
         if (kpi.entityKey && d[kpi.entityKey] !== undefined && d[kpi.entityKey] !== null) {
@@ -171,16 +160,16 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
     }
   }
 
-  if (!isJobsField && kpi.calculationType === 'sum') {
+  if (kpi.calculationType === 'sum') {
     actual = data.reduce((sum, d) => sum + Number(d[kpi.field || ''] || 0), 0)
   }
 
-  if (!isJobsField && kpi.calculationType === 'average') {
+  if (kpi.calculationType === 'average') {
     const total = data.reduce((sum, d) => sum + Number(d[kpi.field || ''] || 0), 0)
     actual = data.length ? total / data.length : 0
   }
 
-  if (!isJobsField && kpi.calculationType === 'ratio') {
+  if (kpi.calculationType === 'ratio') {
     const calculatePart = (part?: RatioPartConfig | null) => {
       if (!part) return 0
       const partData = part.filters?.length ? applyFilters(data, part.filters) : data
@@ -253,14 +242,61 @@ async function fetchMetrics(programId?: string | null, isAllPrograms?: boolean) 
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
-async function fetchJobContracts(programId?: string | null, isAllPrograms?: boolean) {
-  const reference = collection(db, 'hseJobContracts')
-  const qRef = !isAllPrograms && programId
-    ? query(reference, where('programId', '==', programId))
-    : query(reference)
+/* ================= JOBS ================= */
 
-  const snap = await getDocs(qRef)
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+/**
+ * Jobs Created / Jobs Sustained, counted per SME against its starting
+ * headcount (src/lib/jobs.ts) and summed for the programme:
+ *   jobsCreated   = net new jobs created during the period
+ *   jobsSustained = jobs sustained at the period's end (today while it runs)
+ * A Contract Type condition counts only that type's jobs against that type's
+ * part of the starting headcount. Other conditions narrow the contract records.
+ */
+async function computeJobsKpi(params: ComputeParams): Promise<ComputeResult> {
+  const { kpi, programId, isAllPrograms, periodType, periodKey, target } = params
+  const scope = !isAllPrograms && programId ? programId : null
+
+  const [contracts, { baselines }] = await Promise.all([
+    loadJobContracts(scope),
+    loadJobsBaselines(scope)
+  ])
+
+  const filters = kpi.filters || []
+  const typeFilters = filters.filter(f => f.field === 'contractType')
+  const otherFilters = filters.filter(f => f.field !== 'contractType')
+
+  // A type passes when either of its stored spellings passes the condition
+  // (temporary contracts are stored as 'temporal'; 'temporary' is read too).
+  const storedValues: Record<ContractType, string[]> = {
+    permanent: ['permanent'],
+    temporary: [STORED_TEMPORARY, 'temporary']
+  }
+  const allowed = (Object.keys(storedValues) as ContractType[]).filter(type =>
+    !typeFilters.length ||
+    storedValues[type].some(value => applyFilters([{ contractType: value }], typeFilters).length > 0)
+  )
+
+  const records = otherFilters.length ? applyFilters(contracts, otherFilters) : contracts
+  const jobs = groupJobs(records).filter(job => allowed.includes(job.contractType))
+  const part: BaselinePart = allowed.length === 1 ? allowed[0] : 'total'
+
+  const { start, end } = resolvePeriod(periodType, periodKey)
+  const count = allowed.length
+    ? countProgrammeInPeriod(jobs, baselineNumbers(baselines, part), start, asOfPeriodEnd(start, end))
+    : null
+
+  const actual = !count ? 0 : kpi.field === 'jobsCreated' ? count.createdInPeriod : count.sustained
+
+  return {
+    kpiId: kpi.id,
+    actual,
+    target: target ?? null,
+    variance: target != null ? actual - target : null,
+    achievementPercent: target && target !== 0 ? (actual / target) * 100 : null,
+    matchedCount: count?.active ?? 0,
+    periodType,
+    periodKey
+  }
 }
 
 /* ================= FILTERS ================= */

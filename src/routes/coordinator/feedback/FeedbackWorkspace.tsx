@@ -53,7 +53,7 @@ const FEEDBACK_PAGE_SIZE = 6
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
-    'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 type Sentiment = 'Positive' | 'Neutral' | 'Negative'

@@ -22,7 +22,10 @@ body {
     width: 100%;
 }
 
-.reporting-filter-control .ant-btn {
+/* Direct children only: the milestone journey opens full screen from inside
+   this control (FullscreenReveal does not portal), and a descendant rule
+   stretched its round close button into a full-width ellipse. */
+.reporting-filter-control > .ant-btn {
     width: 100%;
 }
 

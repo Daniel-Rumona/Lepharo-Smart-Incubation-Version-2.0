@@ -1,0 +1,208 @@
+/* Surveys Portal: the bits the shared workspace styles don't cover. */
+
+/* Progress ring + counts on the left, the Insights/Recipients switch on the
+   right; the switch takes the full width once the pane is too narrow. */
+.svp-progress-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.svp-progress {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.svp-progress .ant-progress-text {
+    font-size: 11px !important;
+    font-weight: 600;
+}
+
+.svp-progress-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+}
+
+.svp-stat-value {
+    margin-inline-end: 4px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.svp-stat-label {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.svp-tab-switch.ant-segmented {
+    flex: 1 1 260px;
+    margin-inline-start: auto;
+}
+
+.svp-tab-switch.ant-segmented .ant-segmented-item {
+    flex: 1 1 0;
+}
+
+.svp-tab-switch.ant-segmented .ant-segmented-group {
+    display: flex;
+}
+
+/* Bottom padding keeps the last card off the scrolling pane's edge. */
+.svp-questions,
+.svp-recipient-list {
+    padding-bottom: 20px;
+}
+
+.svp-questions {
+    display: grid;
+    gap: 12px;
+}
+
+.svp-question {
+    padding: 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.svp-question-head {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.svp-question-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.svp-question-count {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.svp-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 13px;
+}
+
+.svp-bar-label {
+    overflow: hidden;
+    color: var(--app-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.svp-bar-track {
+    height: 8px;
+    overflow: hidden;
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.svp-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--app-accent);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.svp-bar-value {
+    min-width: 56px;
+    text-align: end;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.svp-rating-average {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--app-text);
+    margin-bottom: 6px;
+}
+
+.svp-samples {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.svp-samples li {
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border-radius: 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.svp-recipient-list {
+    display: grid;
+    gap: 6px;
+}
+
+.svp-back {
+    margin-bottom: 10px;
+}
+
+.svp-template-list {
+    display: grid;
+    gap: 8px;
+    max-height: min(52vh, 440px);
+    overflow-y: auto;
+}
+
+.svp-picker-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.svp-picker-toolbar .ant-input-affix-wrapper {
+    flex: 1 1 200px;
+}
+
+.svp-picker-toolbar .ant-select {
+    flex: 0 1 160px;
+}
+
+.svp-picker-list {
+    display: grid;
+    gap: 6px;
+    max-height: min(48vh, 400px);
+    overflow-y: auto;
+}
+
+.svp-picker-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.svp-due {
+    width: 100%;
+}

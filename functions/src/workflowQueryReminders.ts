@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { suppressRecordNotifications } from "./syntheticData";
 import { admin, db } from "./emailShared";
 import { moderateCadencePhase } from "./reminderCadence";
@@ -22,7 +22,7 @@ function asDate(value: any): Date | null {
  * no separate ledger collection, unlike compliance's per-document ledger,
  * since a workflowQuery is a single long-lived doc with a stable ref.
  */
-export const workflowQueryReminderCron = onSchedule(
+export const workflowQueryReminderCron = scheduledJob("workflowQueryReminderCron",
   {
     region: "us-central1",
     schedule: "0 8 * * *",
@@ -51,7 +51,7 @@ export const workflowQueryReminderCron = onSchedule(
         logger.warn("workflowQueryReminderCron.noResolver", { queryId: querySnap.id });
         continue;
       }
-      const resolverRole = String(query.resolver?.role || "consultant").trim();
+      const resolverRole = String(query.resolver?.role || "coordinator").trim();
 
       await db.collection("notifications").add({
         type: "workflow-query-reminder",

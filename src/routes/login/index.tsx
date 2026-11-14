@@ -732,11 +732,6 @@ const LoginPageContent: React.FC = () => {
                 return
             }
 
-            if (role === 'projectmanager') {
-                navigateAfterLogin('/projectmanager')
-                return
-            }
-
             navigateAfterLogin(`/${role}`)
         } catch (error: any) {
             try {

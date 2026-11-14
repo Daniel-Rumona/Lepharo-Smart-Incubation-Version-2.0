@@ -1,11 +1,13 @@
 import React, { type ChangeEvent, useRef, useState } from 'react'
-import { Avatar, Button, Form, Input, Tag, message, theme } from 'antd'
+import { Avatar, Button, Checkbox, Form, Input, Tag, message, theme } from 'antd'
 import {
     CameraOutlined,
     EditOutlined,
     GoogleOutlined,
     MailOutlined,
-    UserOutlined
+    PhoneOutlined,
+    UserOutlined,
+    WhatsAppOutlined
 } from '@ant-design/icons'
 import {
     EmailAuthProvider,
@@ -13,15 +15,16 @@ import {
     updateProfile,
     verifyBeforeUpdateEmail
 } from 'firebase/auth'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { withOwner } from '@/lib/storageOwner'
 import { auth, db, storage } from '@/firebase'
 import { getNameInitials } from '@/utils/get-name-initials'
 import { formatRole } from '@/lib/roleLabels'
+import { buildConsent, normalizeWhatsAppNumber, type WhatsAppConsent } from '@/services/whatsappConsent'
 import { SectionHead, SectionLayout, type SectionProps } from './SectionLayout'
 
-type Mode = 'view' | 'name' | 'email'
+type Mode = 'view' | 'name' | 'email' | 'phone'
 
 const emailChangeError = (error: any): string => {
     switch (error?.code) {
@@ -39,6 +42,15 @@ const emailChangeError = (error: any): string => {
     }
 }
 
+/** The number on file: the profile phone, else the one given for WhatsApp. */
+const storedPhone = (userData: SectionProps['userData']) =>
+    String(
+        userData.phone ||
+            userData.phoneNumber ||
+            (userData.whatsappConsent as WhatsAppConsent | undefined)?.number ||
+            ''
+    )
+
 /** Tell the rest of the app (top bar avatar, identity) about a profile change. */
 const broadcastProfile = (detail: Record<string, unknown>) =>
     window.dispatchEvent(new CustomEvent('user-profile-updated', { detail }))
@@ -47,6 +59,7 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
     const { token } = theme.useToken()
     const [nameForm] = Form.useForm()
     const [emailForm] = Form.useForm()
+    const [phoneForm] = Form.useForm()
     const [mode, setMode] = useState<Mode>('view')
     const [saving, setSaving] = useState(false)
     const [savingPhoto, setSavingPhoto] = useState(false)
@@ -62,6 +75,7 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
     const backToView = () => {
         nameForm.resetFields()
         emailForm.resetFields()
+        phoneForm.resetFields()
         setMode('view')
     }
 
@@ -135,6 +149,40 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
     }
 
     /**
+     * users/{uid}.phone is what the WhatsApp assistant matches an incoming
+     * number against; whatsappConsent says whether we may message it.
+     */
+    const handlePhoneSave = async () => {
+        try {
+            const values = await phoneForm.validateFields()
+            const user = auth.currentUser
+            if (!user) throw new Error('No authenticated user.')
+
+            const { consent, error } = buildConsent({
+                status: values.onWhatsApp ? 'granted' : 'declined',
+                number: values.phone,
+                source: 'account-settings',
+                now: serverTimestamp()
+            })
+            const phone = normalizeWhatsAppNumber(values.phone)
+            if (!consent || !phone) throw new Error(error || 'Check the number and try again.')
+
+            setSaving(true)
+            await updateDoc(doc(db, 'users', user.uid), { phone, whatsappConsent: consent })
+
+            onUpdate({ phone, whatsappConsent: consent })
+            message.success('Phone number updated.')
+            backToView()
+        } catch (error: any) {
+            if (error?.errorFields) return
+            console.error(error)
+            message.error(error?.message || 'Failed to update your phone number.')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    /**
      * Firebase sends a confirmation link to the new address and only switches
      * the account over once it is clicked; the profile copy is synced the next
      * time settings open (see index.tsx). Changing the address directly is
@@ -172,6 +220,66 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
     }
 
     const iconStyle = { color: token.colorTextSecondary }
+    const whatsappConsent = userData.whatsappConsent as WhatsAppConsent | undefined
+    const phoneOnFile = normalizeWhatsAppNumber(storedPhone(userData))
+
+    if (mode === 'phone') {
+        return (
+            <SectionLayout
+                footer={
+                    <>
+                        <Button size='large' disabled={saving} onClick={backToView}>
+                            Cancel
+                        </Button>
+                        <Button size='large' type='primary' loading={saving} onClick={handlePhoneSave}>
+                            Save phone
+                        </Button>
+                    </>
+                }
+            >
+                <SectionHead
+                    title='Phone and WhatsApp'
+                    sub='Colleagues can reach you on this number. If it is on WhatsApp, you can also use the WhatsApp assistant from it.'
+                />
+                <Form
+                    form={phoneForm}
+                    layout='vertical'
+                    initialValues={{
+                        phone: storedPhone(userData),
+                        onWhatsApp: whatsappConsent?.status === 'granted'
+                    }}
+                    onFinish={handlePhoneSave}
+                >
+                    <Form.Item
+                        name='phone'
+                        label='Mobile number'
+                        rules={[
+                            { required: true, whitespace: true, message: 'Enter your mobile number' },
+                            {
+                                validator: (_, value) =>
+                                    !value || normalizeWhatsAppNumber(value)
+                                        ? Promise.resolve()
+                                        : Promise.reject(new Error('Enter a valid number, for example 082 123 4567'))
+                            }
+                        ]}
+                    >
+                        <Input
+                            size='large'
+                            type='tel'
+                            inputMode='tel'
+                            autoComplete='tel'
+                            placeholder='e.g. 082 123 4567'
+                            prefix={<PhoneOutlined style={iconStyle} />}
+                            autoFocus
+                        />
+                    </Form.Item>
+                    <Form.Item name='onWhatsApp' valuePropName='checked'>
+                        <Checkbox>This number is on WhatsApp</Checkbox>
+                    </Form.Item>
+                </Form>
+            </SectionLayout>
+        )
+    }
 
     if (mode === 'name') {
         return (
@@ -304,6 +412,33 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
                     <span>
                         <span className='acs-label'>Name</span>
                         <span className='acs-hint'>{userData.name}</span>
+                    </span>
+                </span>
+                <EditOutlined style={iconStyle} />
+            </button>
+
+            <button type='button' className='acs-row' onClick={() => setMode('phone')}>
+                <span className='acs-row-main'>
+                    <span className='acs-tile'>
+                        <PhoneOutlined />
+                    </span>
+                    <span>
+                        <span className='acs-label'>Phone and WhatsApp</span>
+                        <span className='acs-hint'>
+                            {phoneOnFile ? (
+                                <>
+                                    {phoneOnFile}
+                                    {whatsappConsent?.status === 'granted' && (
+                                        <>
+                                            {' · '}
+                                            <WhatsAppOutlined /> On WhatsApp
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                'Add your mobile number'
+                            )}
+                        </span>
                     </span>
                 </span>
                 <EditOutlined style={iconStyle} />

@@ -1,5 +1,5 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import {
   admin,
   APP_BASE_URL,
@@ -123,7 +123,7 @@ async function sendReminder(schedule: Schedule, meetingId: string, date: string,
  * day, emails the organiser 30 minutes after the start time asking whether it
  * was held, and nudges once a day (up to 3 times) while it stays unanswered.
  */
-export const governanceMeetingReminderCron = onSchedule(
+export const governanceMeetingReminderCron = scheduledJob("governanceMeetingReminderCron",
   {
     region: "us-central1",
     schedule: "*/15 * * * *",

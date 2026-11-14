@@ -36,9 +36,10 @@ export type Visibility =
   | { kind: "programmes"; programmeIds: string[] }
   | { kind: "own"; uid: string };
 
-const ALL_ROLES = ["director", "operations", "system_admin", "superadmin"];
-const PROGRAMME_ROLES = ["projectadmin", "receptionist", "funder"];
-const OWN_ROLES = ["coordinator", "consultant", "mentor", "facilitator", "advisor"];
+// Receptionists run the front desk: nothing a watch follows is theirs to act on. Funders watch impact.
+const ALL_ROLES = ["director", "operations", "system_admin"];
+const PROGRAMME_ROLES = ["projectadmin", "funder"];
+const OWN_ROLES = ["coordinator"];
 
 const normRole = (role: string) => String(role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 

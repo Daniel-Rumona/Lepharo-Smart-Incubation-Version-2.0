@@ -8,6 +8,7 @@ export type ChartTheme = {
     mediumRisk: string
     highRisk: string
     criticalRisk: string
+    lowRisk: string
     text: string
     mutedText: string
     border: string
@@ -21,6 +22,7 @@ const FALLBACK_THEME: ChartTheme = {
     mediumRisk: '#faad14',
     highRisk: '#d46b08',
     criticalRisk: '#ff4d4f',
+    lowRisk: '#52c41a',
     text: '#262626',
     mutedText: '#8c8c8c',
     border: '#f0f0f0',
@@ -207,7 +209,7 @@ export function buildPortfolioRiskChartOptions(
                     {
                         name: 'Low',
                         y: risk.low,
-                        color: colors.success,
+                        color: colors.lowRisk,
                         visible: !hidden.has('Low')
                     } as Highcharts.PointOptionsObject
                 ]

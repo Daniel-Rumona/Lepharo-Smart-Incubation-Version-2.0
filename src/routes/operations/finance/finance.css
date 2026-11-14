@@ -1,0 +1,29 @@
+/* Finance page. Colours come from the --app-* theme tokens so both colour modes work. */
+
+.finance-attention-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.finance-attention-row:hover {
+    background: var(--app-surface-sunken);
+}
+
+.finance-attention-row:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 1px;
+}
+
+.finance-table .ant-table-tbody > tr {
+    cursor: pointer;
+}

@@ -79,6 +79,7 @@ import { useSmeWaiting, type DocumentRow } from '@/components/incubatee/SmeWaiti
 import {
     guideTarget,
     usePageGuides,
+    WelcomeTourOffer,
     type PageGuideRegistration
 } from '@/components/guide-me'
 import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
@@ -1337,6 +1338,10 @@ export const IncubateeDashboard: React.FC = () => {
                         </Helmet>
 
                         <Row gutter={[16, 16]}>
+                            <Col span={24}>
+                                <WelcomeTourOffer kind='sme' />
+                            </Col>
+
                             {/* Top stats */}
                             <Col span={24} data-guide="incubatee-dashboard-metrics">
                                 <MetricsGrid metrics={topMetrics} />

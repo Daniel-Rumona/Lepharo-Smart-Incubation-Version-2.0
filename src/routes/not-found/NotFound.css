@@ -1,27 +1,40 @@
-/* 404 page. Builds on LandingPage.css: the wrapper also carries `landing-page`,
-   so the gradient background, accent variables, orbit animation and
-   html[data-theme="dark"] rules all apply unchanged. */
+/* 404 page. Builds on LandingPage.css: the wrapper also carries `lx`, so the
+   warm background, aurora fields, --lx-* colour tokens and their
+   html[data-theme="dark"] values all apply unchanged. Everything 404-specific,
+   the orbit included, lives here. */
 
-.landing-page.nf-page {
-    --nf-text: #1c2541;
-    --nf-muted: #5a6178;
-    --nf-glass: rgba(255, 255, 255, 0.72);
-    --nf-glass-border: rgba(255, 255, 255, 0.7);
-    --nf-ring: rgba(124, 58, 237, 0.2);
-    --nf-chip: rgba(28, 37, 65, 0.06);
+/* Follow the user's accent palette (html[data-accent], see
+   styles/accent-themes.css) instead of the landing page's fixed crimson.
+   Everything below reads --lx-accent*, so these few lines retint it all. The
+   dark selector is listed so this outranks html[data-theme="dark"] .lx. */
+.lx.nf-page,
+html[data-theme="dark"] .lx.nf-page {
+    --lx-accent: var(--app-accent);
+    --lx-accent-hover: var(--app-accent-strong);
+    --lx-accent-soft: var(--app-accent-soft);
+    --lx-aurora-a: color-mix(in srgb, var(--app-accent) 26%, transparent);
+    --lx-aurora-b: color-mix(in srgb, var(--app-accent) 20%, transparent);
+    --nf-accent-light: color-mix(in srgb, var(--app-accent) 60%, #ffffff);
+}
 
-    overflow-x: hidden;
-    overflow-y: auto;
+.lx.nf-page {
+    --nf-text: var(--lx-ink);
+    --nf-muted: var(--lx-muted);
+    --nf-glass: var(--lx-surface);
+    --nf-glass-border: var(--lx-line);
+    --nf-ring: color-mix(in srgb, var(--lx-accent) 22%, transparent);
+    --nf-chip: var(--lx-accent-soft);
+    --nf-gradient: linear-gradient(120deg, var(--nf-accent-light) 0%, var(--lx-accent) 100%);
+
+    /* Restated so the landing page's desktop "one screen" grid never applies
+       here: this page is a single centred column at every size. */
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    overflow: clip visible;
     align-items: center;
     justify-content: center;
-}
-html[data-theme="dark"] .landing-page.nf-page {
-    --nf-text: rgba(255, 255, 255, 0.94);
-    --nf-muted: rgba(255, 255, 255, 0.62);
-    --nf-glass: rgba(28, 22, 20, 0.72);
-    --nf-glass-border: rgba(255, 255, 255, 0.1);
-    --nf-ring: rgba(167, 139, 250, 0.24);
-    --nf-chip: rgba(255, 255, 255, 0.07);
 }
 
 .nf-theme {
@@ -81,8 +94,71 @@ html[data-theme="dark"] .landing-page.nf-page {
     display: grid;
     place-items: center;
 }
+/* Every orbit part sizes off --orbit-size, so shrinking the stage in a media
+   query never leaves oversized chips crowding a small ring. */
 .nf-stage .orbit-field {
     --orbit-size: var(--nf-size);
+
+    position: relative;
+    width: var(--orbit-size);
+    height: var(--orbit-size);
+}
+.nf-page .orbit-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 34%;
+    height: 34%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, var(--nf-accent-light), var(--lx-accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: max(14px, calc(var(--orbit-size) * 0.087));
+    animation: nf-pulse 3.6s ease-in-out infinite;
+}
+@keyframes nf-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 8px var(--lx-accent-soft), 0 10px 26px color-mix(in srgb, var(--lx-accent) 30%, transparent);
+    }
+    50% {
+        box-shadow: 0 0 0 16px color-mix(in srgb, var(--lx-accent) 5%, transparent), 0 14px 34px color-mix(in srgb, var(--lx-accent) 40%, transparent);
+    }
+}
+.nf-page .orbit-ring {
+    position: absolute;
+    inset: 0;
+    animation: nf-spin 20s linear infinite;
+}
+.nf-page .orbit-holder {
+    position: absolute;
+    top: -2%;
+    left: 50%;
+    transform: translateX(-50%);
+}
+.nf-page .orbit-icon-inner {
+    width: max(30px, calc(var(--orbit-size) * 0.18));
+    height: max(30px, calc(var(--orbit-size) * 0.18));
+    border-radius: 50%;
+    background: var(--lx-surface-solid);
+    border: 1px solid var(--lx-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--lx-accent);
+    font-size: max(13px, calc(var(--orbit-size) * 0.068));
+    box-shadow: var(--lx-shadow);
+    animation: nf-spin-reverse 20s linear infinite;
+}
+@keyframes nf-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+@keyframes nf-spin-reverse {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
 }
 .nf-ring {
     position: absolute;
@@ -112,15 +188,10 @@ html[data-theme="dark"] .landing-page.nf-page {
     line-height: 1;
     font-weight: 800;
     letter-spacing: -0.03em;
-    background: var(--accent-gradient);
+    background: var(--nf-gradient);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-}
-html[data-theme="dark"] .nf-code {
-    background: linear-gradient(120deg, #ff8a65 0%, #ffb37a 45%, #c9a6ff 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
 }
 .nf-code.is-floating {
     animation: nf-float 5s ease-in-out infinite;
@@ -189,21 +260,27 @@ html[data-theme="dark"] .nf-code {
 }
 .nf-btn:hover {
     transform: translateY(-2px);
+    border-color: var(--app-accent-border-strong, var(--lx-accent));
+    color: var(--lx-accent);
+}
+.nf-btn.is-primary:hover {
+    color: var(--app-accent-contrast, #fff);
 }
 .nf-btn:active {
     transform: scale(0.985);
 }
 .nf-btn.is-primary {
     border: none;
-    background: var(--accent-gradient);
-    color: #fff;
-    box-shadow: 0 10px 24px rgba(124, 58, 237, 0.32);
+    background: var(--lx-accent);
+    color: var(--app-accent-contrast, #fff);
+    box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--lx-accent) 70%, transparent);
 }
 .nf-btn.is-primary:hover {
-    box-shadow: 0 14px 28px rgba(124, 58, 237, 0.42);
+    background: var(--lx-accent-hover);
+    box-shadow: 0 12px 28px -8px color-mix(in srgb, var(--lx-accent) 80%, transparent);
 }
 .nf-btn:focus-visible {
-    outline: 2px solid var(--accent-red);
+    outline: 2px solid var(--lx-accent);
     outline-offset: 3px;
 }
 
@@ -252,7 +329,11 @@ html[data-theme="dark"] .nf-code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .nf-code.is-floating {
+    .nf-code.is-floating,
+    .nf-page .orbit-ring,
+    .nf-page .orbit-icon-inner,
+    .nf-page .orbit-center,
+    .nf-page .lx-aurora {
         animation: none;
     }
 }

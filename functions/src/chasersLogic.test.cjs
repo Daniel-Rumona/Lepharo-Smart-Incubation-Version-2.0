@@ -97,3 +97,16 @@ test('progress and what is waiting read plainly', () => {
     assert.equal(L.progressLine(plan.items), '1 of 2 done')
     assert.equal(L.waitingList(plan.items), 'Karoo Agri – Contract Management (the HOD)')
 })
+
+test("a head of department chases only their department's queried MOVs, which end once answered", () => {
+    assert.match(L.scopeToDepartment({ ...spec, stage: 'awaiting_hod' }, 'legal').error, /queried MOVs/)
+    const scoped = L.scopeToDepartment({ deadline: spec.deadline, maxNudges: 2, departmentName: 'Legal' }, 'legal').spec
+    assert.deepEqual([scoped.stage, scoped.departmentId, scoped.stageOnly], ['queried', 'legal', true])
+
+    const queried = [L.newItem('movDocuments', 'a', 'Zungu Trading – Cash Flow Planning', 'queried')]
+    const answered = L.planRun(scoped, NOW, queried, statuses({ a: 'awaiting_hod' }), new Set(), NOW)
+    assert.equal(answered.items[0].done, true, 'answered: it is back with the HOD, so the chaser is done with it')
+    assert.deepEqual(answered.nudge, [])
+    const still = L.planRun(scoped, NOW, queried, statuses({ a: 'queried' }), new Set(), NOW)
+    assert.deepEqual(still.nudge, ['a'])
+})

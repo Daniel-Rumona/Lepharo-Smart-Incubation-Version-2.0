@@ -27,7 +27,6 @@ exports.agentCancelAction = exports.agentConfirmAction = exports.agentProposeAct
 const logger = __importStar(require("firebase-functions/logger"));
 const https_1 = require("firebase-functions/v2/https");
 const firebase_1 = require("./firebase");
-const config_1 = require("./config");
 const inAppNotifications_1 = require("./inAppNotifications");
 const emailCampaigns_1 = require("./emailCampaigns");
 const complianceExpiry_1 = require("./complianceExpiry");
@@ -440,7 +439,7 @@ exports.agentProposeAction = (0, https_1.onCall)({ region: "us-central1", cors: 
         handoff: !!preview.handoff,
     };
 });
-exports.agentConfirmAction = (0, https_1.onCall)({ ...config_1.BREVO_EGRESS, region: "us-central1", cors: CALLABLE_CORS, timeoutSeconds: 300 }, async (request) => {
+exports.agentConfirmAction = (0, https_1.onCall)({ region: "us-central1", cors: CALLABLE_CORS, timeoutSeconds: 300 }, async (request) => {
     const { uid, email } = requireAuth(request.auth);
     const proposalId = clean(request.data?.proposalId);
     if (!proposalId)

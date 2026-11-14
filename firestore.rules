@@ -24,7 +24,7 @@ service cloud.firestore {
         'system_admin', 'system admin', 'superadmin', 'admin', 'director',
         'operations', 'head of department', 'hod', 'headofdepartment',
         'projectadmin', 'project admin', 'project_admin', 'center coordinator', 'center_coordinator',
-        'coordinator', 'receptionist', 'employee', 'hr', 'projectmanager', 'consultant', 'auxiliary'
+        'coordinator', 'receptionist', 'employee', 'hr'
       ];
     }
     function adminRoles() {
@@ -308,6 +308,36 @@ service cloud.firestore {
         isOwnDepartment(request.resource.data);
       allow update, delete: if request.auth != null && isOperations() &&
         resource.data.uploadedBy == request.auth.uid && isOwnDepartment(resource.data);
+
+      // One doc per SME recording that they opened/downloaded this material.
+      // The SME writes only their own doc; operations in the material's
+      // department read them to see who has opened it.
+      match /opens/{userId} {
+        function material() {
+          return get(/databases/$(database)/documents/libraryMaterials/$(materialId)).data;
+        }
+        function bumpedByOne(field) {
+          return request.resource.data[field] is int && (
+            request.resource.data[field] == resource.data.get(field, 0) ||
+            request.resource.data[field] == resource.data.get(field, 0) + 1
+          );
+        }
+
+        allow read: if request.auth != null && (
+          userId == request.auth.uid ||
+          (isOperations() && isOwnDepartment(material()))
+        );
+        allow create: if request.auth != null && userId == request.auth.uid && isSme() &&
+          request.resource.data.keys().hasOnly(['uid', 'participantId', 'name', 'openCount', 'downloadCount', 'firstOpenedAt', 'lastOpenedAt']) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.openCount is int && request.resource.data.openCount <= 1 &&
+          request.resource.data.downloadCount is int && request.resource.data.downloadCount <= 1 &&
+          request.resource.data.lastOpenedAt == request.time;
+        allow update: if request.auth != null && userId == request.auth.uid && isSme() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openCount', 'downloadCount', 'lastOpenedAt']) &&
+          bumpedByOne('openCount') && bumpedByOne('downloadCount') &&
+          request.resource.data.lastOpenedAt == request.time;
+      }
     }
 
     match /dataExportSettings/{departmentId} {
@@ -620,6 +650,31 @@ service cloud.firestore {
         isOwnNoticeBranch(resource.data);
     }
 
+    // Standalone reception directory, scoped to the assigned branch.
+    match /receptionContacts/{contactId} {
+      function canManageContacts(branchId) {
+        return hasProfile() && branchId is string && branchId != '' && (
+          myRole() in ['director', 'system_admin', 'superadmin'] ||
+          (myRole() in ['receptionist', 'projectadmin'] && currentUser().get('assignedBranch', '') == branchId)
+        );
+      }
+      function validContact() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name', 'email', 'phone', 'company', 'category', 'linkedInquiryIds', 'branchId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']) &&
+          d.name is string && d.name.size() > 0 && d.name.size() <= 160 &&
+          d.email is string && d.email.size() <= 254 && d.phone is string && d.phone.size() <= 40 &&
+          (d.email.size() > 0 || d.phone.size() > 0) && d.company is string && d.company.size() <= 200 &&
+          d.category in ['Stakeholder', 'Funder', 'Incubatee', 'Potential Incubatee'] &&
+          d.linkedInquiryIds is list && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+      }
+      allow read: if canManageContacts(resource.data.branchId);
+      allow create: if canManageContacts(request.resource.data.branchId) && validContact() &&
+        request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time;
+      allow update: if canManageContacts(resource.data.branchId) && validContact() &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
     // Inquiry collection - branch scoped with role-based access
     match /inquiries/{inquiryId} {
       allow read, write: if isSuperAdmin();
@@ -714,6 +769,16 @@ service cloud.firestore {
       // An applicant schedules a follow-up on their own inquiry, assigned to themselves.
       allow create: if request.auth != null && request.resource.data.assignedTo == request.auth.uid;
       allow read: if request.auth != null && resource.data.assignedTo == request.auth.uid;
+
+      // A department coordinator a follow-up is escalated to (escalatedToUids) can read it
+      // and work it: mark it done, reschedule it or hand it back. Their list query filters
+      // on escalatedToUids (array-contains), which is what lets this rule allow it.
+      allow get, list: if request.auth != null && request.auth.uid in resource.data.escalatedToUids;
+      allow update: if request.auth != null && request.auth.uid in resource.data.escalatedToUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'outcome', 'completedAt', 'completedBy', 'completedByName',
+          'scheduledDate', 'escalatedToUids', 'escalation', 'updatedAt'
+        ]);
 
       // Allow list/query operations for authorized users (they will be filtered by the client)
       allow list: if isValidBranchAccess();
@@ -1267,16 +1332,40 @@ service cloud.firestore {
       let due = get(/databases/$(database)/documents/sentForms/$(formId)).data.get('dueDate', null);
       return due == null || request.time <= due;
     }
+    // A training SME answers as a person, not as the company (participantId is
+    // the enrollment, shared with colleagues): their copy is keyed by their
+    // trainingAttendees id, or {enrollmentId}_director for a director from
+    // before people were recorded (src/components/trainings/SmeSurveys.tsx).
+    function isMyTrainingPerson(personId) {
+      return isTrainingSme() && personId is string && personId != '' && (
+        currentUser().get('trainingAttendeeId', '') == personId ||
+        (currentUser().get('trainingRole', 'director') != 'employee' &&
+          currentUser().get('participantId', '') != '' &&
+          personId == currentUser().get('participantId', '') + '_director'));
+    }
+    // An SME may read a sent survey (title, due date) they are a recipient of.
+    function isSentFormRecipient(data) {
+      let ids = data.get('participantIds', []);
+      return hasProfile() && (
+        (currentUser().get('participantId', '') != '' && currentUser().get('participantId', '') in ids) ||
+        (isTrainingSme() && (
+          (currentUser().get('trainingAttendeeId', '') != '' && currentUser().get('trainingAttendeeId', '') in ids) ||
+          (currentUser().get('trainingRole', 'director') != 'employee' &&
+            currentUser().get('participantId', '') != '' &&
+            (currentUser().get('participantId', '') + '_director') in ids)))
+      );
+    }
     match /sentForms/{formId}/responses/{responseId} {
-      allow read: if ownsParticipant(responseId) || responseId == request.auth.uid;
-      allow update: if (ownsParticipant(responseId) || responseId == request.auth.uid) &&
+      allow read: if ownsParticipant(responseId) || responseId == request.auth.uid || isMyTrainingPerson(responseId);
+      allow update: if (ownsParticipant(responseId) || responseId == request.auth.uid || isMyTrainingPerson(responseId)) &&
         resource.data.get('completed', false) != true &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['answers', 'answersDraft', 'completed', 'submittedAt', 'updatedAt']) &&
         surveyStillOpen(formId);
     }
     match /{path=**}/responses/{responseId} {
-      allow read: if ownsParticipant(resource.data.participantId);
+      allow read: if ownsParticipant(resource.data.participantId) ||
+        isMyTrainingPerson(resource.data.get('participantId', ''));
     }
 
     // Survey templates and sent surveys belong to a department (by id). Any
@@ -1299,7 +1388,7 @@ service cloud.firestore {
       allow delete: if ownsSurveyDept(resource.data);
     }
     match /sentForms/{formId} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSentFormRecipient(resource.data);
       allow create: if ownsSurveyDept(request.resource.data);
       allow update: if ownsSurveyDept(resource.data) &&
         request.resource.data.get('department', '') == resource.data.get('department', '');
@@ -1600,15 +1689,33 @@ service cloud.firestore {
       return ['phoneIndex', 'smeLoginCodes', 'smeLoginCodeIps'];
     }
 
+    // Digital twin records (functions/src/digitalTwin.ts). Staff read; only the
+    // server writes, so no browser can change a saved score or a past day.
+    // Keep the role list in sync with TWIN_STAFF_ROLES in functions/src/twin/rules.ts.
+    function isTwinStaff() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        currentUser().role is string &&
+        currentUser().role.lower().trim() in ['director', 'system_admin', 'admin', 'operations', 'projectadmin', 'coordinator'];
+    }
+    match /digitalTwins/{twinId} {
+      allow read: if isTwinStaff();
+      allow write: if false;
+      match /days/{day} {
+        allow read: if isTwinStaff();
+        allow write: if false;
+      }
+    }
+
     // Everything else is internal staff only. Super-admins can access every
     // collection, including the explicitly restricted collections above,
     // except that nobody may rewrite the application audit trail.
     match /{collectionId}/{document=**} {
-      allow read: if isSuperAdmin() && collectionId != 'featureGovernance' && !(collectionId in phoneLoginCollections());
-      allow write: if isSuperAdmin() && !(collectionId in ['applicationHistory', 'featureGovernance']) &&
+      allow read: if isSuperAdmin() && !(collectionId in ['featureGovernance', 'digitalTwins']) && !(collectionId in phoneLoginCollections());
+      allow write: if isSuperAdmin() && !(collectionId in ['applicationHistory', 'featureGovernance', 'digitalTwins']) &&
         !(collectionId in phoneLoginCollections());
       allow read, write: if isStaff() && !(collectionId in phoneLoginCollections()) &&
-        !(collectionId in ['formTemplates', 'sentForms', 'users', 'ipmReminderLog', 'proposalReminderLog', 'smeBankingDetails', 'applicationHistory', 'applicationEscalations', 'marketOpportunities', 'opportunityInterests', 'supplyContracts', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'dailyBriefs', 'digestItems', 'watches', 'chasers', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'pageVisits', 'featureGovernance', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews']);
+        !(collectionId in ['receptionContacts', 'formTemplates', 'sentForms', 'users', 'ipmReminderLog', 'proposalReminderLog', 'smeBankingDetails', 'applicationHistory', 'applicationEscalations', 'marketOpportunities', 'opportunityInterests', 'supplyContracts', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'dailyBriefs', 'digestItems', 'watches', 'chasers', 'whatsappMovQueryDrafts', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'pageVisits', 'featureGovernance', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews', 'digitalTwins']);
     }
   }
 }

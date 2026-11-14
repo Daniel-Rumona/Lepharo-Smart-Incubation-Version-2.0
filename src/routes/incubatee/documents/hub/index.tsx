@@ -222,10 +222,12 @@ const DocumentsHub: React.FC = () => {
     }, [])
 
 
-    // Resolve participant by email
+    // SMEs are identified by uid + participantId (never email): the users doc
+    // carries the link, which IdentityContext repairs when it is missing.
     useEffect(() => {
-        if (!user?.email) {
-            setParticipantId(null)
+        const linkedId = user?.participantId ? String(user.participantId) : null
+        setParticipantId(linkedId)
+        if (!linkedId) {
             setParticipantName('')
             return
         }
@@ -233,37 +235,20 @@ const DocumentsHub: React.FC = () => {
         let isMounted = true
             ; (async () => {
                 try {
-                    const qry = query(
-                        collection(db, 'participants'),
-                        where('email', '==', user?.email)
-                    )
-                    const snap = await getDocs(qry)
+                    const snap = await getDoc(doc(db, 'participants', linkedId))
                     if (!isMounted) return
-
-                    if (!snap.empty) {
-                        const d = snap.docs[0]
-                        const data = d.data() as any
-                        setParticipantId(d.id)
-                        setParticipantName(
-                            data.beneficiaryName || data.name || data.email || ''
-                        )
-                    } else {
-                        setParticipantId(null)
-                        setParticipantName('')
-                    }
+                    const data = (snap.exists() ? snap.data() : {}) as any
+                    setParticipantName(data.beneficiaryName || data.name || '')
                 } catch (err) {
-                    console.error('Failed to load participant by email:', err)
-                    if (isMounted) {
-                        setParticipantId(null)
-                        setParticipantName('')
-                    }
+                    console.error('Failed to load participant:', err)
+                    if (isMounted) setParticipantName('')
                 }
             })()
 
         return () => {
             isMounted = false
         }
-    }, [user?.email])
+    }, [user?.participantId])
 
     // Realtime load of assigned forms, then hydrate from departmentForms via templateId
     useEffect(() => {

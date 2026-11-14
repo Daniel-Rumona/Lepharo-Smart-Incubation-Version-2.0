@@ -9,14 +9,14 @@ const ProjectAdminEditInquiryPage: React.FC = () => {
     const navigate = useNavigate()
 
     if (!id) {
-        return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
+        return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/inquiries' }} />
     }
 
     const backToDetails = () => navigate(`/projectadmin/inquiries/${id}`)
 
     return (
         <div>
-            <InquiryDetail inquiryId={id} listPath={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
+            <InquiryDetail inquiryId={id} listPath={{ label: 'Back to inquiries', to: '/inquiries' }} />
             <InquiryEditModal inquiryId={id} onClose={backToDetails} onSaved={backToDetails} />
         </div>
     )

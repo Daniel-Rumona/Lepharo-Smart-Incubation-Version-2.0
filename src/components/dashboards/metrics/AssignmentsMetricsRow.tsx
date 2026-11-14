@@ -227,7 +227,7 @@ const AppointmentsDistributionCard: React.FC<Props> = ({ dateRange, departmentId
                     color='primary'
                     shape='round'
                     icon={<ArrowRightOutlined />}
-                    onClick={() => navigate('/consultants/appointments')}
+                    onClick={() => navigate('/interventions/appointments')}
                 >
                     View All
                 </Button>

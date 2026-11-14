@@ -54,6 +54,23 @@ export type OperationalChallenge = {
     updatedAt?: any
 }
 
+export type ComplianceItemStatus = 'complete' | 'awaiting_review' | 'queried' | 'rejected' | 'expired' | 'missing'
+
+/** One compliance document and its state, e.g. "Tax clearance", expired, "Expired on 2 Oct 2026". */
+export type ComplianceItem = {
+    key: string
+    title: string
+    status: ComplianceItemStatus
+    detail?: string
+}
+
+/** A short risk note ("1 expired document") and the specifics behind it, shown when it is expanded. */
+export type RiskNote = {
+    key: string
+    label: string
+    details: string[]
+}
+
 export type DepartmentSummary = {
     departmentId: string
     departmentName: string
@@ -89,6 +106,9 @@ export type SMERow = {
     docsPending: number
     docsQueried: number
     docsRejected: number
+    docsExpired: number
+    /** Each compliance document behind the counts above. */
+    complianceItems: ComplianceItem[]
 
     expectedDepartments: DepartmentSummary[]
     servicedDepartments: DepartmentSummary[]
@@ -127,7 +147,7 @@ export type SMERow = {
     snapshotComputedAt: Date | null
     /** Daily scores from the nightly snapshot, oldest first (up to 12). */
     scoreHistory: { date: string; score: number; level: RiskLevel }[]
-    notes: string[]
+    notes: RiskNote[]
     noServiceReasons: string[]
     hasAccessedSystem: boolean
     lastSystemAccessDate: Date | null

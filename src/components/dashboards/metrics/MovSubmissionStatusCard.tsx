@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
 import { isSmeConfirmedMov } from '@/services/movService'
 import { MotionCard } from './Header'
+import { useDataColor } from '@/lib/chartColors'
 
 const { Text } = Typography
 
@@ -60,6 +61,8 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
     )
 }) => {
     const { token } = theme.useToken()
+    // "On track" is neutral, so it must not turn red under the crimson accent.
+    const dataColour = useDataColor()
     const navigate = useNavigate()
 
     const [loading, setLoading] = useState(true)
@@ -194,10 +197,10 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
             : validatedPercent
 
         if (score >= 90) return { score, label: 'Excellent', color: token.colorSuccess }
-        if (score >= 60) return { score, label: 'On track', color: token.colorPrimary }
+        if (score >= 60) return { score, label: 'On track', color: dataColour }
         if (score >= 30) return { score, label: 'At risk', color: token.colorWarning }
         return { score, label: 'Critical', color: token.colorError }
-    }, [availableCount, validatedPercent, countdown.state, token])
+    }, [availableCount, validatedPercent, countdown.state, token, dataColour])
 
     return (
         <MotionCard
@@ -306,7 +309,7 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
                             showInfo={false}
                             size="small"
                             strokeColor={
-                                validatedPercent >= 100 ? token.colorSuccess : token.colorPrimary
+                                validatedPercent >= 100 ? token.colorSuccess : dataColour
                             }
                             trailColor={token.colorFillSecondary}
                         />

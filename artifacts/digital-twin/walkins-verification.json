@@ -1,0 +1,19 @@
+{
+  "countsByBranch": {
+    "TtIlYJ5EFS2gHgluBsos": 120,
+    "yYA7BNWDc6muS0FnhiaO": 115
+  },
+  "excluded": {
+    "cancelled_or_declined": 30,
+    "future": 15,
+    "not_attended": 5
+  },
+  "inquiries": 235,
+  "originalInquiriesUnchanged": 0,
+  "parentSeedRunId": "dtseed_20261009_v1",
+  "seedRunId": "dtseed_20261009_walkins_v1",
+  "sourceDocumentsUnchanged": 620,
+  "syntheticActors": 2,
+  "verifiedAt": "2026-10-09T15:27:02.060Z",
+  "verifiedDocuments": 237
+}

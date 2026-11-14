@@ -1,0 +1,66 @@
+{
+  "counts": {
+    "applications": 60,
+    "appointmentSessions": 275,
+    "appointments": 285,
+    "assignedInterventions": 300,
+    "consolidatedMOVs": 35,
+    "coordinators": 4,
+    "diagnosticPlans": 60,
+    "groupInterventionDeliveries": 5,
+    "interventions": 4,
+    "movDocuments": 235,
+    "outcomeAssessments": 365,
+    "outcomeFollowUps": 190,
+    "participantMonthlyMetrics": 720,
+    "participants": 60,
+    "programs": 2,
+    "syntheticActors": 10,
+    "syntheticHistory": 725,
+    "twinCapacityCalendars": 4,
+    "users": 60,
+    "workflowQueries": 45
+  },
+  "datasetHash": "47b7733ad9986f9c4bd9d89fc81fb96125388ae37ef5fe30b7129cd5f3ded9cf",
+  "groupSessions": 5,
+  "lifecycle": {
+    "awaiting-participant-acceptance": 20,
+    "awaiting-participant-confirmation": 15,
+    "cancelled": 15,
+    "completed": 190,
+    "in-delivery": 15,
+    "needs-reassignment": 15,
+    "participant-declined": 15,
+    "participant-rejected": 15
+  },
+  "mode": "verify",
+  "outcomes": {
+    "achieved": 115,
+    "not_yet": 30,
+    "partial": 15
+  },
+  "pipeline": {
+    "awaiting_hod": 15,
+    "awaiting_smme": 15,
+    "cc_confirmed": 25,
+    "draft": 15,
+    "hod_approved": 32,
+    "in_pack": 34,
+    "invoice_redeemable": 33,
+    "me_validated": 36,
+    "queried": 15,
+    "rejected": 15
+  },
+  "preExistingRecordChanges": [],
+  "projectId": "lepharo-smart-inc",
+  "seedRecordDrift": [],
+  "seedRunId": "dtseed_20261009_v1",
+  "stuck": {
+    "assignments": 300,
+    "stuck": 248,
+    "stuckDelivery": 82,
+    "stuckEvidence": 166,
+    "unassigned": 0
+  },
+  "verifiedAt": "2026-10-09T15:08:19.965Z"
+}

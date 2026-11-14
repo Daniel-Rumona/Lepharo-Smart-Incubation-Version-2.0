@@ -24,8 +24,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.movStageReminderCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
+const dailyBrief_1 = require("./dailyBrief");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const reminderCadence_1 = require("./reminderCadence");
@@ -91,7 +92,7 @@ const STAGES = [
  * reminder phase is stored on the document itself so each phase fires once,
  * and restarts naturally when the document moves to the next status.
  */
-exports.movStageReminderCron = (0, scheduler_1.onSchedule)({
+exports.movStageReminderCron = (0, cronHeartbeat_1.scheduledJob)("movStageReminderCron", {
     region: "us-central1",
     schedule: "20 8 * * *",
     timeZone: "Africa/Johannesburg",
@@ -176,8 +177,17 @@ exports.movStageReminderCron = (0, scheduler_1.onSchedule)({
             const text = `${items.length} ${noun}${items.length === 1 ? " is" : "s are"} waiting for ${stage.owner} action${where} ` +
                 `(oldest: ${oldest} day${oldest === 1 ? "" : "s"}). Please review ${items.length === 1 ? "it" : "them"} in the system.`;
             const content = (0, emailShared_1.buildPackReminderEmail)(stage.owner, text, url);
+            // People on daily digest get this in their morning brief instead.
+            const emailNow = await (0, dailyBrief_1.holdForDigest)(emails, {
+                category: "mov",
+                title: `${items.length} ${noun}${items.length === 1 ? "" : "s"} waiting for ${stage.owner}${where}`,
+                detail: `Oldest: ${oldest} day${oldest === 1 ? "" : "s"}`,
+                link: stage.path,
+                dedupeKey: `stage:${stage.status}:${where}`,
+            });
             try {
-                await (0, emailShared_1.sendStatusChangeNotification)(emails, content.subject, content.html, content.text);
+                if (emailNow.length)
+                    await (0, emailShared_1.sendStatusChangeNotification)(emailNow, content.subject, content.html, content.text);
             }
             catch (error) {
                 logger.error("movStageReminderCron.emailFailed", { owner: stage.owner, error: String(error) });

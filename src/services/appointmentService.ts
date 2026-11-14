@@ -102,7 +102,6 @@ export const getAppointmentDeclineReason = (
 
 export const getAppointmentAssigneeRole = (appointment?: AppointmentRecord | null) => {
     const role = normalizeStatus(appointment?.assigneeRole || '')
-    if (['consultant', 'project-manager', 'projectmanager'].includes(role)) return 'coordinator'
     return role || 'coordinator'
 }
 

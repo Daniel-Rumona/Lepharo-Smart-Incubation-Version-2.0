@@ -237,3 +237,43 @@ html[data-theme="dark"] .cs {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* Onboarding compliance and its monthly chart, side by side from tablet width. */
+.cs-pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+}
+
+@media (min-width: 992px) {
+    .cs-pair {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+    }
+
+    .cs-pair > .qtx-motion-card,
+    .cs-pair > .qtx-motion-card > .ant-card {
+        height: 100%;
+    }
+
+    /* The chart card grows to the onboarding card's height, and its chart with it. */
+    .cs-pair > .qtx-motion-card > .ant-card {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .cs-pair > .qtx-motion-card > .ant-card > .ant-card-body {
+        flex: 1;
+        min-height: 0;
+    }
+
+    .cs-pair .cs-trend {
+        height: 100%;
+        min-height: 260px;
+    }
+
+    /* Highcharts' container: with no chart height set, the chart takes this one. */
+    .cs-pair .cs-trend > div {
+        height: 100%;
+    }
+}

@@ -1,6 +1,6 @@
 // Which steps the first-time setup wizard shows, decided in one place.
 
-export type WelcomeRole = 'incubatee' | 'director' | 'system_admin' | 'consultant' | 'operations' | 'unknown' | string
+export type WelcomeRole = 'incubatee' | 'director' | 'system_admin' | 'operations' | 'unknown' | string
 
 export type WelcomeStepKey =
     | 'welcome'
@@ -21,9 +21,9 @@ export function mustChangePasswordFor(flag: unknown, role: WelcomeRole): boolean
 }
 
 /**
- * A person on a default password sees ONLY the password step, whatever their
- * role. The rest of the setup (signature, POPIA, WhatsApp and so on) is not
- * dropped: it appears the next time they sign in, once the password is safe.
+ * A person on a default password sees ONLY the password step first, whatever
+ * their role. The rest of the setup (signature, POPIA and so on) is not dropped:
+ * the wizard carries on into it in the same visit once the password is saved.
  *
  * Everyone signs POPIA, and the signature comes first because signing POPIA
  * places it on the document.

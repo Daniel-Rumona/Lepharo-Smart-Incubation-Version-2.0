@@ -618,11 +618,14 @@ const ReportingDashboard: React.FC = () => {
             );
         }, [scopedRows, dateRange]);
 
+    // Intervention Health follows the reporting period like the rest of the
+    // page: interventions assigned or completed in the period, and how many
+    // of them are done.
     const neededTotal =
-        scopedRows.length;
+        filteredRows.length;
 
     const completedTotal =
-        scopedRows.filter(
+        filteredRows.filter(
             isReportCompleted
         ).length;
 
@@ -1069,6 +1072,7 @@ const ReportingDashboard: React.FC = () => {
                         >
                             <MilestoneJourneyButton
                                 scope="operations"
+                                dateRange={dateRange}
                                 departmentId={journeyDepartmentIds[0]}
                                 departmentIds={journeyDepartmentIds}
                                 programId={

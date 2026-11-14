@@ -1039,9 +1039,11 @@ const EmployeePerformancePage: React.FC = () => {
             }
         })
 
-    const emptyText = canSeeAll
-        ? 'No employees match these filters.'
-        : 'Nobody reports to you yet. HR sets line managers on the Employees page.'
+    // Only someone with direct reports has a team; everyone else sees their own record.
+    const hasReports = employees.some(emp => !isSelf(emp) && emp.lineManagerId === myUid)
+    const scopeLabel = canSeeAll ? 'All employees' : hasReports ? 'My team' : 'My record'
+
+    const emptyText = canSeeAll ? 'No employees match these filters.' : 'Nothing matches these filters.'
 
     const roleLine = (row: any) =>
         [row.position, displayRole(row.role)]
@@ -1189,10 +1191,10 @@ const EmployeePerformancePage: React.FC = () => {
                         loading,
                         icon: <TeamOutlined />,
                         tone: 'accent',
-                        title: canSeeAll ? 'Employees' : 'My Team',
+                        title: canSeeAll ? 'Employees' : hasReports ? 'My Team' : 'My Record',
                         value: metrics.total,
-                        subtitle: canSeeAll ? 'All staff in IPM' : 'You and your direct reports',
-                        mobileSubtitle: canSeeAll ? 'All staff' : 'You and your team',
+                        subtitle: canSeeAll ? 'All staff in IPM' : hasReports ? 'You and your direct reports' : 'Your own performance',
+                        mobileSubtitle: canSeeAll ? 'All staff' : hasReports ? 'You and your team' : 'Just you',
                         onClick: () => setFocus('all')
                     },
                     {
@@ -1301,7 +1303,7 @@ const EmployeePerformancePage: React.FC = () => {
                             <Space wrap>
                                 {isMobile ? null : (
                                     <Tag color={canSeeAll ? 'blue' : 'purple'} style={{ borderRadius: 999, margin: 0 }}>
-                                        {canSeeAll ? 'All employees' : 'My team'}
+                                        {scopeLabel}
                                     </Tag>
                                 )}
                                 <Tooltip title='Export CSV'>

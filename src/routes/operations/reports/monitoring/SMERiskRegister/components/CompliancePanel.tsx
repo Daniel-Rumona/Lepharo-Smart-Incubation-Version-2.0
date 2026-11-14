@@ -1,19 +1,12 @@
-import {
-    Empty,
-    Progress,
-    Space,
-    Tag,
-    Typography,
-    theme
-} from 'antd'
+import { Empty, Progress, Space, Tag, Typography, theme } from 'antd'
 import {
     CheckCircleOutlined,
+    ClockCircleOutlined,
     CloseCircleOutlined,
-    FileSearchOutlined,
     FileTextOutlined
 } from '@ant-design/icons'
 
-import type { SMERow } from '../types'
+import type { ComplianceItemStatus, SMERow } from '../types'
 
 const { Text } = Typography
 
@@ -21,133 +14,40 @@ type Props = {
     row: SMERow
 }
 
-type DocumentRow = {
-    key: string
-    title: string
-    status: string
+const STATUS_META: Record<ComplianceItemStatus, { label: string; color: string; order: number }> = {
+    missing: { label: 'Missing', color: 'red', order: 0 },
+    expired: { label: 'Expired', color: 'volcano', order: 1 },
+    rejected: { label: 'Rejected', color: 'red', order: 2 },
+    queried: { label: 'Queried', color: 'gold', order: 3 },
+    awaiting_review: { label: 'Awaiting review', color: 'blue', order: 4 },
+    complete: { label: 'Complete', color: 'green', order: 5 }
 }
 
-const normalizeDocuments = (row: SMERow): DocumentRow[] => {
-    const rawRow = row as any
-
-    const candidates = [
-        rawRow.complianceDocuments,
-        rawRow.documents,
-        rawRow.documentStatuses,
-        rawRow.requiredDocuments
-    ]
-
-    const list = candidates.find(Array.isArray)
-
-    if (!Array.isArray(list)) return []
-
-    return list.map((item: any, index: number) => ({
-        key: String(
-            item?.id ||
-                item?.key ||
-                item?.requirementId ||
-                index
-        ),
-        title: String(
-            item?.title ||
-                item?.name ||
-                item?.documentName ||
-                item?.requirementTitle ||
-                `Document ${index + 1}`
-        ),
-        status: String(
-            item?.status ||
-                item?.state ||
-                item?.reviewStatus ||
-                (item?.completed ? 'complete' : 'missing')
-        ).toLowerCase()
-    }))
-}
-
-const statusColor = (status: string) => {
-    if (
-        status.includes('complete') ||
-        status.includes('approved') ||
-        status.includes('accepted')
-    ) {
-        return 'green'
-    }
-
-    if (
-        status.includes('reject') ||
-        status.includes('invalid')
-    ) {
-        return 'red'
-    }
-
-    if (
-        status.includes('quer') ||
-        status.includes('review') ||
-        status.includes('pending')
-    ) {
-        return 'gold'
-    }
-
-    return 'default'
-}
-
+/** The SME's compliance documents: counts, then each document, the ones needing action first. */
 export default function CompliancePanel({ row }: Props) {
     const { token } = theme.useToken()
 
-    const completed = Number(row.docsCompleted || 0)
     const total = Number(row.docsTotal || 0)
-    const missing = Math.max(0, total - completed)
-    const queried = Number(row.docsQueried || 0)
-    const rejected = Number(row.docsRejected || 0)
+    const completed = Number(row.docsCompleted || 0)
+    const missing = Number(row.docsMissing || 0)
+    const expired = Number(row.docsExpired || 0)
+    const queriedOrRejected = Number(row.docsQueried || 0) + Number(row.docsRejected || 0)
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0
 
-    const documents = normalizeDocuments(row)
-
-    const percent =
-        total > 0
-            ? Math.round((completed / total) * 100)
-            : 0
+    const documents = [...(row.complianceItems ?? [])].sort(
+        (a, b) => STATUS_META[a.status].order - STATUS_META[b.status].order || a.title.localeCompare(b.title)
+    )
 
     const cards = [
-        {
-            label: 'Complete',
-            value: completed,
-            icon: <CheckCircleOutlined />,
-            color: token.colorSuccess
-        },
-        {
-            label: 'Outstanding',
-            value: missing,
-            icon: <FileTextOutlined />,
-            color: token.colorWarning
-        },
-        {
-            label: 'Queried',
-            value: queried,
-            icon: <FileSearchOutlined />,
-            color: token.colorInfo
-        },
-        {
-            label: 'Rejected',
-            value: rejected,
-            icon: <CloseCircleOutlined />,
-            color: token.colorError
-        }
+        { label: 'Complete', value: completed, icon: <CheckCircleOutlined />, color: token.colorSuccess },
+        { label: 'Missing', value: missing, icon: <FileTextOutlined />, color: token.colorError },
+        { label: 'Expired', value: expired, icon: <ClockCircleOutlined />, color: token.colorWarning },
+        { label: 'Queried or rejected', value: queriedOrRejected, icon: <CloseCircleOutlined />, color: token.colorInfo }
     ]
 
     return (
-        <Space
-            direction="vertical"
-            size={14}
-            style={{ width: '100%' }}
-        >
-            <div
-                style={{
-                    display: 'grid',
-                    gridTemplateColumns:
-                        'repeat(4, minmax(0, 1fr))',
-                    gap: 8
-                }}
-            >
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
                 {cards.map(card => (
                     <div
                         key={card.label}
@@ -156,47 +56,21 @@ export default function CompliancePanel({ row }: Props) {
                             border: `1px solid ${token.colorBorderSecondary}`,
                             borderRadius: 11,
                             padding: 11,
-                            background:
-                                token.colorFillQuaternary
+                            background: token.colorFillQuaternary
                         }}
                     >
                         <Space size={7}>
-                            <span
-                                style={{
-                                    color: card.color,
-                                    display: 'inline-flex'
-                                }}
-                            >
-                                {card.icon}
-                            </span>
-                            <Text
-                                type="secondary"
-                                style={{ fontSize: 11 }}
-                            >
+                            <span style={{ color: card.color, display: 'inline-flex' }}>{card.icon}</span>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
                                 {card.label}
                             </Text>
                         </Space>
-
-                        <div
-                            style={{
-                                marginTop: 6,
-                                fontWeight: 700,
-                                fontSize: 18
-                            }}
-                        >
-                            {card.value}
-                        </div>
+                        <div style={{ marginTop: 6, fontWeight: 700, fontSize: 18 }}>{card.value}</div>
                     </div>
                 ))}
             </div>
 
-            <div
-                style={{
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: 11,
-                    padding: 12
-                }}
-            >
+            <div style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 11, padding: 12 }}>
                 <div
                     style={{
                         display: 'flex',
@@ -206,106 +80,52 @@ export default function CompliancePanel({ row }: Props) {
                         marginBottom: 7
                     }}
                 >
-                    <Text strong>
-                        Compliance documents
-                    </Text>
+                    <Text strong>Compliance documents</Text>
                     <Text type="secondary">
                         {completed}/{total} complete
                     </Text>
                 </div>
-
-                <Progress
-                    percent={percent}
-                    status={
-                        missing > 0 ? 'active' : 'success'
-                    }
-                />
+                <Progress percent={percent} status={completed < total ? 'active' : 'success'} />
             </div>
 
-            {documents.length > 0 ? (
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns:
-                            'repeat(2, minmax(0, 1fr))',
-                        gap: 8
-                    }}
-                >
+            {documents.length ? (
+                <div style={{ display: 'grid', gap: 8 }}>
                     {documents.map(document => (
                         <div
                             key={document.key}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent:
-                                    'space-between',
-                                gap: 8,
-                                padding: '9px 11px',
+                                justifyContent: 'space-between',
+                                gap: 10,
+                                padding: '9px 12px',
                                 border: `1px solid ${token.colorBorderSecondary}`,
                                 borderRadius: 10
                             }}
                         >
-                            <Text
-                                ellipsis={{
-                                    tooltip: document.title
-                                }}
-                                style={{
-                                    minWidth: 0
-                                }}
-                            >
-                                {document.title}
-                            </Text>
-
+                            <div style={{ minWidth: 0 }}>
+                                <Text strong ellipsis={{ tooltip: document.title }} style={{ display: 'block' }}>
+                                    {document.title}
+                                </Text>
+                                {document.detail ? (
+                                    <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                                        {document.detail}
+                                    </Text>
+                                ) : null}
+                            </div>
                             <Tag
-                                color={statusColor(
-                                    document.status
-                                )}
-                                style={{
-                                    marginInlineEnd: 0,
-                                    borderRadius: 999,
-                                    flex: '0 0 auto'
-                                }}
+                                color={STATUS_META[document.status].color}
+                                style={{ marginInlineEnd: 0, borderRadius: 999, flex: '0 0 auto' }}
                             >
-                                {document.status ||
-                                    'Unknown'}
+                                {STATUS_META[document.status].label}
                             </Tag>
                         </div>
                     ))}
                 </div>
-            ) : missing > 0 ? (
-                <div
-                    style={{
-                        padding: 12,
-                        borderRadius: 10,
-                        background: token.colorWarningBg,
-                        border: `1px solid ${token.colorWarningBorder}`
-                    }}
-                >
-                    <Text>
-                        {missing} document
-                        {missing === 1 ? '' : 's'}{' '}
-                        outstanding.
-                    </Text>
-                    <Text
-                        type="secondary"
-                        style={{
-                            display: 'block',
-                            marginTop: 3,
-                            fontSize: 12
-                        }}
-                    >
-                        The current SME risk row contains the
-                        compliance counts but not the individual
-                        document names. Once document-level
-                        compliance data is included on the row,
-                        this section will list exactly which
-                        documents are missing, queried or rejected.
-                    </Text>
-                </div>
             ) : (
                 <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No compliance document detail is available."
+                    description="No compliance documents are recorded for this SME."
                 />
             )}
         </Space>

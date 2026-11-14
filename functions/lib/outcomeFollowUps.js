@@ -24,10 +24,10 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onOutcomeFollowUpAnswered = exports.outcomeFollowUpReminderCron = exports.onAssignmentConfirmedScheduleFollowUp = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const syntheticData_1 = require("./syntheticData");
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 const workflowEmailFunctions_1 = require("./workflowEmailFunctions");
 const whatsappCheckBack_1 = require("./whatsappCheckBack");
@@ -73,7 +73,16 @@ async function resolveAssignee(assignment) {
     }
     return { email: email.includes("@") ? email : "", name: name || "Facilitator" };
 }
-async function findIncubateeUid(email) {
+/** The SME's login: users.participantId first (docs/sme-identity-migration-plan.md). */
+async function findIncubateeUid(participantId, email) {
+    const id = clean(participantId);
+    if (id) {
+        const linked = await emailShared_1.db.collection("users").where("participantId", "==", id).limit(5).get();
+        const sme = linked.docs.find((doc) => lower(doc.data().role) === "incubatee");
+        if (sme)
+            return sme.id;
+    }
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
     if (!email)
         return null;
     const snap = await emailShared_1.db.collection("users").where("email", "==", lower(email)).limit(5).get();
@@ -140,7 +149,7 @@ const smeActions = () => [
     { actionId: "no", label: "No", style: "danger", patch: { smeAnswer: "no" } },
 ];
 /** 2. Daily reminders. */
-exports.outcomeFollowUpReminderCron = (0, scheduler_1.onSchedule)({
+exports.outcomeFollowUpReminderCron = (0, cronHeartbeat_1.scheduledJob)("outcomeFollowUpReminderCron", {
     region: REGION,
     schedule: "30 7 * * *",
     timeZone: "Africa/Johannesburg",
@@ -181,7 +190,7 @@ exports.outcomeFollowUpReminderCron = (0, scheduler_1.onSchedule)({
             programId: f.programId || null,
             actionTarget: { collection: "outcomeFollowUps", docId: snap.id },
             actions: facilitatorActions(),
-            link: "/coordinator/check-backs",
+            link: "/check-backs",
             reminderNumber: sent,
             createdAt: new Date(),
             readBy: {},
@@ -193,7 +202,7 @@ exports.outcomeFollowUpReminderCron = (0, scheduler_1.onSchedule)({
             notificationIds: emailShared_1.admin.firestore.FieldValue.arrayUnion(notificationRef.id),
         };
         if (f.smeCheckIn === true && f.smeNotified !== true && !f.smeAnswer) {
-            const smeUid = await findIncubateeUid(f.participantEmail);
+            const smeUid = await findIncubateeUid(f.participantId, f.participantEmail);
             const smeRef = await emailShared_1.db.collection("notifications").add({
                 type: "outcome_follow_up_sme",
                 message: `A quick question about ${clean(f.interventionTitle)}: are you still using what you put in place?`,
@@ -227,7 +236,7 @@ exports.outcomeFollowUpReminderCron = (0, scheduler_1.onSchedule)({
                     recipientIds: hodUids,
                     participantId: clean(f.participantId),
                     programId: f.programId || null,
-                    link: "/coordinator/check-backs",
+                    link: "/check-backs",
                     createdAt: new Date(),
                     readBy: {},
                 });

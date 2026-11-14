@@ -1,3 +1,4 @@
+import { useDataColor } from '@/lib/chartColors'
 import React, { useMemo } from 'react'
 import {
     Alert,
@@ -78,6 +79,8 @@ const HseJobsParticipantsCard: React.FC<Props> = ({
 }) => {
     const navigate = useNavigate()
     const { token } = theme.useToken()
+    // Neutral data colour: the accent unless it would read as a judgement (crimson).
+    const dataColour = useDataColor()
 
     const {
         loading,
@@ -197,12 +200,12 @@ const HseJobsParticipantsCard: React.FC<Props> = ({
                     type: 'areaspline',
                     name: 'Active jobs',
                     data: trendData.map(point => point.totalJobs),
-                    color: token.colorPrimary,
+                    color: dataColour,
                     fillColor: {
                         linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
                         stops: [
-                            [0, Highcharts.color(token.colorPrimary).setOpacity(0.28).get('rgba')],
-                            [1, Highcharts.color(token.colorPrimary).setOpacity(0).get('rgba')]
+                            [0, Highcharts.color(dataColour).setOpacity(0.28).get('rgba')],
+                            [1, Highcharts.color(dataColour).setOpacity(0).get('rgba')]
                         ]
                     },
                     threshold: null,
@@ -211,7 +214,7 @@ const HseJobsParticipantsCard: React.FC<Props> = ({
                 }
             ]
         }),
-        [token, trendData]
+        [token, trendData, dataColour]
     )
 
     const renderDeltaTag = (
@@ -308,6 +311,18 @@ const HseJobsParticipantsCard: React.FC<Props> = ({
                                             fontWeight: 750
                                         }}
                                     />
+
+                                    {/* Same labels as the Jobs Tracker tiles, so the two read alike. */}
+                                    <Text
+                                        type="secondary"
+                                        style={{ fontSize: 12 }}
+                                        title={`Sustained: original staff still employed, out of ${totals.startingHeadcount} at joining. Created: jobs above that starting headcount.`}
+                                    >
+                                        <Text strong>{totals.createdInMonth}</Text> created in {currentMonth.format('MMM YYYY')} ·{' '}
+                                        <Text strong>{totals.createdJobs}</Text> since joining
+                                        <br />
+                                        <Text strong>{totals.sustainedJobs}</Text> sustained of {totals.startingHeadcount} at joining
+                                    </Text>
 
                                     <Space size={7} wrap>
                                         {renderDeltaTag(totalJobsDelta)}

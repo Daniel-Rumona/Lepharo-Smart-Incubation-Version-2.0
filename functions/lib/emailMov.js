@@ -24,14 +24,15 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.movReminderCron = void 0;
+const cronHeartbeat_1 = require("./cronHeartbeat");
+const dailyBrief_1 = require("./dailyBrief");
 const logger = __importStar(require("firebase-functions/logger"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
 /**
  * One daily scheduler replaces the former HOD, CC and M&E scheduler resources.
  * HOD reminders run daily, with CC and M&E reminders added on the 4th and 7th.
  */
-exports.movReminderCron = (0, scheduler_1.onSchedule)({ region: "us-central1", schedule: "0 8 * * *", timeZone: "Africa/Johannesburg" }, async () => {
+exports.movReminderCron = (0, cronHeartbeat_1.scheduledJob)("movReminderCron", { region: "us-central1", schedule: "0 8 * * *", timeZone: "Africa/Johannesburg" }, async () => {
     const dayOfMonth = Number(new Intl.DateTimeFormat("en-CA", {
         timeZone: "Africa/Johannesburg",
         day: "2-digit",
@@ -65,7 +66,16 @@ exports.movReminderCron = (0, scheduler_1.onSchedule)({ region: "us-central1", s
         if (!recipients.length)
             continue;
         const content = (0, emailShared_1.buildPackReminderEmail)(job.type, job.message, job.url);
-        await (0, emailShared_1.sendStatusChangeNotification)(recipients, content.subject, content.html, content.text);
+        // People on daily digest get this in their morning brief instead.
+        const emailNow = await (0, dailyBrief_1.holdForDigest)(recipients, {
+            category: "mov",
+            title: `MOV packs: ${job.type} action this month`,
+            detail: job.message,
+            link: job.url,
+            dedupeKey: `pack:${job.type}`,
+        });
+        if (emailNow.length)
+            await (0, emailShared_1.sendStatusChangeNotification)(emailNow, content.subject, content.html, content.text);
         logger.info("movReminderCron.sent", {
             reminderType: job.type,
             count: recipients.length,

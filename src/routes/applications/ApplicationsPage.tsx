@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Col, Drawer, Empty, Row, message } from 'antd'
 import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, FileTextOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
+import { useSearchParams } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
@@ -57,7 +58,7 @@ const ApplicationsPage: React.FC = () => {
     const scope = {
         activeProgramId,
         isAllPrograms,
-        isRestrictedRole: role === 'projectadmin' || role === 'projectmanager',
+        isRestrictedRole: role === 'projectadmin',
         isControlAccount: isControlAccountEmail(user?.email)
     }
     const { applications, loading, refreshOne, questionMaps } = useApplications(scope)
@@ -100,6 +101,20 @@ const ApplicationsPage: React.FC = () => {
         beforeStatus.forEach(a => c[a.applicationStatus]++)
         return c
     }, [beforeStatus])
+
+    // ?app=<id> (from escalation emails and notifications) opens that application once it has loaded.
+    const [searchParams, setSearchParams] = useSearchParams()
+    const linkedAppId = searchParams.get('app')
+    useEffect(() => {
+        if (!linkedAppId || !applications.some(a => a.id === linkedAppId)) return
+        setFilters(DEFAULT_FILTERS)
+        setSelectedId(linkedAppId)
+        if (isMobile) setDrawerOpen(true)
+        setSearchParams(params => {
+            params.delete('app')
+            return params
+        }, { replace: true })
+    }, [linkedAppId, applications, isMobile, setSearchParams])
 
     // Desktop always shows a detail: keep the selection while it's visible, otherwise take the first row.
     useEffect(() => {

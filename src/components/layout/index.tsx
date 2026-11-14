@@ -207,7 +207,7 @@ const PRIMARY_NAV_KEYS: Partial<Record<UserRole, string[]>> = {
     director: ["dashboard", "kpis-tracker", "quality-objectives", "reports"],
     incubatee: ["dashboard", "interventions-tracker", "appointments", "roadmap"],
     receptionist: ["dashboard", "inquiries", "follow-ups", "calendar"],
-    training_sme: ["dashboard", "agenda", "courses", "people"],
+    training_sme: ["dashboard", "agenda", "surveys", "courses", "people"],
 };
 
 // Bottom-bar names for incubatee tabs whose menu label is too long to sit under an icon.
@@ -221,6 +221,8 @@ const INCUBATEE_BOTTOM_NAV_LABELS: Record<string, string> = {
 const OPERATIONS_PRIMARY_KEYS:Partial<Record<DepartmentRoleKey, string[]>> = {
     hr: ["dashboard", "sme-incubatees", "employees", "leave-requests", "reports"],
     monitoring: ["dashboard", "sme-incubatees", "kpis-tracker", "movs", "reports"],
+    financialCompliance: ["dashboard", "finance", "sme-incubatees", "assignments", "appointments", "reports"],
+    hse: ["dashboard", "jobs", "sme-incubatees", "assignments", "appointments", "reports"],
     inhouseFinance: ["dashboard", "sme-incubatees", "requested", "invoices", "reported"],
     stakeholder: ["dashboard", "sme-incubatees", "engagement", "reports", "timesheet"],
     training: ["dashboard", "sme-incubatees", "course-builder", "appointments", "reports"],
@@ -228,6 +230,16 @@ const OPERATIONS_PRIMARY_KEYS:Partial<Record<DepartmentRoleKey, string[]>> = {
 };
 
 const DEFAULT_OPERATIONS_PRIMARY_KEYS = ["dashboard", "sme-incubatees", "assignments", "appointments", "reports"];
+
+// Desktop pill count: five for project admins and operations (a department
+// list may run longer, e.g. Financial Compliance adds Finance), four otherwise.
+const desktopPrimaryLimit = (role?: string | null, departmentRole?: DepartmentRoleKey | null) => {
+    if (role === "operations") {
+        const keys = (departmentRole && OPERATIONS_PRIMARY_KEYS[departmentRole]) || DEFAULT_OPERATIONS_PRIMARY_KEYS;
+        return Math.max(5, keys.length);
+    }
+    return role === "projectadmin" ? 5 : 4;
+};
 
 const NAV_DESCRIPTIONS: Record<string, string> = {
     dashboard: "See your priorities, progress, and the work that needs attention.",
@@ -363,12 +375,15 @@ const TRAINING_ONLY_PROGRAM_ROUTES = [
 
 // Trainings sit in the picker only on pages that understand a training scope:
 // the training area, appointments (sessions are booked against a training's
-// plan), reports, participants and compliance. Elsewhere it lists programmes only.
+// plan), reports, participants, compliance and surveys (sent to a training's
+// SMEs). Elsewhere it lists programmes only.
 const isTrainingScopeRoute = (pathname: string) => {
     const path = pathname.replace(/\/+$/, "") || "/";
     return (
         path === "/operations/training" ||
         path.startsWith("/operations/training/") ||
+        path === "/operations/surveys" ||
+        path.startsWith("/operations/surveys/") ||
         path === "/interventions/appointments" ||
         path === "/participants" ||
         path === "/compliance" ||
@@ -1095,6 +1110,13 @@ export const CustomLayout: React.FC = () => {
                         label: "Control Tower",
                         icon: <RadarChartOutlined />,
                     },
+                    {
+                        // Each SME's digital twin opens from its row here.
+                        key: "risk",
+                        to: "/participants/risk",
+                        label: "Risk Register",
+                        icon: <WarningOutlined />,
+                    },
                 ],
             },
             {
@@ -1313,6 +1335,13 @@ export const CustomLayout: React.FC = () => {
                         to: "/check-backs",
                         label: "Check-backs",
                         icon: <CheckSquareOutlined />,
+                    },
+                    {
+                        // Inquiry follow-ups reception has escalated to this coordinator's department.
+                        key: "escalated-follow-ups",
+                        to: "/coordinator/follow-ups",
+                        label: "Escalated Follow-ups",
+                        icon: <ClockCircleOutlined />,
                     },
                 ],
             },
@@ -1552,6 +1581,12 @@ export const CustomLayout: React.FC = () => {
                 icon: <ReadOutlined />,
             },
             {
+                key: "surveys",
+                to: "/training/surveys",
+                label: "Surveys",
+                icon: <FormOutlined />,
+            },
+            {
                 key: "people",
                 to: "/training/people",
                 label: "People",
@@ -1672,6 +1707,13 @@ export const CustomLayout: React.FC = () => {
                 to: "/operations",
                 label: "Home",
                 icon: <HomeOutlined />,
+            },
+            // Only departments with "jobs" in OPERATIONS_ACCESS see this (HSE).
+            {
+                key: "jobs",
+                to: "/metrics/jobs",
+                label: "Jobs Tracker",
+                icon: <ShopOutlined />,
             },
             {
                 key: "proposals",
@@ -2874,7 +2916,7 @@ export const CustomLayout: React.FC = () => {
         // director's; an employee has the dashboard and their agenda.
         if (role === "training_sme") {
             return isTrainingEmployee
-                ? baseMenus.filter((m) => m.key === "dashboard" || m.key === "agenda")
+                ? baseMenus.filter((m) => m.key === "dashboard" || m.key === "agenda" || m.key === "surveys")
                 : baseMenus;
         }
 
@@ -2984,7 +3026,7 @@ export const CustomLayout: React.FC = () => {
             });
         }
 
-        return selected.slice(0, role === "projectadmin" || role === "operations" ? 5 : 4);
+        return selected.slice(0, desktopPrimaryLimit(role, departmentRole));
     }, [role, departmentRole, flatNavigation]);
 
     const visiblePrimaryDestinations = useMemo(() => {
@@ -2993,10 +3035,10 @@ export const CustomLayout: React.FC = () => {
         // Project admins (Analytics) and operations (Incubatees) get a fifth
         // topbar pill; the mobile bottom bar stays at four, with the fifth
         // reachable from More.
-        const desktopLimit = role === "projectadmin" || role === "operations" ? 5 : 4;
+        const desktopLimit = desktopPrimaryLimit(role, departmentRole);
         const limit = isMobile ? 4 : isCompactHeader ? 3 : desktopLimit;
         return primaryDestinations.slice(0, limit);
-    }, [primaryDestinations, isMobile, isCompactHeader, role]);
+    }, [primaryDestinations, isMobile, isCompactHeader, role, departmentRole]);
 
     // Destinations that belong to a menu group (e.g. Analytics, Training)
     // collapse into a single dropdown pill in the primary nav whenever more
@@ -3044,7 +3086,7 @@ export const CustomLayout: React.FC = () => {
       Routes that read the reporting period directly rather than through a
       department dashboard.
     */
-    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports", "/system_admin", "/system_admin/usage", "/system_admin/email"];
+    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports", "/system_admin", "/system_admin/usage", "/system_admin/email", "/finance"];
 
     /*
       Extend one of these lists as each page is migrated. A page that consumes
@@ -3608,7 +3650,10 @@ export const CustomLayout: React.FC = () => {
                                         onClick={() => primaryDestinations[0] && navigate(primaryDestinations[0].route)}
                                         aria-label="Go to dashboard"
                                     >
-                                        <img src="/assets/images/lepharo.png" alt="Lepharo" />
+                                        <img
+                                            src={isMobile ? "/icons/mark.png" : "/assets/images/lepharo.png"}
+                                            alt="Lepharo"
+                                        />
                                     </button>
 
                                     {!isMobile && (

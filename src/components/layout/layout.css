@@ -540,19 +540,20 @@ html[data-theme="dark"] .workspace-icon-button {
     }
 
     .workspace-topbar-mobile {
-        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-columns: 34px minmax(0, 1fr);
         grid-template-areas:
             "brand actions"
             "nav nav";
-        gap: 5px;
-        padding: 4px 5px;
+        gap: 8px;
+        padding: 4px 6px;
         border-radius: 14px;
     }
 
     .workspace-topbar-mobile .workspace-brand {
         grid-area: brand;
+        width: 34px;
         height: 32px;
-        padding: 3px 5px;
+        padding: 3px;
     }
 
     .workspace-topbar-mobile .workspace-primary-nav {
@@ -564,6 +565,11 @@ html[data-theme="dark"] .workspace-icon-button {
         grid-area: actions;
         overflow-x: auto;
         scrollbar-width: none;
+        /* overflow-x also clips vertically, so leave room for count badges
+           that sit above and right of the icon buttons. */
+        gap: 5px;
+        padding: 7px 0 3px;
+        margin: -7px 0 -3px;
     }
 
     .workspace-topbar-mobile .workspace-topbar-actions::-webkit-scrollbar {
@@ -575,14 +581,16 @@ html[data-theme="dark"] .workspace-icon-button {
     .workspace-topbar-mobile .workspace-program-control {
         width: auto;
         min-width: 0;
-        max-width: 142px;
-        flex: 0 1 142px;
-        padding-inline: 7px;
+        max-width: 200px;
+        flex: 1 1 200px;
+        margin-right: 3px;
+        padding-inline: 8px;
     }
 
     .workspace-topbar-mobile .workspace-program-control .ant-select {
         min-width: 0;
-        max-width: 105px;
+        max-width: none;
+        flex: 1 1 auto;
     }
 
     .workspace-topbar.workspace-topbar-mobile.workspace-topbar-nonav.workspace-topbar-incubatee-mobile {
@@ -887,7 +895,7 @@ Shared by the staff workspace and the applicant portal. */
 
     /* The nav row is gone from the topbar on mobile — brand and actions only. */
     .workspace-topbar.workspace-topbar-nonav {
-        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-columns: 34px minmax(0, 1fr);
         grid-template-areas: "brand actions";
     }
 

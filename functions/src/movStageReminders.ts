@@ -1,5 +1,6 @@
+import { scheduledJob } from "./cronHeartbeat";
+import { holdForDigest } from "./dailyBrief";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { suppressRecordNotifications } from "./syntheticData";
 import {
   admin,
@@ -94,7 +95,7 @@ const STAGES: Stage[] = [
  * reminder phase is stored on the document itself so each phase fires once,
  * and restarts naturally when the document moves to the next status.
  */
-export const movStageReminderCron = onSchedule(
+export const movStageReminderCron = scheduledJob("movStageReminderCron",
   {
     region: "us-central1",
     schedule: "20 8 * * *",
@@ -186,9 +187,17 @@ export const movStageReminderCron = onSchedule(
           `${items.length} ${noun}${items.length === 1 ? " is" : "s are"} waiting for ${stage.owner} action${where} ` +
           `(oldest: ${oldest} day${oldest === 1 ? "" : "s"}). Please review ${items.length === 1 ? "it" : "them"} in the system.`;
         const content = buildPackReminderEmail(stage.owner, text, url);
+        // People on daily digest get this in their morning brief instead.
+        const emailNow = await holdForDigest(emails, {
+          category: "mov",
+          title: `${items.length} ${noun}${items.length === 1 ? "" : "s"} waiting for ${stage.owner}${where}`,
+          detail: `Oldest: ${oldest} day${oldest === 1 ? "" : "s"}`,
+          link: stage.path,
+          dedupeKey: `stage:${stage.status}:${where}`,
+        });
 
         try {
-          await sendStatusChangeNotification(emails, content.subject, content.html, content.text);
+          if (emailNow.length) await sendStatusChangeNotification(emailNow, content.subject, content.html, content.text);
         } catch (error) {
           logger.error("movStageReminderCron.emailFailed", { owner: stage.owner, error: String(error) });
         }

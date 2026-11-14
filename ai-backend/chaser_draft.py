@@ -13,14 +13,24 @@ from typing import Any, Optional
 
 CHASER_MARKER = "<<<CHASER_JSON>>>"
 CHASER_STAGES = ("awaiting_smme", "awaiting_hod", "queried", "awaiting_cc", "awaiting_me")
-# The people who can send reminders from the Control Tower (movReminders.canRemind); for
-# operations that is ROM and M&E only, which manageChaser checks.
+# The people who can send reminders from the Control Tower (movReminders.canRemind), and every head of
+# department: outside ROM and M&E only for their own department's queried MOVs, which manageChaser enforces.
 CHASER_ROLES = {"system_admin", "projectadmin", "operations"}
 MAX_TEXT = 120
 MAX_NAMES = 25
 
 
-def chaser_directive() -> str:
+def chaser_directive(department_only: bool = False) -> str:
+    """department_only: a head of department outside ROM and M&E, who chases only their own department's
+    queried MOVs (functions/src/chasersLogic.ts scopeToDepartment)."""
+    limit = (
+        """
+      This person is a head of department: they can only chase their own department's queried MOVs (the ones
+      waiting on a facilitator to fix what was queried), so always use "stage": "queried" and leave out
+      departmentName. If they ask to chase another stage, say they can chase their department's queried MOVs
+      and add no marker."""
+        if department_only else ""
+    )
     return f"""- If the person asks you to chase, follow up, push or get MOVs or MOV packs approved, confirmed or
       validated by a date (for example "get the MOVs waiting for HOD approval in Legal approved by Friday",
       "chase these by the 14th"), append after everything else, on its own new line, the marker {CHASER_MARKER}
@@ -33,7 +43,8 @@ def chaser_directive() -> str:
       coming Friday). When they say "these" about SMEs or MOVs in your previous answer, put those SME names in
       participantNames. Only set maxNudges if they say how many times. In the reply, say in one short sentence
       what you'll chase and by when, and that they can check the list and start it below; do not claim anything
-      has been sent. If they give no date, ask for one and add no marker."""
+      has been sent. A chaser is the way to act on such a request: add no proposal, task or other action
+      marker for it. If they give no date, ask for one and add no marker.{limit}"""
 
 
 def _text(value: Any) -> Optional[str]:

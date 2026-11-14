@@ -188,6 +188,20 @@ html[data-theme="dark"] .mv-flag.is-warning {
     width: 100%;
 }
 
+/* Phones: the main action takes its own row, and the rest never shrink below
+   their label (they wrap instead of running into each other). */
+@media (max-width: 767px) {
+    .mv-actions > .ant-btn,
+    .mv-actions > .ant-dropdown-trigger,
+    .mv-actions > .ant-upload-wrapper {
+        flex: 1 0 auto;
+    }
+
+    .mv-actions > .ant-btn-primary:first-child {
+        flex-basis: 100%;
+    }
+}
+
 .mv-facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import { Drawer, Row, Col, Segmented, Tag, Empty, Button, Grid } from 'antd'
-import { TeamOutlined, DollarCircleOutlined, UserOutlined, FileProtectOutlined, UsergroupAddOutlined, ThunderboltOutlined, LineChartOutlined } from '@ant-design/icons'
+import { Drawer, Row, Col, Segmented, Tag, Empty, Grid } from 'antd'
+import { TeamOutlined, DollarCircleOutlined, UserOutlined, FileProtectOutlined, UsergroupAddOutlined, ThunderboltOutlined, LineChartOutlined, RocketOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -15,6 +15,7 @@ import GapAnalysisViewModal from '@/routes/gap/view/GapModal'
 import { usePageGuides } from '@/components/guide-me'
 import TrainingSmesRepository from '@/components/trainings/TrainingSmesRepository'
 import { listTrainings as listTrainingsForRepository } from '@/components/trainings/trainingStorage'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { ALL_DEPTS, ComplianceBucket, InterventionBucket, SmeRow, cleanText, toDateSafe } from './participantsData'
 import { EditSmeModal } from './EditSmeModal'
 import { motion, useReducedMotion } from 'framer-motion'
@@ -30,6 +31,7 @@ import { DemographicsSection } from './DemographicsSection'
 import { PerformanceSection } from './PerformanceSection'
 import { InterventionsSection } from './InterventionsSection'
 import { ComplianceSection } from './ComplianceSection'
+import { ReadinessSection } from './ReadinessSection'
 import { DetailActions } from './DetailActions'
 import { MoaViewerModal } from './MoaViewerModal'
 import { DummySmeModal } from './DummySmeModal'
@@ -51,28 +53,28 @@ const SMEOverview: React.FC = () => {
     // SMEs here via a separate, self-contained view rather than mixed into
     // the incubatee table below, since training-sourced SMEs have none of
     // the intervention/KPI/compliance history that table assumes.
-    const [viewMode, setViewMode] = useState<'incubatees' | 'training'>('incubatees')
-    const [hasTrainingAccess, setHasTrainingAccess] = useState(false)
+    const [trainingIds, setTrainingIds] = useState<Set<string>>(() => new Set())
     const viewerRecord = user as Record<string, unknown> | null
     const viewerDepartmentId = String(viewerRecord?.departmentId || '').trim()
     const viewerIsCenterCoordinator = viewerRecord?.role === 'projectadmin'
     const viewerAssignedBranch = String(viewerRecord?.assignedBranch || '').trim()
+    // A training picked in the programme selector swaps this page for that
+    // training's SMEs. Training Academy and ROM (the recruitment department)
+    // staff can enrol SMEs there and correct their details; other departments
+    // the training shares with only view them.
+    const { roleOf } = useDepartmentRoles()
+    const viewerDepartmentRole = roleOf(viewerDepartmentId)
+    const managesTrainingSmes = viewerDepartmentRole === 'training' || viewerDepartmentRole === 'rom'
+    const activeTrainingId = activeProgramId && trainingIds.has(activeProgramId) ? activeProgramId : null
     useEffect(() => {
         let cancelled = false
         if (!viewerDepartmentId && !(viewerIsCenterCoordinator && viewerAssignedBranch)) return
         listTrainingsForRepository()
             .then((trainings) => {
                 if (cancelled) return
-                setHasTrainingAccess(
-                    trainings.some((t) => {
-                        const departmentGranted = t.access?.some((a) => a.departmentId === viewerDepartmentId && a.capabilities.includes('repository'))
-                        const coordinatorGranted =
-                            viewerIsCenterCoordinator && t.centerCoordinatorAccess && t.centers.some((c) => c.id === viewerAssignedBranch)
-                        return departmentGranted || coordinatorGranted
-                    })
-                )
+                setTrainingIds(new Set(trainings.map((t) => t.id)))
             })
-            .catch(() => setHasTrainingAccess(false))
+            .catch(() => setTrainingIds(new Set()))
         return () => {
             cancelled = true
         }
@@ -273,12 +275,13 @@ const SMEOverview: React.FC = () => {
                             className='ptx-sections'
                             block
                             value={segment}
-                            onChange={val => setSegment(val as 'demographics' | 'performance' | 'interventions' | 'compliance')}
+                            onChange={val => setSegment(val as SmeSection)}
                             options={[
                                 { label: <span data-guide='sme-demographics-tab'>Demographics</span>, value: 'demographics', icon: <UserOutlined /> },
                                 { label: <span data-guide='sme-performance-tab'>Performance</span>, value: 'performance', icon: <LineChartOutlined /> },
                                 { label: <span data-guide='sme-interventions-tab'>Interventions</span>, value: 'interventions', icon: <ThunderboltOutlined /> },
-                                { label: <span data-guide='sme-compliance-tab'>Compliance</span>, value: 'compliance', icon: <FileProtectOutlined /> }
+                                { label: <span data-guide='sme-compliance-tab'>Compliance</span>, value: 'compliance', icon: <FileProtectOutlined /> },
+                                { label: 'Readiness', value: 'readiness', icon: <RocketOutlined /> }
                             ]}
                         />
                         <div className='ws-detail-pane'>
@@ -326,6 +329,9 @@ const SMEOverview: React.FC = () => {
                                         isPhone={isPhone}
                                     />
                                 </div>}
+                                {segment === 'readiness' && <div className='ptx-section-pad'>
+                                    <ReadinessSection row={selectedRow} />
+                                </div>}
                             </motion.div>
                         </div>
                     </div>
@@ -334,18 +340,20 @@ const SMEOverview: React.FC = () => {
         )
     }
 
-    if (viewMode === 'training') {
+    // Same page shell as the incubatee workspace below.
+    if (activeTrainingId) {
         return (
-            <div
-                style={{
-                    padding: screens.xs ? 12 : screens.sm ? 16 : 20,
-                    minHeight: '100vh'
-                }}
-            >
+            <div className='ws-page'>
                 <Helmet>
                     <title>Training SMEs | Smart Incubation</title>
                 </Helmet>
-                <TrainingSmesRepository onBack={() => setViewMode('incubatees')} />
+                <TrainingSmesRepository
+                    key={activeTrainingId}
+                    trainingId={activeTrainingId}
+                    seesAll={viewerDepartmentRole === 'training'}
+                    canAdd={managesTrainingSmes}
+                    canEdit={managesTrainingSmes}
+                />
             </div>
         )
     }
@@ -355,12 +363,6 @@ const SMEOverview: React.FC = () => {
             <Helmet>
                 <title>SME Overview | Smart Incubation</title>
             </Helmet>
-
-            {hasTrainingAccess && (
-                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button onClick={() => setViewMode('training')}>View Training SMEs</Button>
-                </div>
-            )}
 
             <Row data-guide='sme-overview-metrics' gutter={[12, 12]} style={{ marginBottom: 12 }}>
                 {[
@@ -420,7 +422,7 @@ const SMEOverview: React.FC = () => {
                     onReportingRangeChange={setReportingRange}
                     canAdd={hasOnboardingAccess}
                     addDisabled={!activeProgramId || isAllPrograms}
-                    onAdd={() => navigate(`/operations/participants/new/${activeProgramId}`)}
+                    onAdd={() => navigate(`/participants/new/${activeProgramId}`)}
                     onImport={() => setImportOpen(true)}
                     canAddDummy={isQuantilytixViewer}
                     onAddDummy={() => setDummySmeModalVisible(true)}

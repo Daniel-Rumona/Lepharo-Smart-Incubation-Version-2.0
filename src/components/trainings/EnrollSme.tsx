@@ -1,37 +1,39 @@
-import React, { useEffect, useState } from "react";
-import { App, Button, Dropdown, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography, theme } from "antd";
-import { DeleteOutlined, EditOutlined, KeyOutlined, MoreOutlined, PlusOutlined, SafetyCertificateOutlined, TeamOutlined, UserAddOutlined, UserOutlined, CheckCircleOutlined, ClockCircleOutlined, StopOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
+import React, { useEffect, useMemo, useState } from "react";
+import { App, Badge, Button, Drawer, Dropdown, Empty, Grid, Input, Modal, Pagination, Popover, Segmented, Space, Tag, Tooltip, Typography, theme } from "antd";
+import {
+    CheckCircleOutlined,
+    ClockCircleOutlined,
+    DeleteOutlined,
+    EditOutlined,
+    FileTextOutlined,
+    FilterOutlined,
+    KeyOutlined,
+    LineChartOutlined,
+    MailOutlined,
+    MoreOutlined,
+    PlusOutlined,
+    SafetyCertificateOutlined,
+    SearchOutlined,
+    SortAscendingOutlined,
+    StopOutlined,
+    TeamOutlined,
+    UserAddOutlined,
+    UserOutlined,
+} from "@ant-design/icons";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
-import { MobileCardList } from "@/components/shared/MobileCardList";
-import "@/components/shared/setup-segmented.css";
 import { MetricsGrid, type DashboardMetric } from "@/components/dashboards/metrics/MetricsGrid";
+import { ChoiceFilter, ContactList, ContactRow, EntityAvatar, FilterPanel, SortSelect, contactActions, type SortOption } from "@/components/workspace";
 import { EnrollSmeForm, type EnrollSmeFormValues } from "./EnrollSmeForm";
-import { EnrollmentDocumentsCell } from "./EnrollmentDocuments";
 import { TrainingCourseProgressCell, useTrainingCourseProgress } from "./TrainingCourseProgress";
 import { AssignTrainingForm, DiscontinueForm } from "./EnrollmentStatusForms";
 import { TrainingPeopleDrawer } from "./TrainingPeopleDrawer";
+import { TrainingSmeDocuments, TrainingSmeProfile, companyOf, statusMetaOf } from "./TrainingSmeSections";
 import { deleteSmeCompletely, listAllAttendees } from "./attendeeStorage";
 import type { TrainingCompanyProgress } from "./certification";
 import { listCompanyProgress, setCompanyOverride } from "./certificationStorage";
 import { EligibilityTag } from "./EligibilityTag";
-
-type CertificationFilter = "eligible" | "in_progress" | "certified";
-
-/** Where an SME stands on certification, for the filter: eligible means someone (or the company) awaits a certificate. */
-function certificationState(p?: TrainingCompanyProgress): CertificationFilter | null {
-    if (!p?.certificationEnabled) return null;
-    if (p.awardTo === "company") {
-        const status = p.companyEligibility?.status;
-        return status === "certified" ? "certified" : status === "eligible" ? "eligible" : "in_progress";
-    }
-    if (p.eligiblePeople > 0) return "eligible";
-    if (p.attendingPeople > 0 && p.certifiedPeople >= p.attendingPeople) return "certified";
-    return "in_progress";
-}
 import {
     type Training,
     type TrainingAttendee,
@@ -45,22 +47,55 @@ import {
     listTrainings,
 } from "./trainingStorage";
 
-const STATUS_META = {
-    unassigned: { color: "gold", label: "Awaiting training" },
-    enrolled: { color: "green", label: "Enrolled" },
-    discontinued: { color: "red", label: "Discontinued" },
-} as const;
+type CertificationFilter = "eligible" | "in_progress" | "certified";
 
+const CERTIFICATION_LABEL: Record<CertificationFilter, string> = {
+    eligible: "Eligible, not yet certified",
+    in_progress: "Working towards it",
+    certified: "Certified",
+};
+
+/** Where an SME stands on certification, for the filter: eligible means someone (or the company) awaits a certificate. */
+function certificationState(p?: TrainingCompanyProgress): CertificationFilter | null {
+    if (!p?.certificationEnabled) return null;
+    if (p.awardTo === "company") {
+        const status = p.companyEligibility?.status;
+        return status === "certified" ? "certified" : status === "eligible" ? "eligible" : "in_progress";
+    }
+    if (p.eligiblePeople > 0) return "eligible";
+    if (p.attendingPeople > 0 && p.certifiedPeople >= p.attendingPeople) return "certified";
+    return "in_progress";
+}
+
+type Sort = "company" | "name" | "newest";
+const SORT_OPTIONS: SortOption<Sort>[] = [
+    { value: "company", label: "Company A–Z", icon: <SortAscendingOutlined /> },
+    { value: "name", label: "Person A–Z", icon: <UserOutlined /> },
+    { value: "newest", label: "Newest added", icon: <ClockCircleOutlined /> },
+];
+
+type Filters = { search: string; status: string; certification: string; category: string; training: string };
+const NO_FILTERS: Filters = { search: "", status: "all", certification: "all", category: "all", training: "all" };
+const PAGE_SIZE = 10;
+
+type Section = "profile" | "people" | "certification" | "documents" | "progress";
+
+/**
+ * /operations/training/enroll — the Training Academy's SMEs, laid out like the
+ * Participants workspace: tiles, a filter bar, the SMEs beside a detail panel
+ * (a full-screen drawer on phones). Everything the old table showed per SME
+ * (people, certification, course progress, documents, portal login) lives in
+ * the detail panel; its actions in the header and the ⋯ menu.
+ */
 export default function EnrollSme() {
     const { token } = theme.useToken();
     const { user } = useFullIdentity();
     const { message, modal } = App.useApp();
-    const isMobile = useIsMobile();
+    const isPhone = !Grid.useBreakpoint().md;
     const [trainings, setTrainings] = useState<Training[]>([]);
     const [enrollments, setEnrollments] = useState<TrainingEnrollment[]>([]);
     const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState("");
-    // The shared programme selector is the sole training filter.
+    // The shared programme selector is the training scope; the Filters popover narrows within it.
     const { activeProgramId } = useActiveProgramId();
     const selectedTrainingId = trainings.some((t) => t.id === activeProgramId)
         ? activeProgramId
@@ -73,10 +108,16 @@ export default function EnrollSme() {
     const [attendees, setAttendees] = useState<TrainingAttendee[]>([]);
     const [peopleOf, setPeopleOf] = useState<TrainingEnrollment | null>(null);
     const [progress, setProgress] = useState<Record<string, TrainingCompanyProgress>>({});
-    const [certFilter, setCertFilter] = useState<CertificationFilter>();
     const [overridingCompany, setOverridingCompany] = useState<TrainingEnrollment | null>(null);
     const [overrideReason, setOverrideReason] = useState("");
     const [overrideBusy, setOverrideBusy] = useState(false);
+    const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+    const [sort, setSort] = useState<Sort>("company");
+    const [page, setPage] = useState(1);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [section, setSection] = useState<Section>("profile");
+    const [detailOpen, setDetailOpen] = useState(false);
+    const patchFilters = (next: Partial<Filters>) => setFilters((f) => ({ ...f, ...next }));
 
     const saveCompanyOverride = async (r: TrainingEnrollment, reason: string | null) => {
         setOverrideBusy(true);
@@ -228,31 +269,84 @@ export default function EnrollSme() {
     });
     const duplicatesOf = (e: TrainingEnrollment) => Math.max((emailCounts.get((e.email || "").trim().toLowerCase()) || 0) - 1, 0);
 
-    const filtered = enrollments.filter(
-        (e) =>
-            (!selectedTrainingId || e.trainingId === selectedTrainingId) &&
-            (!certFilter || certificationState(progress[e.id]) === certFilter) &&
-            (e.name + " " + e.companyName).toLowerCase().includes(search.trim().toLowerCase())
+    const trainingById = useMemo(() => new Map(trainings.map((t) => [t.id, t])), [trainings]);
+    const inScope = useMemo(
+        () => enrollments.filter((e) => !selectedTrainingId || e.trainingId === selectedTrainingId),
+        [enrollments, selectedTrainingId]
     );
+    const certificationLabelOf = (e: TrainingEnrollment) => {
+        const state = certificationState(progress[e.id]);
+        return state ? CERTIFICATION_LABEL[state] : "";
+    };
 
-    const enrolledCount = enrollments.filter((e) => e.status === "enrolled").length;
-    const unassignedCount = enrollments.filter((e) => e.status === "unassigned").length;
-    const discontinuedCount = enrollments.filter((e) => e.status === "discontinued").length;
+    // Only the filters that would narrow this list are offered.
+    const choices = useMemo(() => {
+        const distinct = (values: string[]) => Array.from(new Set(values.filter(Boolean))).sort();
+        const list = [
+            { key: "status" as const, label: "Status", allLabel: "Any status", values: distinct(inScope.map((e) => statusMetaOf(e).label)) },
+            { key: "certification" as const, label: "Certification", allLabel: "Any certification", values: distinct(inScope.map(certificationLabelOf)) },
+            { key: "category" as const, label: "Category", allLabel: "All categories", values: distinct(inScope.flatMap((e) => e.categories || [])) },
+            ...(selectedTrainingId ? [] : [{ key: "training" as const, label: "Training", allLabel: "All trainings", values: distinct(inScope.map((e) => trainingById.get(e.trainingId)?.name || "No training yet")) }]),
+        ];
+        return list.filter((c) => c.values.length > 1 || filters[c.key] !== "all");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inScope, progress, trainingById, selectedTrainingId, filters]);
+    const advancedCount = choices.filter((c) => filters[c.key] !== "all").length;
+
+    const rows = useMemo(() => {
+        const term = filters.search.trim().toLowerCase();
+        const list = inScope.filter((e) => {
+            if (term && ![e.name, e.companyName, e.email].some((v) => String(v || "").toLowerCase().includes(term))) return false;
+            if (filters.status !== "all" && statusMetaOf(e).label !== filters.status) return false;
+            if (filters.certification !== "all" && certificationLabelOf(e) !== filters.certification) return false;
+            if (filters.category !== "all" && !e.categories?.includes(filters.category)) return false;
+            if (filters.training !== "all" && (trainingById.get(e.trainingId)?.name || "No training yet") !== filters.training) return false;
+            return true;
+        });
+        const by: Record<Sort, (a: TrainingEnrollment, b: TrainingEnrollment) => number> = {
+            company: (a, b) => companyOf(a).localeCompare(companyOf(b)),
+            name: (a, b) => a.name.localeCompare(b.name),
+            newest: (a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""),
+        };
+        return list.sort(by[sort]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inScope, filters, sort, progress, trainingById]);
+
+    const resetKey = JSON.stringify(filters) + sort;
+    useEffect(() => setPage(1), [resetKey]);
+    // Desktop always shows a detail: keep the selection while it's in view, otherwise take the first row.
+    useEffect(() => {
+        if (!rows.length) return;
+        if (!selectedId || !rows.some((r) => r.id === selectedId)) setSelectedId(rows[0].id);
+    }, [rows, selectedId]);
+    // Keep the selected SME's page in view when it changes from outside.
+    useEffect(() => {
+        const index = rows.findIndex((r) => r.id === selectedId);
+        if (index >= 0) setPage(Math.floor(index / PAGE_SIZE) + 1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedId]);
+
+    const selected = rows.find((r) => r.id === selectedId) || null;
+    const selectedTraining = selected ? trainingById.get(selected.trainingId) : undefined;
+    const select = (e: TrainingEnrollment) => {
+        setSelectedId(e.id);
+        if (isPhone) setDetailOpen(true);
+    };
+
     const count = (value: number) => (loading ? "…" : value);
-
     const metrics: DashboardMetric[] = [
         {
             key: "total",
             title: "Total SMEs",
-            value: count(enrollments.length),
-            subtitle: "Added so far",
+            value: count(inScope.length),
+            subtitle: selectedTrainingId ? "In this training" : "Added so far",
             icon: <TeamOutlined style={{ color: token.colorPrimary }} />,
             important: true,
         },
         {
             key: "enrolled",
             title: "Enrolled",
-            value: count(enrolledCount),
+            value: count(inScope.filter((e) => e.status === "enrolled").length),
             subtitle: "Currently in a training",
             icon: <CheckCircleOutlined style={{ color: token.colorSuccess }} />,
             important: true,
@@ -260,63 +354,40 @@ export default function EnrollSme() {
         {
             key: "unassigned",
             title: "Awaiting training",
-            value: count(unassignedCount),
+            value: count(inScope.filter((e) => e.status === "unassigned").length),
             subtitle: "Added, not yet enrolled",
             icon: <ClockCircleOutlined style={{ color: token.colorWarning }} />,
         },
         {
             key: "discontinued",
             title: "Discontinued",
-            value: count(discontinuedCount),
+            value: count(inScope.filter((e) => e.status === "discontinued").length),
             subtitle: "Stopped attending",
             icon: <StopOutlined style={{ color: token.colorError }} />,
         },
         {
             key: "eligible",
             title: "Awaiting certificate",
-            value: count(enrollments.filter((e) => certificationState(progress[e.id]) === "eligible").length),
+            value: count(inScope.filter((e) => certificationState(progress[e.id]) === "eligible").length),
             subtitle: "SMEs with someone eligible, not yet certified",
             icon: <SafetyCertificateOutlined style={{ color: token.colorWarning }} />,
-            onClick: () => setCertFilter("eligible"),
+            onClick: () => patchFilters({ certification: CERTIFICATION_LABEL.eligible }),
         },
     ];
 
-    const peopleLabel = (r: TrainingEnrollment) => {
-        const people = attendees.filter((a) => a.enrollmentId === r.id && a.status === "active");
-        const employees = people.filter((a) => a.kind === "employee").length;
-        return !people.length
-            ? "Set up"
-            : `${people.filter((a) => a.attends).length} attending${employees ? ` · ${employees} employee${employees === 1 ? "" : "s"}` : ""}`;
-    };
+    const peopleOfSme = (r: TrainingEnrollment) => attendees.filter((a) => a.enrollmentId === r.id);
 
-    /** One line for the phone card; the table shows the full detail. */
-    const certificationLabel = (r: TrainingEnrollment) => {
-        const p = progress[r.id];
-        if (r.status !== "enrolled" && !p) return "—";
-        if (!p) return "Not evaluated yet";
-        if (!p.certificationEnabled) return "Off";
-        if (p.awardTo === "company") {
-            const status = p.companyEligibility?.status;
-            return status === "certified" ? "Certified" : status === "eligible" ? "Eligible" : "In progress";
-        }
-        if (p.eligiblePeople || p.certifiedPeople) {
-            const parts = [p.eligiblePeople ? `${p.eligiblePeople} eligible` : "", p.certifiedPeople ? `${p.certifiedPeople} certified` : ""];
-            return `${parts.filter(Boolean).join(", ")} of ${p.attendingPeople}`;
-        }
-        return "In progress";
-    };
-
-    /** The ⋯ menu. On phones it also carries what the table shows as inline buttons. */
-    const moreActions = (r: TrainingEnrollment, phone = true) => {
+    /** The ⋯ menu: status changes, the portal login and certification overrides, then delete. */
+    const moreActions = (r: TrainingEnrollment) => {
         const p = progress[r.id];
         const companyStatus = p?.awardTo === "company" ? p.companyEligibility?.status : undefined;
         return [
             ...(r.status === "unassigned" ? [{ key: "enroll", icon: <UserAddOutlined />, label: "Enroll in a training", onClick: () => setAssigning(r) }] : []),
             ...(r.status === "enrolled" ? [{ key: "discontinue", icon: <StopOutlined />, label: "Discontinue", onClick: () => setDiscontinuing(r) }] : []),
-            ...(phone && !r.userId && r.status === "enrolled" && r.email
+            ...(!r.userId && r.status === "enrolled" && r.email
                 ? [{ key: "login", icon: <KeyOutlined />, label: "Create portal login", onClick: () => void createLogin(r) }]
                 : []),
-            ...(phone && p?.certificationEnabled && p.awardTo === "company"
+            ...(p?.certificationEnabled && p.awardTo === "company"
                 ? r.certificationOverride
                     ? [{ key: "undo", icon: <SafetyCertificateOutlined />, label: "Undo eligible override", onClick: () => void saveCompanyOverride(r, null) }]
                     : companyStatus !== "eligible" && companyStatus !== "certified"
@@ -328,258 +399,324 @@ export default function EnrollSme() {
         ];
     };
 
-    const toolbar = (
-        // The shared setup toolbar: one line on wide screens, stacked full-width rows on phones.
-        <div className="setup-toolbar">
-            <div className="setup-toolbar-search" style={{ maxWidth: isMobile ? undefined : 280 }}>
-                <Input.Search placeholder="Search by name or company" value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
+    const renderPeople = (r: TrainingEnrollment) => {
+        const people = peopleOfSme(r).sort((a, b) => (a.kind === "director" ? -1 : b.kind === "director" ? 1 : a.name.localeCompare(b.name)));
+        return (
+            <div className="ws-detail-body">
+                <section>
+                    <h4 className="ws-section-title">Portal login</h4>
+                    {r.userId ? (
+                        <Tag color="green">Active</Tag>
+                    ) : r.status === "enrolled" ? (
+                        <Tooltip title={r.email ? `Creates a training-only login for ${r.email} and emails it` : "Add an email address to create a login"}>
+                            <Button icon={<KeyOutlined />} disabled={!r.email} loading={creatingLogin === r.id} onClick={() => void createLogin(r)}>
+                                Create login
+                            </Button>
+                        </Tooltip>
+                    ) : (
+                        <Typography.Text type="secondary">Created when the SME is enrolled.</Typography.Text>
+                    )}
+                </section>
+                <section>
+                    <h4 className="ws-section-title">
+                        People
+                        <Button size="small" type="link" icon={<TeamOutlined />} onClick={() => setPeopleOf(r)}>
+                            {people.length ? "Manage" : "Set up"}
+                        </Button>
+                    </h4>
+                    {people.length ? (
+                        <ContactList>
+                            {people.map((a) => (
+                                <ContactRow
+                                    key={a.id}
+                                    icon={a.kind === "director" ? <UserOutlined /> : <TeamOutlined />}
+                                    label={[
+                                        a.kind === "director" ? "Director" : "Employee",
+                                        a.status === "withdrawn" ? "withdrawn" : a.attends ? "attends" : "doesn't attend",
+                                        a.userId ? "login active" : "",
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                    value={a.name}
+                                    action={contactActions.email(a.email, <MailOutlined />)}
+                                />
+                            ))}
+                        </ContactList>
+                    ) : (
+                        <Typography.Text type="secondary">
+                            The director and the employees this SME sends. Until they're set up the SME is invited to sessions as one record.
+                        </Typography.Text>
+                    )}
+                </section>
             </div>
-            <div className="setup-toolbar-search" style={{ maxWidth: isMobile ? undefined : 230 }}>
-                <Select
-                    placeholder="Certification"
-                    allowClear
-                    style={{ width: "100%" }}
-                    value={certFilter}
-                    onChange={setCertFilter}
-                    options={[
-                        { value: "eligible", label: "Eligible, not yet certified" },
-                        { value: "in_progress", label: "Working towards it" },
-                        { value: "certified", label: "Certified" },
-                    ]}
-                />
+        );
+    };
+
+    const renderCertification = (r: TrainingEnrollment) => {
+        const p = progress[r.id];
+        if (r.status !== "enrolled" && !p) return <Empty className="ws-detail-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="Evaluated once the SME is enrolled." />;
+        if (!p) return <Empty className="ws-detail-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="Not evaluated yet." />;
+        if (!p.certificationEnabled) return <Empty className="ws-detail-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="Certificates are off for this training." />;
+        if (p.awardTo === "company") {
+            const status = p.companyEligibility?.status;
+            return (
+                <div className="ws-detail-body">
+                    <section>
+                        <h4 className="ws-section-title">Company certificate</h4>
+                        <Space size={8} wrap>
+                            <EligibilityTag eligibility={p.companyEligibility} />
+                            {r.certificationOverride ? (
+                                <Tooltip title={`Marked eligible by ${r.certificationOverride.byName}: ${r.certificationOverride.reason}`}>
+                                    <Button size="small" loading={overrideBusy} onClick={() => void saveCompanyOverride(r, null)}>
+                                        Undo override
+                                    </Button>
+                                </Tooltip>
+                            ) : (
+                                status !== "eligible" &&
+                                status !== "certified" && (
+                                    <Button size="small" onClick={() => { setOverrideReason(""); setOverridingCompany(r); }}>
+                                        Mark eligible
+                                    </Button>
+                                )
+                            )}
+                        </Space>
+                    </section>
+                </div>
+            );
+        }
+        return (
+            <div className="ws-detail-body">
+                <section>
+                    <h4 className="ws-section-title">Per person</h4>
+                    <dl className="ws-facts">
+                        <div>
+                            <dt>Attending</dt>
+                            <dd>{p.attendingPeople}</dd>
+                        </div>
+                        <div>
+                            <dt>Eligible</dt>
+                            <dd>{p.eligiblePeople}</dd>
+                        </div>
+                        <div>
+                            <dt>Certified</dt>
+                            <dd>{p.certifiedPeople}</dd>
+                        </div>
+                    </dl>
+                    <Button style={{ marginTop: 12 }} icon={<TeamOutlined />} onClick={() => setPeopleOf(r)}>
+                        Each person's checklist
+                    </Button>
+                </section>
             </div>
-            <div className="setup-toolbar-action" style={{ marginLeft: isMobile ? undefined : "auto" }}>
-                <Button type="primary" shape="round" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-                    Add SME
-                </Button>
+        );
+    };
+
+    const renderDetail = () => {
+        if (!selected) return null;
+        const meta = statusMetaOf(selected);
+        const twins = duplicatesOf(selected);
+        const sub = [selected.companyName ? selected.name : "", selectedTraining?.name || "No training yet"].filter(Boolean).join(" · ");
+        const statusTag = <Tag color={meta.color}>{meta.label}</Tag>;
+        return (
+            <div className="ws-detail">
+                <MotionCard>
+                    <header className="ws-detail-head">
+                        <EntityAvatar name={companyOf(selected)} size={52} />
+                        <div className="ws-detail-identity">
+                            <h2 className="ws-detail-name">{companyOf(selected)}</h2>
+                            <div className="ws-detail-sub">{sub}</div>
+                            <div className="ws-detail-tags">
+                                {selected.status === "discontinued" && selected.discontinuedReason ? <Tooltip title={selected.discontinuedReason}>{statusTag}</Tooltip> : statusTag}
+                                {!!twins && (
+                                    <Tooltip title={`${twins} other SME record${twins === 1 ? " has" : "s have"} the email ${selected.email}. If it's the same SME added twice, delete the extra one from ⋯.`}>
+                                        <Tag color="orange">Duplicate?</Tag>
+                                    </Tooltip>
+                                )}
+                                {(selected.categories || []).map((c) => (
+                                    <Tag key={c}>{c}</Tag>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="ws-detail-actions">
+                            <Button icon={<EditOutlined />} onClick={() => setEditingSme(selected)}>
+                                Edit
+                            </Button>
+                            <Dropdown trigger={["click"]} menu={{ items: moreActions(selected) }}>
+                                <Button icon={<MoreOutlined />} aria-label={`More actions for ${selected.name}`}>
+                                    More
+                                </Button>
+                            </Dropdown>
+                        </div>
+                    </header>
+                    <div className="ws-detail-tabs">
+                        <Segmented
+                            className="ptx-sections"
+                            block
+                            value={section}
+                            onChange={(v) => setSection(v as Section)}
+                            options={[
+                                { label: "Profile", value: "profile", icon: <UserOutlined /> },
+                                { label: "People", value: "people", icon: <TeamOutlined /> },
+                                { label: isPhone ? "Certificate" : "Certification", value: "certification", icon: <SafetyCertificateOutlined /> },
+                                { label: isPhone ? "Docs" : "Documents", value: "documents", icon: <FileTextOutlined /> },
+                                { label: "Progress", value: "progress", icon: <LineChartOutlined /> },
+                            ]}
+                        />
+                        <div className="ws-detail-pane">
+                            {section === "profile" && <TrainingSmeProfile enrollment={selected} training={selectedTraining} />}
+                            {section === "people" && renderPeople(selected)}
+                            {section === "certification" && renderCertification(selected)}
+                            {section === "documents" && <TrainingSmeDocuments enrollment={selected} training={selectedTraining} />}
+                            {section === "progress" && (
+                                <div className="ws-detail-body">
+                                    <section>
+                                        <h4 className="ws-section-title">Course progress</h4>
+                                        <TrainingCourseProgressCell enrollment={selected} training={selectedTraining} state={courseProgress} />
+                                    </section>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </MotionCard>
             </div>
-        </div>
+        );
+    };
+
+    const filterPanel = (
+        <FilterPanel canReset={advancedCount > 0} onReset={() => patchFilters(Object.fromEntries(choices.map((c) => [c.key, "all"])) as Partial<Filters>)}>
+            {choices.map((c) => (
+                <ChoiceFilter key={c.key} id={`enroll-${c.key}`} label={c.label} allLabel={c.allLabel} value={filters[c.key]} values={c.values} onChange={(value) => patchFilters({ [c.key]: value })} />
+            ))}
+        </FilterPanel>
     );
 
+    const pageItems = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
     return (
-        <div style={{ padding: isMobile ? 12 : 24 }}>
+        <div className="ws-page">
             <MetricsGrid metrics={metrics} />
-            <div style={{ height: 16 }} />
-            {isMobile ? (
-                // Phones drop the wrapping card: the toolbar stands on its own and the cards follow it.
-                <>
-                    <DashboardFilterBar marginBottom={16} padding={14}>
-                        {toolbar}
-                    </DashboardFilterBar>
-                    <MobileCardList
-                        data={filtered}
-                        loading={loading}
-                        getKey={(r: TrainingEnrollment) => r.id}
-                        emptyText="No SMEs"
-                        renderCard={(r: TrainingEnrollment) => {
-                            const meta = STATUS_META[r.status] || STATUS_META.unassigned;
-                            const twins = duplicatesOf(r);
-                            return {
-                                title: r.name,
-                                subtitle: [r.companyName, `added ${dayjs(r.createdAt).format("DD MMM YYYY")}`].filter(Boolean).join(" · "),
-                                badge: <Tag color={meta.color}>{meta.label}</Tag>,
-                                fields: [
-                                    { label: "People", value: peopleLabel(r) },
-                                    { label: "Certification", value: certificationLabel(r) },
-                                    { label: "Categories", value: r.categories?.join(", ") || "—" },
-                                    { label: "Portal login", value: r.userId ? "Active" : r.status === "enrolled" ? "Not created" : "After enrolment" },
-                                ],
-                                note: twins ? (
-                                    <Tag color="orange">
-                                        Duplicate? {twins} other record{twins === 1 ? " has" : "s have"} this email
-                                    </Tag>
-                                ) : r.status === "discontinued" && r.discontinuedReason ? (
-                                    <Typography.Text type="secondary">{r.discontinuedReason}</Typography.Text>
-                                ) : undefined,
-                                actions: [
-                                    <Button key="people" icon={<UserOutlined />} onClick={() => setPeopleOf(r)}>
-                                        People
-                                    </Button>,
-                                    <Button key="edit" icon={<EditOutlined />} onClick={() => setEditingSme(r)}>
-                                        Edit
-                                    </Button>,
-                                    <Dropdown key="more" trigger={["click"]} menu={{ items: moreActions(r) }}>
-                                        <Button icon={<MoreOutlined />}>More</Button>
-                                    </Dropdown>,
-                                ],
-                            };
-                        }}
+            <div style={{ height: 12 }} />
+
+            <DashboardFilterBar>
+                <div className="ws-toolbar">
+                    <Input
+                        className="ws-toolbar-search"
+                        placeholder="Search by company, person or email"
+                        prefix={<SearchOutlined />}
+                        value={filters.search}
+                        onChange={(e) => patchFilters({ search: e.target.value })}
+                        allowClear
+                        aria-label="Search SMEs"
                     />
-                </>
+                    {choices.length > 0 && (
+                        <Popover content={filterPanel} trigger="click" placement="bottomLeft" title="Filters">
+                            <Badge className="ws-toolbar-button" count={advancedCount} size="small" offset={[-6, 4]}>
+                                <Button block icon={<FilterOutlined />}>
+                                    Filters
+                                </Button>
+                            </Badge>
+                        </Popover>
+                    )}
+                    {/* On its own a toolbar button would stretch to fill the bar; keep it its own size on desktop. */}
+                    <Button
+                        className="ws-toolbar-button"
+                        style={isPhone ? undefined : { flex: "0 0 auto" }}
+                        type="primary"
+                        shape="round"
+                        icon={<PlusOutlined />}
+                        onClick={() => setAddOpen(true)}
+                    >
+                        Add SME
+                    </Button>
+                </div>
+            </DashboardFilterBar>
+
+            {!loading && !inScope.length ? (
+                <MotionCard>
+                    <Empty className="ws-detail-empty" description={selectedTrainingId ? "No SMEs in this training yet." : "No SMEs added yet."} />
+                </MotionCard>
             ) : (
-            <MotionCard filterBarProps={{ marginBottom: 16, padding: 14 }} filterBar={toolbar}>
-                <Table
-                    rowKey="id"
-                    dataSource={filtered}
-                    // Wide content scrolls sideways inside the card; the actions stay pinned.
-                    scroll={{ x: "max-content" }}
-                    loading={loading}
-                    pagination={{ pageSize: 10, showSizeChanger: false, position: ["bottomCenter"] }}
-                    columns={[
-                        {
-                            title: "SME",
-                            key: "sme",
-                            render: (_: unknown, r: TrainingEnrollment) => {
-                                const twins = duplicatesOf(r);
-                                return (
-                                    <Space direction="vertical" size={0}>
-                                        <Space size={6} wrap>
-                                            <Typography.Text strong>{r.name}</Typography.Text>
-                                            {!!twins && (
-                                                <Tooltip title={`${twins} other SME record${twins === 1 ? " has" : "s have"} the email ${r.email}. If it's the same SME added twice, delete the extra one from ⋯.`}>
-                                                    <Tag color="orange">Duplicate?</Tag>
-                                                </Tooltip>
-                                            )}
-                                        </Space>
-                                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                            {[r.companyName, `added ${dayjs(r.createdAt).format("DD MMM YYYY")}`].filter(Boolean).join(" · ")}
-                                        </Typography.Text>
-                                        {!!r.categories?.length && (
-                                            <Space size={[4, 4]} wrap style={{ marginTop: 4 }}>
-                                                {r.categories.map((category) => (
-                                                    <Tag key={category} style={{ marginInlineEnd: 0 }}>
-                                                        {category}
+                <div className="ws-layout">
+                    <MotionCard loading={loading} skeleton="list" skeletonRows={6}>
+                        <SortSelect value={sort} options={SORT_OPTIONS} onChange={setSort} label="Sort SMEs" />
+                        {!rows.length ? (
+                            <Empty className="ws-list-empty" description="No SMEs match these filters" />
+                        ) : (
+                            <>
+                                <div className="ws-rows" role="listbox" aria-label="SMEs">
+                                    {pageItems.map((e) => {
+                                        const meta = statusMetaOf(e);
+                                        const line = [
+                                            e.companyName ? e.name : "",
+                                            selectedTrainingId ? (e.categories || []).join(", ") : trainingById.get(e.trainingId)?.name || "No training yet",
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" · ");
+                                        return (
+                                            <button
+                                                key={e.id}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={e.id === selectedId}
+                                                className={`ws-row${e.id === selectedId ? " is-selected" : ""}`}
+                                                onClick={() => select(e)}
+                                            >
+                                                <EntityAvatar name={companyOf(e)} size={36} />
+                                                <div className="ws-row-main">
+                                                    <div className="ws-row-name">{companyOf(e)}</div>
+                                                    <div className="ws-row-meta">{line || "—"}</div>
+                                                </div>
+                                                <div className="ws-row-side">
+                                                    {!!duplicatesOf(e) && (
+                                                        <Tag bordered={false} color="orange">
+                                                            Duplicate?
+                                                        </Tag>
+                                                    )}
+                                                    <Tag bordered={false} color={meta.color}>
+                                                        {meta.label}
                                                     </Tag>
-                                                ))}
-                                            </Space>
-                                        )}
-                                    </Space>
-                                );
-                            },
-                        },
-                        {
-                            title: "Status",
-                            key: "status",
-                            render: (_: unknown, r: TrainingEnrollment) => {
-                                const meta = STATUS_META[r.status] || STATUS_META.unassigned;
-                                const tag = <Tag color={meta.color}>{meta.label}</Tag>;
-                                return r.status === "discontinued" && r.discontinuedReason ? (
-                                    <Tooltip title={r.discontinuedReason}>{tag}</Tooltip>
-                                ) : (
-                                    tag
-                                );
-                            },
-                        },
-                        {
-                            title: "People",
-                            key: "people",
-                            render: (_: unknown, r: TrainingEnrollment) => {
-                                const people = attendees.filter((a) => a.enrollmentId === r.id && a.status === "active");
-                                const employees = people.filter((a) => a.kind === "employee").length;
-                                const label = !people.length
-                                    ? "Set up"
-                                    : `${people.filter((a) => a.attends).length} attending${employees ? ` · ${employees} employee${employees === 1 ? "" : "s"}` : ""}`;
-                                return (
-                                    <Tooltip title="The director and the employees this SME sends">
-                                        <Button size="small" shape="round" icon={<UserOutlined />} onClick={() => setPeopleOf(r)}>
-                                            {label}
-                                        </Button>
-                                    </Tooltip>
-                                );
-                            },
-                        },
-                        {
-                            title: "Certification",
-                            key: "certification",
-                            render: (_: unknown, r: TrainingEnrollment) => {
-                                const p = progress[r.id];
-                                if (r.status !== "enrolled" && !p) return <Typography.Text type="secondary">—</Typography.Text>;
-                                if (!p) return <Typography.Text type="secondary">Not evaluated yet</Typography.Text>;
-                                if (!p.certificationEnabled) return <Typography.Text type="secondary">Off for this training</Typography.Text>;
-                                if (p.awardTo === "company") {
-                                    const status = p.companyEligibility?.status;
-                                    return (
-                                        <Space size={4} wrap>
-                                            <EligibilityTag eligibility={p.companyEligibility} />
-                                            {r.certificationOverride ? (
-                                                <Tooltip title={`Marked eligible by ${r.certificationOverride.byName}: ${r.certificationOverride.reason}`}>
-                                                    <Button size="small" type="link" loading={overrideBusy} onClick={() => void saveCompanyOverride(r, null)}>
-                                                        Undo override
-                                                    </Button>
-                                                </Tooltip>
-                                            ) : (
-                                                status !== "eligible" && status !== "certified" && (
-                                                    <Button size="small" type="link" onClick={() => { setOverrideReason(""); setOverridingCompany(r); }}>
-                                                        Mark eligible
-                                                    </Button>
-                                                )
-                                            )}
-                                        </Space>
-                                    );
-                                }
-                                return (
-                                    <Tooltip title="Per person: open People to see each person's checklist or mark someone eligible">
-                                        <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setPeopleOf(r)}>
-                                            <Space size={4}>
-                                                {!!p.eligiblePeople && <Tag color="gold">{p.eligiblePeople} eligible</Tag>}
-                                                {!!p.certifiedPeople && <Tag color="green">{p.certifiedPeople} certified</Tag>}
-                                                {!p.eligiblePeople && !p.certifiedPeople && <Tag color="processing">In progress</Tag>}
-                                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                                    of {p.attendingPeople}
-                                                </Typography.Text>
-                                            </Space>
-                                        </Button>
-                                    </Tooltip>
-                                );
-                            },
-                        },
-                        {
-                            title: "Course progress",
-                            key: "courseProgress",
-                            render: (_: unknown, r: TrainingEnrollment) => (
-                                <TrainingCourseProgressCell
-                                    enrollment={r}
-                                    training={trainings.find((t) => t.id === r.trainingId)}
-                                    state={courseProgress}
-                                />
-                            ),
-                        },
-                        {
-                            title: "Documents",
-                            key: "documents",
-                            render: (_: unknown, r: TrainingEnrollment) => (
-                                <EnrollmentDocumentsCell enrollment={r} training={trainings.find((t) => t.id === r.trainingId)} />
-                            ),
-                        },
-                        {
-                            title: "Portal login",
-                            key: "login",
-                            render: (_: unknown, r: TrainingEnrollment) =>
-                                r.userId ? (
-                                    <Tag color="green">Active</Tag>
-                                ) : r.status === "enrolled" ? (
-                                    <Tooltip title={r.email ? `Creates a training-only login for ${r.email} and emails it` : "Add an email address to create a login"}>
-                                        <Button size="small" shape="round" icon={<KeyOutlined />} disabled={!r.email} loading={creatingLogin === r.id} onClick={() => void createLogin(r)}>
-                                            Create login
-                                        </Button>
-                                    </Tooltip>
-                                ) : (
-                                    <Typography.Text type="secondary">After enrolment</Typography.Text>
-                                ),
-                        },
-                        {
-                            // Pinned to the right edge so it never scrolls out of view.
-                            title: "",
-                            key: "actions",
-                            fixed: "right" as const,
-                            width: 88,
-                            render: (_: unknown, r: TrainingEnrollment) => (
-                                <Space size={4}>
-                                    <Tooltip title="Edit details and documents">
-                                        <Button shape="circle" size="small" icon={<EditOutlined />} onClick={() => setEditingSme(r)} aria-label={`Edit ${r.name}`} />
-                                    </Tooltip>
-                                    <Dropdown
-                                        trigger={["click"]}
-                                        menu={{ items: moreActions(r, false) }}
-                                    >
-                                        <Button shape="circle" size="small" icon={<MoreOutlined />} aria-label={`More actions for ${r.name}`} />
-                                    </Dropdown>
-                                </Space>
-                            ),
-                        },
-                    ]}
-                />
-            </MotionCard>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {rows.length > PAGE_SIZE && (
+                                    <div className="ws-pagination">
+                                        <Pagination size="small" current={page} pageSize={PAGE_SIZE} total={rows.length} onChange={setPage} showSizeChanger={false} showLessItems />
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </MotionCard>
+
+                    {!isPhone && (
+                        <div className="ws-detail-sticky">
+                            {loading ? (
+                                <MotionCard loading skeleton="text" skeletonRows={10}>
+                                    {null}
+                                </MotionCard>
+                            ) : (
+                                renderDetail() || (
+                                    <MotionCard>
+                                        <Empty className="ws-detail-empty" description="No SMEs match these filters" />
+                                    </MotionCard>
+                                )
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {isPhone && (
+                <Drawer
+                    className="ws-drawer"
+                    open={detailOpen && !!selected}
+                    onClose={() => setDetailOpen(false)}
+                    placement="right"
+                    width="100%"
+                    title={selected ? companyOf(selected) : "SME"}
+                >
+                    {renderDetail()}
+                </Drawer>
             )}
 
             <Modal

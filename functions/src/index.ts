@@ -44,6 +44,7 @@ export * from "./kpiReminders";
 export * from "./planRoadmapCheckIns";
 export * from "./challengeDueReminders";
 export * from "./revenueMetricsSync";
+export { digitalTwinNightly, recalculateDigitalTwin } from "./digitalTwin";
 export * from "./workflowQueryReminders";
 export * from "./movStageReminders";
 export * from "./movReminders";
@@ -59,6 +60,22 @@ export * from "./pushNotifications";
 export { lphWhatsAppGateway } from "./whatsappGateway";
 export { agentProposeAction, agentConfirmAction, agentCancelAction } from "./agentActions";
 export { smeRiskScoringCron } from "./smeRiskScoring";
+export { sessionBrief } from "./sessionCopilot";
+export { dailyBriefCron, buildMyDailyBrief } from "./dailyBrief";
+export { watchesCron, manageWatch } from "./watches";
+export { chasersCron, manageChaser } from "./chasers";
+export { onApplicationStatusHistory, stalledApplicationEscalationCron } from "./applicationLifecycle";
+export { getSupplierPassport, matchMarketOpportunity, inviteToMarketOpportunity } from "./marketLinkage";
+export { onOpportunityInterestStage } from "./bidPipeline";
+export { onProposalWritten, proposalDeadlineReminderCron } from "./proposalNotifications";
+export { whatsappUploadCleanup } from "./whatsappUploads";
+export {
+  whatsappSmeDocumentReminders,
+  whatsappSmeSessionReminders,
+  whatsappSmeUploadNotices,
+  whatsappStaffMorningSummary,
+} from "./whatsappAlerts";
+export { generateReportCallable as generateReport, onReportRequested } from "./reports/reportFunctions";
 export { interventionImpactCron, refreshInterventionImpact } from "./interventionImpact";
 
 export { academyAction, academyCoach } from './academy';

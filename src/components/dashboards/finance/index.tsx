@@ -8,31 +8,25 @@ import {
     Button,
     Typography,
     Alert,
-    Skeleton,
-    Empty
 } from 'antd'
 import {
-    DollarOutlined,
     ExclamationCircleOutlined,
     EyeOutlined,
-    RiseOutlined,
-    TeamOutlined,
 } from '@ant-design/icons'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
-import Highcharts from 'highcharts'
-import 'highcharts/modules/drilldown'
-import HighchartsReact from 'highcharts-react-official'
 import dayjs from 'dayjs'
 import axios from 'axios'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { MotionCard } from '../metrics/Header'
-import { MetricTile } from '../metrics/MetricTile'
+import FinanceSnapshotCard from './FinanceSnapshotCard'
+import { loadSyntheticFinanceAccounts } from '@/services/syntheticFinance'
 import DepartmentInterventionsStatus from '../charts/InterventionsBreakdown'
+import MovSubmissionStatusCard from '../metrics/MovSubmissionStatusCard'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
 import { fetchAppointments } from '@/services/appointmentService'
 import {
     complianceDocumentKey,
@@ -49,11 +43,6 @@ const QX_FINANCE_PASSWORD = import.meta.env.VITE_QX_FINANCE_PASSWORD || import.m
 const FINANCE_SESSION_KEY = 'qx_finance_session'
 
 const normalize = (s?: string) => (s || '').toString().trim().toLowerCase()
-const money = (value?: number | null) =>
-    `R ${Number(value || 0).toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    })}`
 
 type RequiredDoc = {
     id: string
@@ -118,6 +107,8 @@ type FinanceSummary = {
         label: string
         revenue: number
     }>
+    /** Each SME's monthly revenue, so the snapshot can rework totals and momentum for the topbar period. */
+    smeMonths: Array<Array<{ month: string; label: string; revenue: number }>>
 }
 
 type FirestoreParticipant = {
@@ -258,6 +249,8 @@ const getFinanceToken = async () => {
 const FinanceDashboard: React.FC = () => {
     const { user } = useFullIdentity()
     const { activeProgramId } = useActiveProgramId()
+    // Reporting window from the topbar date filter, shared by every dashboard.
+    const { range: dateRange } = useDashboardDateRange()
     const programId = activeProgramId || null
 
     const [loading, setLoading] = useState(true)
@@ -277,7 +270,8 @@ const FinanceDashboard: React.FC = () => {
         growingSmes: 0,
         flatSmes: 0,
         decliningSmes: 0,
-        monthlyRevenue: []
+        monthlyRevenue: [],
+        smeMonths: []
     })
     const [financeSummaryLoading, setFinanceSummaryLoading] = useState(false)
 
@@ -650,7 +644,16 @@ const FinanceDashboard: React.FC = () => {
         const run = async () => {
             setFinanceSummaryLoading(true)
 
+            type FinanceEntry = { revenue: number; growth: string; months: ReturnType<typeof normaliseMonthlyFinance> }
+
             try {
+                // Demo accounts for the digital-twin SMEs (test project only)
+                // load alongside Qx, and still show if Qx is unavailable.
+                const demoPromise = loadSyntheticFinanceAccounts(programId)
+                let qxClientCount = 0
+                let qxEntries: FinanceEntry[] = []
+
+                try {
                 const token = await getFinanceToken()
                 const [participantsSnap, membershipsResponse] = await Promise.all([
                     getDocs(collection(db, 'participants')),
@@ -684,7 +687,7 @@ const FinanceDashboard: React.FC = () => {
                 const results = await Promise.allSettled(
                     scopedCompanies.map(async (company: any) => {
                         const email = getCompanyEmail(company)
-                        if (!email) return { revenue: 0, growing: false }
+                        if (!email) return { revenue: 0, growth: 'unknown', months: [] }
 
                         const [revenueResult, monthlyResult] = await Promise.allSettled([
                             axios.get(`${API_BASE_URL}/api/stats/public/revenue`, {
@@ -715,15 +718,30 @@ const FinanceDashboard: React.FC = () => {
                     })
                 )
 
+                qxClientCount = scopedCompanies.length
+                qxEntries = results
+                    .filter((result): result is PromiseFulfilledResult<FinanceEntry> => result.status === 'fulfilled')
+                    .map(result => result.value)
+                } catch (error) {
+                    console.error('Qx finance unavailable for the dashboard snapshot:', error)
+                }
+
+                const demoAccounts = await demoPromise
                 if (cancelled) return
 
-                const fulfilled = results
-                    .filter((result): result is PromiseFulfilledResult<{ revenue: number; growth: string; months: ReturnType<typeof normaliseMonthlyFinance> }> => result.status === 'fulfilled')
-                    .map(result => result.value)
+                const fulfilled: FinanceEntry[] = [
+                    ...qxEntries,
+                    ...demoAccounts.map(account => ({
+                        revenue: account.totalRevenue,
+                        // Momentum is worked out per period by the snapshot card.
+                        growth: 'unknown',
+                        months: normaliseMonthlyFinance(account.months)
+                    }))
+                ]
                 const monthTotals = new Map<string, { label: string; revenue: number }>()
 
                 fulfilled.forEach(item => {
-                    item.months.forEach(month => {
+                    (item.months || []).forEach(month => {
                         const key = month.month || month.label
                         if (!key) return
                         const current = monthTotals.get(key) || { label: month.label || key, revenue: 0 }
@@ -737,16 +755,17 @@ const FinanceDashboard: React.FC = () => {
                     .sort((a, b) => a.month.localeCompare(b.month))
 
                 setFinanceSummary({
-                    clients: scopedCompanies.length,
+                    clients: qxClientCount + demoAccounts.length,
                     totalRevenue: fulfilled.reduce((sum, item) => sum + item.revenue, 0),
                     growingSmes: fulfilled.filter(item => item.growth === 'growing').length,
                     flatSmes: fulfilled.filter(item => item.growth === 'flat').length,
                     decliningSmes: fulfilled.filter(item => item.growth === 'declining').length,
-                    monthlyRevenue
+                    monthlyRevenue,
+                    smeMonths: fulfilled.map(item => item.months || [])
                 })
             } catch (error) {
                 console.error('Error loading finance dashboard summary:', error)
-                if (!cancelled) setFinanceSummary({ clients: 0, totalRevenue: 0, growingSmes: 0, flatSmes: 0, decliningSmes: 0, monthlyRevenue: [] })
+                if (!cancelled) setFinanceSummary({ clients: 0, totalRevenue: 0, growingSmes: 0, flatSmes: 0, decliningSmes: 0, monthlyRevenue: [], smeMonths: [] })
             } finally {
                 if (!cancelled) setFinanceSummaryLoading(false)
             }
@@ -891,53 +910,6 @@ const FinanceDashboard: React.FC = () => {
     const docMap = new Map((selectedVM?.docs || []).map(d => [keyForDoc(d), d]))
 
     const hasProgram = !!programId
-    const financeTrendOptions = useMemo<Highcharts.Options>(() => ({
-        chart: {
-            type: 'areaspline',
-            height: 220,
-            backgroundColor: 'transparent'
-        },
-        title: { text: undefined },
-        credits: { enabled: false },
-        exporting: { enabled: false },
-        legend: { enabled: false },
-        xAxis: {
-            categories: financeSummary.monthlyRevenue.map(item => item.label || item.month),
-            lineColor: '#e5e7eb',
-            tickColor: '#e5e7eb',
-            labels: { style: { color: '#6b7280', fontSize: '11px' } }
-        },
-        yAxis: {
-            title: { text: undefined },
-            gridLineColor: '#f0f0f0',
-            labels: {
-                style: { color: '#6b7280', fontSize: '11px' },
-                formatter: function () {
-                    return `R ${Number(this.value || 0).toLocaleString()}`
-                }
-            }
-        },
-        tooltip: {
-            pointFormatter: function () {
-                return `<span style="color:${this.color}">\u25CF</span> Revenue: <b>${money(Number(this.y || 0))}</b><br/>`
-            }
-        },
-        plotOptions: {
-            areaspline: {
-                marker: { radius: 3 },
-                lineWidth: 2,
-                fillOpacity: 0.16
-            }
-        },
-        series: [
-            {
-                type: 'areaspline',
-                name: 'Revenue',
-                color: '#1677ff',
-                data: financeSummary.monthlyRevenue.map(item => Number(item.revenue || 0))
-            }
-        ]
-    }), [financeSummary.monthlyRevenue])
 
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
@@ -947,96 +919,34 @@ const FinanceDashboard: React.FC = () => {
                 <InterventionMetricsGrid metrics={interventionMetrics} loading={pageLoading} />
             </div>
 
-            <Row gutter={16}>
+            {/* "Where work is stuck" and the MOVs card are the shared
+                InterventionsDashboard cards (legal, HSE); both use the topbar date filter. */}
+            <Row gutter={[16, 16]} align='stretch'>
                 <Col xs={24} lg={12}>
-                    {/* Pass programId down */}
                     <DepartmentInterventionsStatus
                         departmentId={user?.departmentId}
                         programId={programId || undefined}
+                        title='Where work is stuck'
+                        bucketScope='open'
+                        tableMode='modal'
+                        dateRange={dateRange}
+                        pageSize={8}
                     />
                 </Col>
 
                 <Col xs={24} lg={12}>
-                    <MotionCard style={{ marginBottom: 10 }}>
-                        {financeSummaryLoading ? (
-                            <Skeleton />
-                        ) : (
-                            <div>
-                                <Row gutter={[12, 12]}>
-                                    <Col xs={24} md={8}>
-                                        <MetricTile
-                                            title='Clients'
-                                            value={financeSummary.clients}
-                                            icon={<TeamOutlined />}
-                                            tone='info'
-                                        />
-                                    </Col>
-                                    <Col xs={24} md={8}>
-                                        <MetricTile
-                                            title='Total Revenue'
-                                            value={money(financeSummary.totalRevenue)}
-                                            icon={<DollarOutlined />}
-                                            tone='success'
-                                        />
-                                    </Col>
-                                    <Col xs={24} md={8}>
-                                        <MetricTile
-                                            title='Growing SMEs'
-                                            value={financeSummary.growingSmes}
-                                            icon={<RiseOutlined />}
-                                            tone='info'
-                                        />
-                                    </Col>
-                                </Row>
-                                <div style={{ marginTop: 16 }}>
-                                    <Row gutter={[12, 12]} align='stretch'>
-                                        <Col xs={24} lg={17}>
-                                            <MotionCard
-                                                style={{
-                                                    borderRadius: 8,
-                                                    minHeight: 270
-                                                }}
-                                                styles={{ body: { padding: 12, minHeight: 270 } }}
-                                            >
-                                                <div style={{ marginBottom: 8 }}>
-                                                    <Text strong>12-Month Revenue Trend</Text>
-                                                </div>
-                                                {financeSummary.monthlyRevenue.length ? (
-                                                    <HighchartsReact highcharts={Highcharts} options={financeTrendOptions} />
-                                                ) : (
-                                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No revenue trend data yet.' />
-                                                )}
-                                            </MotionCard>
-                                        </Col>
-                                        <Col xs={24} lg={7}>
-                                            <MotionCard
-                                                style={{
-                                                    borderRadius: 8,
-                                                    height: '100%',
-                                                    minHeight: 270
-                                                }}
-                                                styles={{ body: { padding: 12, minHeight: 270 } }}
-                                            >
-                                                <Text strong>SME Momentum</Text>
-                                                <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
-                                                    <Tag color='green' style={{ margin: 0, padding: '8px 10px' }}>
-                                                        Growing: {financeSummary.growingSmes}
-                                                    </Tag>
-                                                    <Tag color='blue' style={{ margin: 0, padding: '8px 10px' }}>
-                                                        Flat: {financeSummary.flatSmes}
-                                                    </Tag>
-                                                    <Tag color='red' style={{ margin: 0, padding: '8px 10px' }}>
-                                                        Declining: {financeSummary.decliningSmes}
-                                                    </Tag>
-                                                </div>
-                                            </MotionCard>
-                                        </Col>
-                                    </Row>
-                                </div>
-                            </div>
-                        )}
-                    </MotionCard>
+                    <FinanceSnapshotCard summary={financeSummary} loading={financeSummaryLoading} dateRange={dateRange} />
+                </Col>
 
+                <Col xs={24} lg={12}>
+                    <MovSubmissionStatusCard
+                        departmentId={user?.departmentId}
+                        programId={programId}
+                        dateRange={dateRange}
+                    />
+                </Col>
+
+                <Col xs={24} lg={12}>
                     <UpcomingAppointmentsCard
                         departmentId={user?.departmentId}
                         programId={programId}
@@ -1045,8 +955,6 @@ const FinanceDashboard: React.FC = () => {
                         limit={3}
                         onViewCalendar={() => setCalendarVisible(true)}
                     />
-
-
                 </Col>
             </Row>
 

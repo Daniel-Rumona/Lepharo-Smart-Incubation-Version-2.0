@@ -23,7 +23,7 @@ const ProjectAdminInquiryDetailPage: React.FC = () => {
     const isMobile = !Grid.useBreakpoint().md
 
     if (!id) {
-        return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
+        return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/inquiries' }} />
     }
 
     const handleEdit = () => {
@@ -100,7 +100,7 @@ const ProjectAdminInquiryDetailPage: React.FC = () => {
                 inquiryId={id}
                 onEdit={handleEdit}
                 onStatusAction={setStatusAction}
-                listPath={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }}
+                listPath={{ label: 'Back to inquiries', to: '/inquiries' }}
                 onUnavailable={setUnavailable}
             />
         </div>

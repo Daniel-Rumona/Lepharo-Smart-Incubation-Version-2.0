@@ -15,7 +15,10 @@ import {
     Switch,
     Tag,
     Popconfirm,
-    Skeleton
+    Popover,
+    Skeleton,
+    Card,
+    Segmented
 } from 'antd'
 import {
     PlusOutlined,
@@ -28,7 +31,10 @@ import {
     SettingOutlined,
     DeleteOutlined,
     ProjectOutlined,
-    FileProtectOutlined
+    FileProtectOutlined,
+    BranchesOutlined,
+    TagsOutlined,
+    SearchOutlined
 } from '@ant-design/icons'
 import {
     addDoc,
@@ -46,8 +52,10 @@ import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { BranchManagement } from '@/components/branch-management'
 import { motion } from 'framer-motion'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricTile, type MetricTone } from '@/components/dashboards/metrics/MetricTile'
+import { Helmet } from 'react-helmet'
+import { AdminKpiTile } from '@/components/admin/AdminKpiTile'
+import '@/styles/admin-overview.css'
+import type { MetricTone } from '@/components/dashboards/metrics/MetricTile'
 import {
     DEFAULT_PROGRAM_LIMIT,
     getProgramLimit,
@@ -56,12 +64,36 @@ import {
 import { MobileCardList } from '@/components/shared/MobileCardList'
 import '@/components/shared/setup-segmented.css'
 import { AgreementTemplatesManager } from '@/components/compliance/AgreementTemplatesManager'
+import {
+    DEPARTMENT_ROLES,
+    type DepartmentRoleKey,
+    type DepartmentRoleMap,
+    departmentLineage,
+    getDepartmentRole,
+    saveDepartmentRoles,
+    useDepartmentRoles
+} from '@/services/departmentRoles'
 
 const { Option } = Select
 const { TextArea } = Input
 const { Text } = Typography
 
 type SegmentKey = 'department' | 'branch' | 'programs' | 'agreements'
+
+const SEGMENT_ICONS: Record<SegmentKey, React.ReactNode> = {
+    department: <ApartmentOutlined />,
+    branch: <EnvironmentOutlined />,
+    programs: <ProjectOutlined />,
+    agreements: <FileProtectOutlined />
+}
+
+/** Tab names short enough for a phone, and for the search placeholder. */
+const SEGMENT_SHORT: Record<SegmentKey, string> = {
+    department: 'Departments',
+    branch: 'Branches',
+    programs: 'Programs',
+    agreements: 'Agreements'
+}
 
 type RoleUser = {
     id: string
@@ -99,16 +131,33 @@ const SystemSetupForm: React.FC = () => {
     const [programSearch, setProgramSearch] = useState('')
     const [agreementSearch, setAgreementSearch] = useState('')
     const [agreementAddSignal, setAgreementAddSignal] = useState(0)
+    const [branchSearch, setBranchSearch] = useState('')
+    const [branchAddSignal, setBranchAddSignal] = useState(0)
     const [programsLoading, setProgramsLoading] = useState(false)
     const [programTogglingId, setProgramTogglingId] = useState<string | null>(null)
     const [programLimitModalOpen, setProgramLimitModalOpen] = useState(false)
     const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(null)
 
     const selectedHeadUserId = Form.useWatch('headUserId', form)
+    const selectedRoleKey = Form.useWatch('roleKey', form) as DepartmentRoleKey | undefined
+    const selectedParentId = Form.useWatch('parentDepartmentId', form) as string | undefined
 
     const isSystemAdmin = ['system admin', 'system_admin'].includes(
         String(user?.role || '').toLowerCase()
     )
+    // The role map (systemSettings/departmentRoles) is writable by these two only; see firestore.rules.
+    const canEditRoles = isSystemAdmin || String(user?.role || '').toLowerCase() === 'director'
+    const { roles: departmentRoles } = useDepartmentRoles()
+
+    const departmentName = (id?: string | null) => departments.find(d => d.id === id)?.name || ''
+    const parentIdOf = (record: any) => String(record?.parentDepartmentId || record?.parentDeptId || '')
+    const roleLabel = (key?: string | null) => DEPARTMENT_ROLES.find(r => r.key === key)?.label || ''
+    /** The role a department was given directly (not inherited). */
+    const ownRoleOf = (id: string) =>
+        DEPARTMENT_ROLES.find(r => departmentRoles[r.key] === id)?.key as DepartmentRoleKey | undefined
+    /** A department and every department under it, at any depth. */
+    const subtreeOf = (id: string) =>
+        departments.filter(d => departmentLineage(d.id, departments).includes(id)).map(d => d.id as string)
 
     useEffect(() => {
         if (identityLoading) return
@@ -241,6 +290,17 @@ const SystemSetupForm: React.FC = () => {
         }
     }
 
+    // The toolbar's one search box edits whichever tab is open.
+    const activeSearch: [string, (value: string) => void] =
+        activeSegment === 'department'
+            ? [departmentSearch, setDepartmentSearch]
+            : activeSegment === 'branch'
+                ? [branchSearch, setBranchSearch]
+                : activeSegment === 'programs'
+                    ? [programSearch, setProgramSearch]
+                    : [agreementSearch, setAgreementSearch]
+
+    const assignedRoleCount = DEPARTMENT_ROLES.filter(r => departmentRoles[r.key]).length
     const withHead = departments.filter(d => d.headUserId || d.hodUserId || d.managerId || d.headName || d.manager).length
     const withCoordinator = branches.filter(b => b.centreCoordinatorUserId).length
     const activePrograms = programs.filter(p => p.isActive !== false).length
@@ -257,8 +317,8 @@ const SystemSetupForm: React.FC = () => {
             key: 'department',
             title: 'Departments',
             value: departments.length,
-            subtitle: `${withHead} with a head assigned`,
-            icon: <ApartmentOutlined style={{ fontSize: 20 }} />,
+            subtitle: `${withHead} with a head · ${assignedRoleCount}/${DEPARTMENT_ROLES.length} roles assigned`,
+            icon: <ApartmentOutlined />,
             tone: 'accent'
         },
         {
@@ -266,7 +326,7 @@ const SystemSetupForm: React.FC = () => {
             title: 'Branches',
             value: branches.length,
             subtitle: `${withCoordinator} with a centre coordinator`,
-            icon: <EnvironmentOutlined style={{ fontSize: 20 }} />,
+            icon: <EnvironmentOutlined />,
             tone: 'info'
         },
         ...(isSystemAdmin
@@ -276,7 +336,7 @@ const SystemSetupForm: React.FC = () => {
                       title: 'Programs',
                       value: programs.length,
                       subtitle: `${activePrograms} available · ${programs.length - activePrograms} deactivated`,
-                      icon: <ProjectOutlined style={{ fontSize: 20 }} />,
+                      icon: <ProjectOutlined />,
                       tone: 'info' as const
                   },
                   {
@@ -284,50 +344,74 @@ const SystemSetupForm: React.FC = () => {
                       title: 'Agreement Templates',
                       value: agreementTemplates?.total ?? 0,
                       subtitle: `${agreementTemplates?.active ?? 0} active`,
-                      icon: <FileProtectOutlined style={{ fontSize: 20 }} />,
+                      icon: <FileProtectOutlined />,
                       tone: 'warning' as const
                   }
               ]
             : [])
     ]
 
+    /** The department's own role, or the one it inherits from a parent. */
+    const roleCell = (record: any) => {
+        const own = ownRoleOf(record.id)
+        if (own) return <Tag color='processing' bordered={false}>{roleLabel(own)}</Tag>
+        const inherited = getDepartmentRole(record.id, departmentRoles, departments)
+        return inherited ? (
+            <Tag bordered={false} title='Inherited from its parent department'>
+                <BranchesOutlined /> {roleLabel(inherited)}
+            </Tag>
+        ) : (
+            <Text type='secondary'>—</Text>
+        )
+    }
+
     const departmentColumns = [
-        { title: 'Department Name', dataIndex: 'name', key: 'name' },
         {
-            title: 'Description',
-            dataIndex: 'description',
-            key: 'description',
-            render: (description: string) => <Text>{description}</Text>,
-            width: '35%'
+            title: 'Department',
+            dataIndex: 'name',
+            key: 'name',
+            render: (name: string, record: any) => (
+                <div style={{ minWidth: 220 }}>
+                    <Text strong>{name}</Text>
+                    {parentIdOf(record) && (
+                        <div>
+                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                <BranchesOutlined /> Under {departmentName(parentIdOf(record)) || 'a removed department'}
+                            </Text>
+                        </div>
+                    )}
+                    {record.description && (
+                        <Text type='secondary' style={{ fontSize: 12.5, display: 'block', marginTop: 2 }} ellipsis={{ tooltip: record.description }}>
+                            {record.description}
+                        </Text>
+                    )}
+                </div>
+            ),
+            width: '38%'
         },
+        { title: 'Role', key: 'role', render: (_: any, record: any) => roleCell(record), width: 220 },
         {
-            title: 'Contact',
+            title: 'Head and contact',
             key: 'contact',
             render: (_: any, record: any) => {
                 const headName = record.headName || record.manager || ''
                 return (
-                    <div>
-                        <div style={{ marginBottom: 4 }}>
-                            <MailOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                    <div style={{ display: 'grid', gap: 4 }}>
+                        <span>
+                            <UserOutlined className='admin-muted-icon' />
+                            {headName ? <Text>{headName}</Text> : <Text type='secondary'>No head assigned</Text>}
+                        </span>
+                        <span>
+                            <MailOutlined className='admin-muted-icon' />
                             {record.contactEmail ? (
-                                <Text copyable={{ text: record.contactEmail }}>
-                                    {record.contactEmail}
-                                </Text>
+                                <Text copyable={{ text: record.contactEmail }}>{record.contactEmail}</Text>
                             ) : (
                                 <Text type='secondary'>—</Text>
                             )}
-                        </div>
-
-                        {headName ? (
-                            <div>
-                                <UserOutlined style={{ color: '#1890ff', marginRight: 8 }} />
-                                <Text>{headName}</Text>
-                            </div>
-                        ) : null}
+                        </span>
                     </div>
                 )
-            },
-            width: '25%'
+            }
         },
         {
             title: 'Actions',
@@ -374,7 +458,9 @@ const SystemSetupForm: React.FC = () => {
                 item.description,
                 item.headName,
                 item.manager,
-                item.contactEmail
+                item.contactEmail,
+                roleLabel(getDepartmentRole(item.id, departmentRoles, departments)),
+                departmentName(parentIdOf(item))
             ]
                 .filter(Boolean)
                 .some(value => String(value).toLowerCase().includes(keyword))
@@ -414,7 +500,9 @@ const SystemSetupForm: React.FC = () => {
         form.setFieldsValue({
             ...record,
             headUserId: matchedHead?.id || undefined,
-            contactEmail: matchedHead?.email || record.contactEmail || ''
+            contactEmail: matchedHead?.email || record.contactEmail || '',
+            parentDepartmentId: parentIdOf(record) || undefined,
+            roleKey: ownRoleOf(record.id)
         })
         setModalVisible(true)
     }
@@ -451,9 +539,20 @@ const SystemSetupForm: React.FC = () => {
     const handleDeleteDepartment = async (record: any) => {
         if (!record?.id) return
 
+        // Sub-departments would silently lose their parent (and the role they inherit from it).
+        const children = departments.filter(d => parentIdOf(d) === record.id)
+        if (children.length) {
+            message.error(`Move or delete its sub-departments first: ${children.map(d => d.name || d.id).join(', ')}`)
+            return
+        }
+
         setDeletingDepartmentId(record.id)
         try {
             await deleteDoc(doc(db, 'departments', record.id))
+            const ownRole = ownRoleOf(record.id)
+            if (ownRole && canEditRoles) {
+                await saveDepartmentRoles({ ...departmentRoles, [ownRole]: undefined }, user?.name || user?.email || 'System Admin')
+            }
             setDepartments(prev => prev.filter(item => item.id !== record.id))
             message.success('Department deleted successfully')
         } catch (error) {
@@ -478,22 +577,39 @@ const SystemSetupForm: React.FC = () => {
                 headUserId: selectedHead?.id || null,
                 headName: selectedHead?.name || null,
                 contactEmail: String(values.contactEmail || '').trim(),
+                parentDepartmentId: values.parentDepartmentId || null,
                 createdAt: editingRecord?.createdAt || new Date().toISOString()
             }
 
+            let departmentId: string
             if (editingRecord) {
+                departmentId = editingRecord.id
                 await updateDoc(doc(db, 'departments', editingRecord.id), {
                     ...departmentValues,
                     manager: deleteField(),
                     managerId: deleteField(),
                     hodUserId: deleteField(),
-                    isTraining: deleteField()
+                    isTraining: deleteField(),
+                    // Older spelling of the parent link; parentDepartmentId replaces it.
+                    parentDeptId: deleteField()
                 })
-                message.success('Department updated successfully')
             } else {
-                await addDoc(collection(db, 'departments'), departmentValues)
-                message.success('Department created successfully')
+                departmentId = (await addDoc(collection(db, 'departments'), departmentValues)).id
             }
+
+            // A department plays at most one role and a role belongs to one department, so picking a
+            // role here also takes it from whichever department held it.
+            const nextRole = (values.roleKey || undefined) as DepartmentRoleKey | undefined
+            if (canEditRoles && nextRole !== ownRoleOf(departmentId)) {
+                const nextRoles: DepartmentRoleMap = { ...departmentRoles }
+                DEPARTMENT_ROLES.forEach(r => {
+                    if (nextRoles[r.key] === departmentId) delete nextRoles[r.key]
+                })
+                if (nextRole) nextRoles[nextRole] = departmentId
+                await saveDepartmentRoles(nextRoles, user?.name || user?.email || 'System Admin')
+            }
+
+            message.success(editingRecord ? 'Department updated successfully' : 'Department created successfully')
 
             await fetchAll()
             closeDepartmentModal()
@@ -506,58 +622,107 @@ const SystemSetupForm: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <div className='admin-overview'>
+            <Helmet>
+                <title>System Setup | Smart Incubation</title>
+            </Helmet>
+
+            <Row gutter={[16, 16]}>
                 {metrics.map(metric => (
                     <Col key={metric.key} xs={12} xl={24 / metrics.length}>
-                        <MetricTile
+                        <AdminKpiTile
+                            compact
+                            loading={metric.key === 'programs' ? programsLoading : loading}
                             icon={metric.icon}
-                            tone={metric.tone}
-                            title={isMobile && metric.key === 'agreements' ? 'Agreements' : metric.title}
+                            label={metric.title}
                             value={metric.value}
-                            subtitle={isMobile ? undefined : metric.subtitle}
-                            onClick={() => setActiveSegment(metric.key)}
-                            wrapperStyle={
-                                activeSegment === metric.key
-                                    ? { borderColor: '#1677ff', boxShadow: '0 0 0 1px #1677ff' }
-                                    : undefined
-                            }
+                            note={isMobile ? undefined : metric.subtitle}
                         />
                     </Col>
                 ))}
             </Row>
 
+            <div className='admin-toolbar'>
+                <Segmented
+                    className='admin-toolbar-tabs'
+                    block
+                    value={activeSegment}
+                    onChange={value => setActiveSegment(value as SegmentKey)}
+                    options={metrics.map(metric => ({
+                        value: metric.key,
+                        label: (
+                            <span className='admin-toolbar-tab'>
+                                {SEGMENT_ICONS[metric.key]}
+                                <span>{isMobile ? SEGMENT_SHORT[metric.key] : metric.title}</span>
+                            </span>
+                        )
+                    }))}
+                />
+                <Input
+                    allowClear
+                    className='admin-toolbar-search'
+                    prefix={<SearchOutlined />}
+                    placeholder={`Search ${SEGMENT_SHORT[activeSegment].toLowerCase()}`}
+                    value={activeSearch[0]}
+                    onChange={event => activeSearch[1](event.target.value)}
+                />
+                <div className='admin-toolbar-actions'>
+                    {activeSegment === 'department' ? (
+                        <>
+                            <Popover
+                                trigger='click'
+                                placement='bottomRight'
+                                title='Which department plays each role'
+                                content={
+                                    <div style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
+                                        {DEPARTMENT_ROLES.map(r => (
+                                            <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                                                <Text>{r.label}</Text>
+                                                {departmentRoles[r.key] ? (
+                                                    <Text strong>{departmentName(departmentRoles[r.key]) || 'Removed department'}</Text>
+                                                ) : (
+                                                    <Text type='secondary'>Unassigned</Text>
+                                                )}
+                                            </div>
+                                        ))}
+                                        <Text type='secondary' style={{ fontSize: 12, marginTop: 4 }}>
+                                            Set a department’s role from its Edit form.
+                                        </Text>
+                                    </div>
+                                }
+                            >
+                                <Button icon={<TagsOutlined />}>
+                                    Roles {assignedRoleCount}/{DEPARTMENT_ROLES.length}
+                                </Button>
+                            </Popover>
+                            <Button type='primary' icon={<PlusOutlined />} onClick={openAdd}>
+                                {isMobile ? 'Add' : 'Add Department'}
+                            </Button>
+                        </>
+                    ) : activeSegment === 'branch' ? (
+                        <Button type='primary' icon={<PlusOutlined />} onClick={() => setBranchAddSignal(count => count + 1)}>
+                            {isMobile ? 'Add' : 'Add Branch'}
+                        </Button>
+                    ) : activeSegment === 'programs' ? (
+                        <Button icon={<SettingOutlined />} onClick={() => setProgramLimitModalOpen(true)}>
+                            Program limit: {programLimit}
+                        </Button>
+                    ) : (
+                        <Button type='primary' icon={<PlusOutlined />} onClick={() => setAgreementAddSignal(count => count + 1)}>
+                            {isMobile ? 'Add' : 'Add Agreement'}
+                        </Button>
+                    )}
+                </div>
+            </div>
+
             <motion.div
-                initial={{ opacity: 0, y: 10 }}
+                key={activeSegment}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
+                transition={{ duration: 0.25 }}
             >
                 {activeSegment === 'department' ? (
-                    <MotionCard
-                        filterBar={
-                            <div className='setup-toolbar'>
-                                <div className='setup-toolbar-search'>
-                                    <Input.Search
-                                        placeholder='Search departments'
-                                        value={departmentSearch}
-                                        onChange={event => setDepartmentSearch(event.target.value)}
-                                        onSearch={setDepartmentSearch}
-                                        style={{ width: '100%' }}
-                                        allowClear
-                                    />
-                                </div>
-                                <div className='setup-toolbar-action'>
-                                    <Button
-                                        type='primary'
-                                        icon={<PlusOutlined />}
-                                        onClick={openAdd}
-                                    >
-                                        Add Department
-                                    </Button>
-                                </div>
-                            </div>
-                        }
-                    >
+                    <Card className='admin-card' bordered={false}>
                         {loading ? (
                             <Skeleton
                                 active
@@ -574,7 +739,9 @@ const SystemSetupForm: React.FC = () => {
                                     title: record.name || 'Unnamed department',
                                     subtitle: record.contactEmail || undefined,
                                     fields: [
-                                        { label: 'Head', value: record.headName || record.manager || '—' }
+                                        { label: 'Head', value: record.headName || record.manager || '—' },
+                                        { label: 'Role', value: roleCell(record) },
+                                        ...(parentIdOf(record) ? [{ label: 'Under', value: departmentName(parentIdOf(record)) || '—' }] : [])
                                     ],
                                     note: record.description ? (
                                         <Text type='secondary'>{record.description}</Text>
@@ -611,34 +778,13 @@ const SystemSetupForm: React.FC = () => {
                                 }}
                             />
                         )}
-                    </MotionCard>
+                    </Card>
                 ) : activeSegment === 'branch' ? (
-                    <BranchManagement />
+                    <Card className='admin-card' bordered={false}>
+                        <BranchManagement search={branchSearch} addSignal={branchAddSignal} onChanged={() => void fetchAll()} />
+                    </Card>
                 ) : activeSegment === 'programs' && isSystemAdmin ? (
-                    <MotionCard
-                        filterBar={
-                            <div className='setup-toolbar'>
-                                <div className='setup-toolbar-search'>
-                                    <Input.Search
-                                        placeholder='Search programs'
-                                        value={programSearch}
-                                        onChange={event => setProgramSearch(event.target.value)}
-                                        onSearch={setProgramSearch}
-                                        style={{ width: '100%' }}
-                                        allowClear
-                                    />
-                                </div>
-                                <div className='setup-toolbar-action'>
-                                    <Button
-                                        icon={<SettingOutlined />}
-                                        onClick={() => setProgramLimitModalOpen(true)}
-                                    >
-                                        Program limit: {programLimit}
-                                    </Button>
-                                </div>
-                            </div>
-                        }
-                    >
+                    <Card className='admin-card' bordered={false}>
                         {programsLoading ? (
                             <Skeleton
                                 active
@@ -723,40 +869,16 @@ const SystemSetupForm: React.FC = () => {
                                 }}
                             />
                         )}
-                    </MotionCard>
+                    </Card>
                 ) : activeSegment === 'agreements' && isSystemAdmin ? (
-                    <MotionCard
-                        filterBar={
-                            <div className='setup-toolbar'>
-                                <div className='setup-toolbar-search'>
-                                    <Input.Search
-                                        placeholder='Search agreement templates'
-                                        value={agreementSearch}
-                                        onChange={event => setAgreementSearch(event.target.value)}
-                                        onSearch={setAgreementSearch}
-                                        style={{ width: '100%' }}
-                                        allowClear
-                                    />
-                                </div>
-                                <div className='setup-toolbar-action'>
-                                    <Button
-                                        type='primary'
-                                        icon={<PlusOutlined />}
-                                        onClick={() => setAgreementAddSignal(count => count + 1)}
-                                    >
-                                        Add Agreement
-                                    </Button>
-                                </div>
-                            </div>
-                        }
-                    >
+                    <Card className='admin-card' bordered={false}>
                         <AgreementTemplatesManager
                             canManage={isSystemAdmin}
                             search={agreementSearch}
                             addSignal={agreementAddSignal}
                             onChanged={() => void fetchAgreementTemplates()}
                         />
-                    </MotionCard>
+                    </Card>
                 ) : null}
             </motion.div>
 
@@ -828,6 +950,78 @@ const SystemSetupForm: React.FC = () => {
 
                     <Row gutter={16}>
                         <Col xs={24} md={12}>
+                            <Form.Item
+                                label='Parent department (Optional)'
+                                name='parentDepartmentId'
+                                tooltip='Makes this a sub-department. Without a role of its own it acts in its parent’s role.'
+                            >
+                                <Select
+                                    allowClear
+                                    showSearch
+                                    optionFilterProp='label'
+                                    placeholder='None (top-level department)'
+                                    prefix={<BranchesOutlined />}
+                                    // Not itself or anything under it, which would make a loop.
+                                    options={departments
+                                        .filter(d => !editingRecord || !subtreeOf(editingRecord.id).includes(d.id))
+                                        .map(d => ({ value: d.id, label: d.name || d.id }))
+                                        .sort((a, b) => a.label.localeCompare(b.label))}
+                                />
+                            </Form.Item>
+                        </Col>
+
+                        <Col xs={24} md={12}>
+                            <Form.Item
+                                label='Role (Optional)'
+                                name='roleKey'
+                                tooltip='Dashboards, menus and permissions follow the role, so renaming the department changes nothing but its label.'
+                                extra={(() => {
+                                    if (selectedRoleKey) {
+                                        const holder = departmentRoles[selectedRoleKey]
+                                        if (holder && holder !== editingRecord?.id) {
+                                            return <Text type='warning'>Moves this role from {departmentName(holder) || 'another department'}.</Text>
+                                        }
+                                        return DEPARTMENT_ROLES.find(r => r.key === selectedRoleKey)?.description
+                                    }
+                                    const inherited = selectedParentId
+                                        ? getDepartmentRole(selectedParentId, departmentRoles, departments)
+                                        : null
+                                    return inherited ? `Acts as ${roleLabel(inherited)} through its parent.` : undefined
+                                })()}
+                            >
+                                <Select
+                                    allowClear
+                                    showSearch
+                                    optionFilterProp='label'
+                                    disabled={!canEditRoles}
+                                    placeholder={canEditRoles ? 'No special role' : 'Set by a System Admin or Director'}
+                                    prefix={<TagsOutlined />}
+                                    popupMatchSelectWidth={false}
+                                    options={DEPARTMENT_ROLES.map(r => {
+                                        const holder = departmentRoles[r.key]
+                                        return {
+                                            value: r.key,
+                                            label: r.label,
+                                            holder: holder && holder !== editingRecord?.id ? departmentName(holder) : ''
+                                        }
+                                    })}
+                                    optionRender={o => (
+                                        <div>
+                                            <div>{o.data.label}</div>
+                                            {o.data.holder && (
+                                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                                    Currently {o.data.holder}
+                                                </Text>
+                                            )}
+                                        </div>
+                                    )}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col xs={24} md={12}>
                             <Form.Item label='HOD / Head (Optional)' name='headUserId'>
                                 <Select
                                     allowClear
@@ -865,7 +1059,7 @@ const SystemSetupForm: React.FC = () => {
                                             ? 'Filled from selected HOD / Head'
                                             : 'department@company.com'
                                     }
-                                    prefix={<MailOutlined style={{ color: '#f5222d' }} />}
+                                    prefix={<MailOutlined className='admin-muted-icon' />}
                                     maxLength={100}
                                 />
                             </Form.Item>

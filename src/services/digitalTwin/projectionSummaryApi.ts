@@ -3,7 +3,7 @@ import type { ProjectionFacts } from './projectionSummary'
 
 const AI_BASE_URL = String(
     // @ts-ignore import.meta is not accepted by this project's tsc module setting
-    (import.meta?.env as Record<string, string | undefined> | undefined)?.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-incubation.hf.space'
+    (import.meta?.env as Record<string, string | undefined> | undefined)?.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-inc.hf.space'
 ).replace(/\/$/, '')
 
 /** Asks the assistant to put the comparison into two or three sentences. Throws when it is unavailable so the built-in wording is used. */

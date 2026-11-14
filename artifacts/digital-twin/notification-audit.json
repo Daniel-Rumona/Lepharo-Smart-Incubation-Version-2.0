@@ -1,0 +1,29 @@
+{
+  "checkedAt": "2026-10-09T15:25:46.160Z",
+  "seedRunId": "dtseed_20261009_v1",
+  "windowStart": "2026-10-09T15:02:18.142Z",
+  "notifications": [],
+  "emailLogs": [],
+  "evidence": [
+    {
+      "path": "synthetic/dtseed_20261009_v1/sample-0.txt",
+      "status": 200,
+      "contentMatches": true
+    },
+    {
+      "path": "synthetic/dtseed_20261009_v1/sample-1.txt",
+      "status": 200,
+      "contentMatches": true
+    },
+    {
+      "path": "synthetic/dtseed_20261009_v1/sample-2.txt",
+      "status": 200,
+      "contentMatches": true
+    },
+    {
+      "path": "synthetic/dtseed_20261009_v1/sample-3.txt",
+      "status": 200,
+      "contentMatches": true
+    }
+  ]
+}
