@@ -71,6 +71,18 @@ registerRoute(
         cacheName: 'route-chunks',
         plugins: [
             new CacheableResponsePlugin({ statuses: [0, 200] }),
+            // Never store a non-script answer under a chunk URL. When a chunk
+            // from an older deploy is gone, the host can answer with the HTML
+            // shell and a 200; caching that would keep the screen broken until
+            // the entry expired.
+            {
+                cacheWillUpdate: async ({ response }) => {
+                    const type = response.headers.get('content-type') ?? ''
+                    return response.type === 'opaque' || type.includes('javascript')
+                        ? response
+                        : null
+                },
+            },
             new ExpirationPlugin({
                 maxEntries: 160,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
