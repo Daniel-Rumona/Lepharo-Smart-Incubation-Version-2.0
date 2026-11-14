@@ -44,3 +44,8 @@ src/serviceAccountKey.json
 smart-inc-whatsapp-work/
 outputs/
 scripts/oldServiceAccountKey.json
+
+# Local-only: demo video project and script run dumps
+demo-video/
+scripts/*-backup-*.json
+scripts/*-report*.json
