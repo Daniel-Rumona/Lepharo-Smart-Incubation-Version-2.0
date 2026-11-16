@@ -281,7 +281,7 @@ export async function loadMilestoneJourney(args: {
                   confirmation?.confirmedAt || ""
                 )}`,
                 kind: "roadmap",
-                title: "Roadmap area confirmed",
+                title: "Developmental Plan area confirmed",
               },
             ],
           });

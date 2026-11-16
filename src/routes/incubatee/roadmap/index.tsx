@@ -362,7 +362,7 @@ const RoadmapFlow: React.FC = () => {
             <header className='dp-page-head'>
                 <Title level={3} className='dp-page-title'>
                     <FileTextOutlined />
-                    Development plan
+                    Developmental Plan
                 </Title>
                 <Text type='secondary'>
                     Each department sets out what it will deliver for your business. Review each one and confirm it.

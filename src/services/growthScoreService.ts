@@ -121,7 +121,7 @@ export async function loadGrowthScore(sme: SmeRef): Promise<GrowthScore | null> 
     const components: GrowthScoreComponent[] = [
         { key: 'compliance', label: 'Compliance', score: complianceScore, maximum: 30, detail: documents.length ? `${verifiedDocuments.length} of ${documents.length} documents verified` : 'No compliance documents recorded yet' },
         { key: 'interventions', label: 'Interventions', score: interventionScore, maximum: 30, detail: interventions.length ? `${completed.length} of ${interventions.length} interventions completed` : 'No interventions assigned yet' },
-        { key: 'roadmap', label: 'Roadmap', score: roadmapScore, maximum: 20, detail: latestPlan?.finalConfirmation ? 'Growth plan finalised' : departmentIds.length ? `${confirmedDepartments.length} of ${departmentIds.length} roadmap areas confirmed` : 'No confirmed roadmap areas yet' },
+        { key: 'roadmap', label: 'Developmental Plan', score: roadmapScore, maximum: 20, detail: latestPlan?.finalConfirmation ? 'Growth plan finalised' : departmentIds.length ? `${confirmedDepartments.length} of ${departmentIds.length} developmental plan areas confirmed` : 'No confirmed developmental plan areas yet' },
         { key: 'responsiveness', label: 'SME responsiveness', score: responsivenessScore, maximum: 20, detail: responseOpportunities ? `${responses} of ${responseOpportunities} requested intervention responses completed` : 'No intervention responses requested yet' }
     ]
 

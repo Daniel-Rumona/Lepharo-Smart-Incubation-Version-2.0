@@ -213,7 +213,7 @@ const PRIMARY_NAV_KEYS: Partial<Record<UserRole, string[]>> = {
 // Bottom-bar names for incubatee tabs whose menu label is too long to sit under an icon.
 const INCUBATEE_BOTTOM_NAV_LABELS: Record<string, string> = {
     dashboard: "Home",
-    roadmap: "Dev Plan",
+    roadmap: "Developmental Plan",
 };
 
 // Every operations topbar has Incubatees right after Home, as a fifth pill on

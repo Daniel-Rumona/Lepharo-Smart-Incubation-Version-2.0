@@ -1274,6 +1274,10 @@ export const IncubateeDashboard: React.FC = () => {
     /** -----------------
      *  Top metrics (map-driven, responsive)
      *  ----------------- */
+    const planConfirmed = !waiting.plansLoading &&
+        waiting.participantId === participantId &&
+        waiting.plan?.finalConfirmation === true
+
     const topMetrics: DashboardMetric[] = useMemo(() => [
         {
             key: 'outstanding-documents',
@@ -1297,17 +1301,21 @@ export const IncubateeDashboard: React.FC = () => {
             tone: 'success' as const,
             title: 'Interventions Distribution',
             mobileTitle: 'Interventions',
-            value: `${completedInterventions}/${requiredInterventions}`,
+            value: planConfirmed ? `${completedInterventions}/${requiredInterventions}` : '—',
             subtitle:
-                requiredInterventions > 0
+                !planConfirmed
+                    ? 'Awaiting Developmental Plan confirmation'
+                    : requiredInterventions > 0
                     ? `${Math.max(requiredInterventions - completedInterventions, 0)} remaining`
                     : 'No required interventions defined yet',
             mobileSubtitle:
-                requiredInterventions > 0
+                !planConfirmed
+                    ? 'Awaiting plan confirmation'
+                    : requiredInterventions > 0
                     ? `${Math.max(requiredInterventions - completedInterventions, 0)} left`
                     : 'None defined'
         }
-    ], [completedInterventions, requiredInterventions, outstandingDocs, complianceUnavailable])
+    ], [completedInterventions, requiredInterventions, outstandingDocs, complianceUnavailable, planConfirmed])
 
     /** -----------------
      *  Render
