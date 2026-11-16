@@ -29,6 +29,7 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const config_1 = require("./config");
+const pilotGuard_1 = require("./pilotGuard");
 const INVALID_TOKEN_CODES = new Set([
     "messaging/invalid-registration-token",
     "messaging/registration-token-not-registered",
@@ -86,7 +87,10 @@ exports.onNotificationCreatedPush = (0, firestore_1.onDocumentWritten)({ region:
         return;
     if (before || !after)
         return; // only push for brand-new notifications
-    const userSnaps = await resolveRecipients(after);
+    const resolved = await resolveRecipients(after);
+    // Pilot guard: push only to people on the pilot list (see pilotGuard.ts).
+    const allowed = await Promise.all(resolved.map((snap) => (0, pilotGuard_1.pilotAllowsEmail)(snap.data()?.email)));
+    const userSnaps = resolved.filter((_, index) => allowed[index]);
     // token -> owner, so a role-keyed message reads right for each person.
     const tokenOwner = new Map();
     userSnaps.forEach((snap) => {

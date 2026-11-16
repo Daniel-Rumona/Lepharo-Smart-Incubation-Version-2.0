@@ -1,5 +1,6 @@
 // mailer.ts
 import nodemailer from "nodemailer";
+import { withPilotGuard } from "../pilotGuard";
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -15,7 +16,7 @@ function getTransporter() {
     const secure = process.env.SMTP_SECURE == null
       ? port === 465
       : process.env.SMTP_SECURE.trim().toLowerCase() === "true";
-    transporter = nodemailer.createTransport({
+    transporter = withPilotGuard(nodemailer.createTransport({
       host: requireEnv("SMTP_HOST"),
       port,
       secure,
@@ -28,7 +29,7 @@ function getTransporter() {
         user: requireEnv("SMTP_USER"),
         pass: requireEnv("SMTP_PASS"),
       },
-    });
+    }));
   }
   return transporter;
 }

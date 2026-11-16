@@ -3,6 +3,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { suppressRecordNotifications } from "./syntheticData";
 import { admin, db } from "./emailShared";
 import { APP_BASE_URL } from "./config";
+import { pilotAllowsEmail } from "./pilotGuard";
 
 type NotificationDoc = {
   recipientIds?: string[];
@@ -73,7 +74,10 @@ export const onNotificationCreatedPush = onDocumentWritten(
     if (suppressRecordNotifications(after, event.params.notificationId)) return;
     if (before || !after) return; // only push for brand-new notifications
 
-    const userSnaps = await resolveRecipients(after);
+    const resolved = await resolveRecipients(after);
+    // Pilot guard: push only to people on the pilot list (see pilotGuard.ts).
+    const allowed = await Promise.all(resolved.map((snap) => pilotAllowsEmail(snap.data()?.email)));
+    const userSnaps = resolved.filter((_, index) => allowed[index]);
 
     // token -> owner, so a role-keyed message reads right for each person.
     const tokenOwner = new Map<string, { uid: string; role?: string }>();

@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.withEmailDeliveryLogging = exports.isTransientSmtpError = void 0;
 const admin = __importStar(require("firebase-admin"));
 const logger = __importStar(require("firebase-functions/logger"));
+const pilotGuard_1 = require("./pilotGuard");
 if (!admin.apps.length) {
     admin.initializeApp();
 }
@@ -155,7 +156,8 @@ function withEmailDeliveryLogging(transport) {
             throw error;
         }
     });
-    return transport;
+    // Outermost, so a send the pilot guard drops is never attempted or logged as sent.
+    return (0, pilotGuard_1.withPilotGuard)(transport);
 }
 exports.withEmailDeliveryLogging = withEmailDeliveryLogging;
 //# sourceMappingURL=emailDelivery.js.map

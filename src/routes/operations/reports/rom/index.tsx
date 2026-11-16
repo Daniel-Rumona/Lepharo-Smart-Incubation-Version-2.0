@@ -1252,6 +1252,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
                 {
                     type: "column",
                     name: "Missing",
+                    color: REPORT_CHART_COLORS.danger,
                     data: documentStats.rows.map((row) => row.missing),
                 },
             ],
@@ -1853,8 +1854,10 @@ const ROMSegmentedReportsPage: React.FC = () => {
                                             width: "100%",
                                             padding: 14,
                                             borderRadius: 14,
-                                            border: "1px solid #e5e7eb",
-                                            background: "linear-gradient(180deg,#ffffff,#f8fafc)",
+                                            border: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+                                            background: isDark
+                                                ? "rgba(255,255,255,0.03)"
+                                                : "linear-gradient(180deg,#ffffff,#f8fafc)",
                                         }}
                                     >
                                         <div
@@ -1875,7 +1878,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
                                         <Progress
                                             percent={item.value}
                                             strokeColor={item.strokeColor}
-                                            trailColor="#e5e7eb"
+                                            trailColor={isDark ? "rgba(255,255,255,0.1)" : "#e5e7eb"}
                                             showInfo={false}
                                         />
                                     </div>

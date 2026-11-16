@@ -29,6 +29,7 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const crypto_1 = require("crypto");
 const firebase_1 = require("./firebase");
+const pilotGuard_1 = require("./pilotGuard");
 const smeIdentity_1 = require("./smeIdentity");
 const smeIdentityLogic_1 = require("./smeIdentityLogic");
 const phoneLoginLogic_1 = require("./phoneLoginLogic");
@@ -72,6 +73,10 @@ async function smeLoginFor(digits) {
 }
 /** Sends the code through the router's dispatch endpoint. Never throws. */
 async function dispatchLoginCode(digits, code, dedupeKey) {
+    if (!(await (0, pilotGuard_1.pilotAllowsPhone)(digits))) {
+        logger.info("pilot_guard.whatsapp_skipped", { type: "login_code" });
+        return false;
+    }
     const url = clean(process.env.WHATSAPP_DISPATCH_URL);
     const secret = clean(process.env.WHATSAPP_DISPATCH_SECRET);
     if (!url || !secret) {

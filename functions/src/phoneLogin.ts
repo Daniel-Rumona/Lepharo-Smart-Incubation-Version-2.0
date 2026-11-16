@@ -3,6 +3,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall, type CallableRequest } from "firebase-functions/v2/https";
 import { createHash, randomBytes } from "crypto";
 import { admin, db } from "./firebase";
+import { pilotAllowsPhone } from "./pilotGuard";
 import { linkSmeIdentity } from "./smeIdentity";
 import { isSmeRole } from "./smeIdentityLogic";
 import {
@@ -59,6 +60,10 @@ async function smeLoginFor(digits: string): Promise<string | null> {
 
 /** Sends the code through the router's dispatch endpoint. Never throws. */
 async function dispatchLoginCode(digits: string, code: string, dedupeKey: string): Promise<boolean> {
+  if (!(await pilotAllowsPhone(digits))) {
+    logger.info("pilot_guard.whatsapp_skipped", { type: "login_code" });
+    return false;
+  }
   const url = clean(process.env.WHATSAPP_DISPATCH_URL);
   const secret = clean(process.env.WHATSAPP_DISPATCH_SECRET);
   if (!url || !secret) {

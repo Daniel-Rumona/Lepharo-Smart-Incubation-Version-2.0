@@ -1,6 +1,7 @@
 import * as logger from "firebase-functions/logger";
 import { suppressRecordNotifications } from "./syntheticData";
 import { db } from "./emailShared";
+import { pilotAllowsPhone } from "./pilotGuard";
 import { candidatePhoneValues, clean, normalizePhone } from "./whatsappCommon";
 import { resolveStaffByPhone } from "./whatsappStaff";
 import {
@@ -18,6 +19,10 @@ import {
 const lower = (value: unknown) => clean(value).toLowerCase();
 
 async function post(dispatch: CheckBackDispatch): Promise<"sent" | "failed"> {
+  if (!(await pilotAllowsPhone(dispatch.to))) {
+    logger.info("pilot_guard.whatsapp_skipped", { type: dispatch.type, followUpId: dispatch.followUpId });
+    return "failed";
+  }
   const url = clean(process.env.WHATSAPP_DISPATCH_URL);
   const secret = clean(process.env.WHATSAPP_DISPATCH_SECRET);
   if (!url || !secret) return "failed";

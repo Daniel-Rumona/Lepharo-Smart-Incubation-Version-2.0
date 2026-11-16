@@ -41,8 +41,12 @@ const DRILL_TITLES: Record<DrillKey, string> = {
 
 type SmeRow = {
   sme: TrainingEnrollment;
+  /** Held sessions the SME was invited to, and how many of them anyone from it attended. */
   attended: number;
   held: number;
+  /** Its people's invitations to those sessions (an SME sends several), and how many attended. */
+  peopleAttended: number;
+  peopleInvited: number;
   coursePercent: number | null;
   averageScore: number | null;
   flags: string[];
@@ -102,20 +106,27 @@ export default function TrainingProgramDashboard({ training }: { training: Train
     const passRate = allScores.length ? pct(allScores.filter((s) => s.score >= s.passMark).length, allScores.length) : null;
 
     const rows: SmeRow[] = enrolled.map((sme) => {
-      const mine = held.flatMap((s) => s.invites.filter((i) => i.smeId === sme.id));
-      const attended = mine.filter((i) => i.attendance?.status === "attended").length;
+      // Judged per session: the SME attended a session when any of its people did.
+      // Counting each person's invitation would flag an SME that sent three
+      // people to one session and two came.
+      const mySessions = held.map((s) => s.invites.filter((i) => i.smeId === sme.id)).filter((invites) => invites.length);
+      const attended = mySessions.filter((invites) => invites.some((i) => i.attendance?.status === "attended")).length;
+      const mine = mySessions.flat();
+      const peopleAttended = mine.filter((i) => i.attendance?.status === "attended").length;
       const progress = sme.userId ? courseIds.map((c) => data.progress[learnerCourseKey(sme.userId!, c)]) : [];
       const coursePercent = sme.userId && courseIds.length ? Math.round(progress.reduce((n, p) => n + (p?.percent || 0), 0) / courseIds.length) : null;
       const scores = progress.flatMap((p) => p?.scores || []);
       const flags: string[] = [];
       if (!sme.userId) flags.push("No portal login");
-      if (mine.length >= 2 && attended / mine.length < 0.75) flags.push("Low attendance");
+      if (mySessions.length >= 2 && attended / mySessions.length < 0.75) flags.push("Low attendance");
       if (coursePercent === 0) flags.push("Courses not started");
       if (scores.some((s) => s.score < s.passMark)) flags.push("Failed an assessment");
       return {
         sme,
         attended,
-        held: mine.length,
+        held: mySessions.length,
+        peopleAttended,
+        peopleInvited: mine.length,
         coursePercent,
         averageScore: scores.length ? Math.round(scores.reduce((n, s) => n + s.score, 0) / scores.length) : null,
         flags,
@@ -167,6 +178,9 @@ export default function TrainingProgramDashboard({ training }: { training: Train
   const phase = dayjs().isBefore(start) ? `Starts in ${start.diff(dayjs(), "day")} days` : dayjs().isAfter(end) ? "Finished" : `${end.diff(dayjs(), "day")} days left`;
   const unscheduled = view.live.filter((s) => !s.booked).length;
   const allScores = view.rows.flatMap((r) => (r.averageScore === null ? [] : [r]));
+  // Course completion and assessment results come from linked Academy courses;
+  // with none linked, the tiles, columns and course card have nothing to say.
+  const hasCourses = view.courses.length > 0;
 
   // Two tiles carry the page on phones, as on every dashboard: who is enrolled and whether they turn up.
   const metrics: DashboardMetric[] = [
@@ -199,6 +213,8 @@ export default function TrainingProgramDashboard({ training }: { training: Train
       tone: "info",
       onClick: () => setDrillKey("sessions"),
     },
+  ];
+  if (hasCourses) metrics.push(
     {
       key: "courses",
       title: "Course completion",
@@ -216,8 +232,8 @@ export default function TrainingProgramDashboard({ training }: { training: Train
       icon: <TrophyOutlined style={{ fontSize: 20 }} />,
       tone: "neutral",
       onClick: () => setDrillKey("scores"),
-    },
-  ];
+    }
+  );
 
   const smeIdentity = (sme: TrainingEnrollment) => (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -268,9 +284,33 @@ export default function TrainingProgramDashboard({ training }: { training: Train
 
   const smeColumns: ColumnsType<SmeRow> = [
     { title: "SME", key: "sme", width: 260, render: (_, r) => smeIdentity(r.sme) },
-    { title: "Attendance", key: "attendance", width: 120, render: (_, r) => (r.held ? `${r.attended}/${r.held}` : "—") },
-    { title: "Courses", key: "courses", width: 200, render: (_, r) => percentBar(r.coursePercent) },
-    { title: "Avg score", key: "score", width: 110, render: (_, r) => (r.averageScore === null ? "—" : `${r.averageScore}%`) },
+    {
+      title: "Attendance",
+      key: "attendance",
+      width: 140,
+      render: (_, r) =>
+        r.held ? (
+          <div>
+            <Text>
+              {r.attended}/{r.held} session{r.held === 1 ? "" : "s"}
+            </Text>
+            {/* People only when the SME sent more than one person to a session. */}
+            {r.peopleInvited > r.held && (
+              <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
+                {r.peopleAttended}/{r.peopleInvited} people
+              </Text>
+            )}
+          </div>
+        ) : (
+          "—"
+        ),
+    },
+    ...(hasCourses
+      ? ([
+          { title: "Courses", key: "courses", width: 200, render: (_, r) => percentBar(r.coursePercent) },
+          { title: "Avg score", key: "score", width: 110, render: (_, r) => (r.averageScore === null ? "—" : `${r.averageScore}%`) },
+        ] as ColumnsType<SmeRow>)
+      : []),
     {
       title: "Flags",
       key: "flags",
@@ -341,6 +381,99 @@ export default function TrainingProgramDashboard({ training }: { training: Train
     );
   };
 
+  const attentionCard = (
+    <MotionCard
+      title="Who needs attention"
+      extra={
+        <Button type="link" onClick={() => navigate(TRAINING_SMES)} style={{ padding: 0 }}>
+          Training SMEs
+        </Button>
+      }
+    >
+      {view.attention.length ? (
+        <Table
+          rowKey={(r) => r.sme.id}
+          size="small"
+          dataSource={view.attention}
+          columns={smeColumns.filter((c) => c.key !== "score")}
+          scroll={{ x: hasCourses ? 560 : undefined }}
+          pagination={{ pageSize: 6, hideOnSinglePage: true, showSizeChanger: false, position: ["bottomCenter"] }}
+        />
+      ) : (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={view.enrolled.length ? "Every enrolled SME is on track." : "No SMEs are enrolled in this training yet."}
+        />
+      )}
+    </MotionCard>
+  );
+
+  const courseCard = (
+    <MotionCard title="Course progress">
+      <Space direction="vertical" size={14} style={{ width: "100%" }}>
+        {view.courses.map((c) => (
+          <div key={c.courseId}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <Text strong ellipsis>
+                <BookOutlined /> {c.title}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                {c.completed} completed · {c.started} started
+              </Text>
+            </div>
+            {percentBar(c.average)}
+          </div>
+        ))}
+      </Space>
+    </MotionCard>
+  );
+
+  const upcomingCard = <UpcomingAppointmentsCard programId={training.id} daysAhead={7} limit={8} onViewCalendar={() => setCalendarVisible(true)} />;
+
+  const planCard = (
+    <MotionCard
+      title="Delivery against plan"
+      extra={
+        <Tag color="blue" style={{ borderRadius: 999, marginInlineEnd: 0 }}>
+          {phase}
+        </Tag>
+      }
+    >
+      <Space direction="vertical" size={14} style={{ width: "100%" }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Training period
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {start.format("DD MMM")} – {end.format("DD MMM YYYY")}
+            </Text>
+          </div>
+          {percentBar(pct(elapsed, totalDays))}
+        </div>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Sessions held
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {view.held.length} of {view.live.length}
+            </Text>
+          </div>
+          {percentBar(view.live.length ? pct(view.held.length, view.live.length) : null)}
+        </div>
+        <Space size={[8, 8]} wrap>
+          <Tag color="green">{view.held.length} held</Tag>
+          <Tag color="blue">{view.upcoming.length} upcoming</Tag>
+          <Tag color={unscheduled ? "orange" : "default"}>{unscheduled} not scheduled</Tag>
+        </Space>
+        <Button shape="round" icon={<ScheduleOutlined />} onClick={() => navigate(TRAININGS)} style={{ alignSelf: "flex-start" }}>
+          Open training plan
+        </Button>
+      </Space>
+    </MotionCard>
+  );
+
   return (
     <div style={{ padding: 24, minHeight: "100vh" }}>
       <Helmet>
@@ -349,110 +482,33 @@ export default function TrainingProgramDashboard({ training }: { training: Train
 
       <MetricsGrid metrics={metrics} />
 
-      <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
-        <Col xs={24} xl={12}>
-          <Space direction="vertical" size={24} style={{ width: "100%" }}>
-            <MotionCard
-              title="Who needs attention"
-              extra={
-                <Button type="link" onClick={() => navigate(TRAINING_SMES)} style={{ padding: 0 }}>
-                  Training SMEs
-                </Button>
-              }
-            >
-              {view.attention.length ? (
-                <Table
-                  rowKey={(r) => r.sme.id}
-                  size="small"
-                  dataSource={view.attention}
-                  columns={smeColumns.filter((c) => c.key !== "score")}
-                  scroll={{ x: 560 }}
-                  pagination={{ pageSize: 6, hideOnSinglePage: true, showSizeChanger: false, position: ["bottomCenter"] }}
-                />
-              ) : (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={view.enrolled.length ? "Every enrolled SME is on track." : "No SMEs are enrolled in this training yet."}
-                />
-              )}
-            </MotionCard>
-
-            <MotionCard title="Course progress">
-              {view.courses.length ? (
-                <Space direction="vertical" size={14} style={{ width: "100%" }}>
-                  {view.courses.map((c) => (
-                    <div key={c.courseId}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <Text strong ellipsis>
-                          <BookOutlined /> {c.title}
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                          {c.completed} completed · {c.started} started
-                        </Text>
-                      </div>
-                      {percentBar(c.average)}
-                    </div>
-                  ))}
-                </Space>
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No courses linked to this training">
-                  <Button shape="round" onClick={() => navigate(TRAININGS)}>
-                    Link courses
-                  </Button>
-                </Empty>
-              )}
-            </MotionCard>
-          </Space>
-        </Col>
-
-        <Col xs={24} xl={12}>
-          <Space direction="vertical" size={24} style={{ width: "100%" }}>
-            <UpcomingAppointmentsCard programId={training.id} daysAhead={7} limit={8} onViewCalendar={() => setCalendarVisible(true)} />
-
-            <MotionCard
-              title="Delivery against plan"
-              extra={
-                <Tag color="blue" style={{ borderRadius: 999, marginInlineEnd: 0 }}>
-                  {phase}
-                </Tag>
-              }
-            >
-              <Space direction="vertical" size={14} style={{ width: "100%" }}>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      Training period
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {start.format("DD MMM")} – {end.format("DD MMM YYYY")}
-                    </Text>
-                  </div>
-                  {percentBar(pct(elapsed, totalDays))}
-                </div>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      Sessions held
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {view.held.length} of {view.live.length}
-                    </Text>
-                  </div>
-                  {percentBar(view.live.length ? pct(view.held.length, view.live.length) : null)}
-                </div>
-                <Space size={[8, 8]} wrap>
-                  <Tag color="green">{view.held.length} held</Tag>
-                  <Tag color="blue">{view.upcoming.length} upcoming</Tag>
-                  <Tag color={unscheduled ? "orange" : "default"}>{unscheduled} not scheduled</Tag>
-                </Space>
-                <Button shape="round" icon={<ScheduleOutlined />} onClick={() => navigate(TRAININGS)} style={{ alignSelf: "flex-start" }}>
-                  Open training plan
-                </Button>
-              </Space>
-            </MotionCard>
-          </Space>
-        </Col>
-      </Row>
+      {hasCourses ? (
+        <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
+          <Col xs={24} xl={12}>
+            <Space direction="vertical" size={24} style={{ width: "100%" }}>
+              {attentionCard}
+              {courseCard}
+            </Space>
+          </Col>
+          <Col xs={24} xl={12}>
+            <Space direction="vertical" size={24} style={{ width: "100%" }}>
+              {upcomingCard}
+              {planCard}
+            </Space>
+          </Col>
+        </Row>
+      ) : (
+        // No courses: attention beside delivery against the plan, the week ahead across the full width below.
+        <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
+          <Col xs={24} xl={12}>
+            {attentionCard}
+          </Col>
+          <Col xs={24} xl={12}>
+            {planCard}
+          </Col>
+          <Col xs={24}>{upcomingCard}</Col>
+        </Row>
+      )}
 
       <Modal
         open={Boolean(drillKey)}

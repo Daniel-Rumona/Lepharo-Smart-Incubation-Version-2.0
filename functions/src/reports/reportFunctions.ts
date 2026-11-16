@@ -2,6 +2,7 @@ import * as logger from "firebase-functions/logger";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { admin, db } from "../firebase";
+import { pilotAllowsPhone } from "../pilotGuard";
 import { clean } from "./lib";
 import { generateReport, ReportError } from "./registry";
 
@@ -34,6 +35,10 @@ export const generateReportCallable = onCall(REPORT_RUNTIME, async (request) => 
 
 /** Sends a WhatsApp message through the router's dispatch (it owns the WhatsApp credentials). */
 async function dispatch(body: Record<string, unknown>) {
+  if (!(await pilotAllowsPhone(body.to))) {
+    logger.info("pilot_guard.whatsapp_skipped", { type: String(body.type || "") });
+    return;
+  }
   const url = clean(process.env.WHATSAPP_DISPATCH_URL);
   const secret = clean(process.env.WHATSAPP_DISPATCH_SECRET);
   if (!url || !secret) throw new Error("WhatsApp dispatch is not configured.");

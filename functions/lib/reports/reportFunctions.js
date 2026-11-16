@@ -28,6 +28,7 @@ const logger = __importStar(require("firebase-functions/logger"));
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const firebase_1 = require("../firebase");
+const pilotGuard_1 = require("../pilotGuard");
 const lib_1 = require("./lib");
 const registry_1 = require("./registry");
 /**
@@ -59,6 +60,10 @@ exports.generateReportCallable = (0, https_1.onCall)(REPORT_RUNTIME, async (requ
 });
 /** Sends a WhatsApp message through the router's dispatch (it owns the WhatsApp credentials). */
 async function dispatch(body) {
+    if (!(await (0, pilotGuard_1.pilotAllowsPhone)(body.to))) {
+        logger.info("pilot_guard.whatsapp_skipped", { type: String(body.type || "") });
+        return;
+    }
     const url = (0, lib_1.clean)(process.env.WHATSAPP_DISPATCH_URL);
     const secret = (0, lib_1.clean)(process.env.WHATSAPP_DISPATCH_SECRET);
     if (!url || !secret)

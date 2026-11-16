@@ -27,6 +27,7 @@ exports.recordCheckBackTap = exports.sendCheckBackWhatsApp = exports.whatsappCon
 const logger = __importStar(require("firebase-functions/logger"));
 const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
+const pilotGuard_1 = require("./pilotGuard");
 const whatsappCommon_1 = require("./whatsappCommon");
 const whatsappStaff_1 = require("./whatsappStaff");
 const whatsappCheckBackLogic_1 = require("./whatsappCheckBackLogic");
@@ -36,6 +37,10 @@ const whatsappCheckBackLogic_1 = require("./whatsappCheckBackLogic");
 // Nothing here may break the reminder job: every failure is logged and swallowed.
 const lower = (value) => (0, whatsappCommon_1.clean)(value).toLowerCase();
 async function post(dispatch) {
+    if (!(await (0, pilotGuard_1.pilotAllowsPhone)(dispatch.to))) {
+        logger.info("pilot_guard.whatsapp_skipped", { type: dispatch.type, followUpId: dispatch.followUpId });
+        return "failed";
+    }
     const url = (0, whatsappCommon_1.clean)(process.env.WHATSAPP_DISPATCH_URL);
     const secret = (0, whatsappCommon_1.clean)(process.env.WHATSAPP_DISPATCH_SECRET);
     if (!url || !secret)

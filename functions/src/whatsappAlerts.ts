@@ -1,5 +1,6 @@
 import * as logger from "firebase-functions/logger";
 import { admin, db } from "./firebase";
+import { pilotAllowsPhone } from "./pilotGuard";
 import { scheduledJob } from "./cronHeartbeat";
 import { clean, normalizePhone } from "./whatsappCommon";
 import { isDepartmentInRole } from "./departmentRoles";
@@ -80,6 +81,10 @@ async function consentingUsers(): Promise<Recipient[]> {
 type Alert = { name: string; headline: string; details: string };
 
 async function sendAlert(number: string, alert: Alert, dedupeKey: string): Promise<boolean> {
+  if (!(await pilotAllowsPhone(number))) {
+    logger.info("pilot_guard.whatsapp_skipped", { type: "alert", dedupeKey });
+    return false;
+  }
   const url = clean(process.env.WHATSAPP_DISPATCH_URL);
   const secret = clean(process.env.WHATSAPP_DISPATCH_SECRET);
   if (!url || !secret) return false;

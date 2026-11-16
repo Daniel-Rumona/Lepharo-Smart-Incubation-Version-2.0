@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.whatsappSmeUploadNotices = exports.whatsappSmeSessionReminders = exports.sessionReminderAlerts = exports.whatsappSmeDocumentReminders = exports.smeDocumentAlert = exports.whatsappStaffMorningSummary = exports.workloadOnce = exports.staffSummaryAlert = exports.sendWhatsAppAlert = exports.setAlertConsent = exports.consentUserIds = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firebase_1 = require("./firebase");
+const pilotGuard_1 = require("./pilotGuard");
 const cronHeartbeat_1 = require("./cronHeartbeat");
 const whatsappCommon_1 = require("./whatsappCommon");
 const departmentRoles_1 = require("./departmentRoles");
@@ -97,6 +98,10 @@ async function consentingUsers() {
         .filter((user) => user.number.length >= 9 && !["inactive", "disabled", "deleted"].includes(lower(user.data.status)));
 }
 async function sendAlert(number, alert, dedupeKey) {
+    if (!(await (0, pilotGuard_1.pilotAllowsPhone)(number))) {
+        logger.info("pilot_guard.whatsapp_skipped", { type: "alert", dedupeKey });
+        return false;
+    }
     const url = (0, whatsappCommon_1.clean)(process.env.WHATSAPP_DISPATCH_URL);
     const secret = (0, whatsappCommon_1.clean)(process.env.WHATSAPP_DISPATCH_SECRET);
     if (!url || !secret)

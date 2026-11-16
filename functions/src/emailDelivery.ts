@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import nodemailer from "nodemailer";
+import { withPilotGuard } from "./pilotGuard";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -154,5 +155,6 @@ export function withEmailDeliveryLogging(
     }
   }) as any;
 
-  return transport;
+  // Outermost, so a send the pilot guard drops is never attempted or logged as sent.
+  return withPilotGuard(transport);
 }

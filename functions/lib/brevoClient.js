@@ -27,6 +27,7 @@ exports.brevoApiKeepAlive = exports.logBrevoSend = exports.sendViaBrevo = void 0
 const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
 const emailShared_1 = require("./emailShared");
+const pilotGuard_1 = require("./pilotGuard");
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 const BREVO_ACCOUNT_URL = "https://api.brevo.com/v3/account";
 /**
@@ -35,6 +36,10 @@ const BREVO_ACCOUNT_URL = "https://api.brevo.com/v3/account";
  * status -- see emailBounceWebhook.ts.
  */
 async function sendViaBrevo(input) {
+    if (!(await (0, pilotGuard_1.pilotAllowsEmail)(input.to))) {
+        logger.info("pilot_guard.email_skipped", { subject: input.subject, via: "brevo" });
+        return { messageId: pilotGuard_1.PILOT_SKIPPED_INFO.messageId };
+    }
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey)
         throw new Error("Missing env: BREVO_API_KEY");

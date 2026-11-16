@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendEmail = exports.SMTP_FROM = exports.SMTP_PASS = exports.SMTP_USER = exports.SMTP_PORT = exports.SMTP_HOST = exports.sendSystemEmail = void 0;
 // mailer.ts
 const nodemailer_1 = __importDefault(require("nodemailer"));
+const pilotGuard_1 = require("../pilotGuard");
 let transporter = null;
 function requireEnv(name) {
     const value = process.env[name];
@@ -19,7 +20,7 @@ function getTransporter() {
         const secure = process.env.SMTP_SECURE == null
             ? port === 465
             : process.env.SMTP_SECURE.trim().toLowerCase() === "true";
-        transporter = nodemailer_1.default.createTransport({
+        transporter = (0, pilotGuard_1.withPilotGuard)(nodemailer_1.default.createTransport({
             host: requireEnv("SMTP_HOST"),
             port,
             secure,
@@ -32,7 +33,7 @@ function getTransporter() {
                 user: requireEnv("SMTP_USER"),
                 pass: requireEnv("SMTP_PASS"),
             },
-        });
+        }));
     }
     return transporter;
 }

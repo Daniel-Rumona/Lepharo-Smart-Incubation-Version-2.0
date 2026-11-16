@@ -1,6 +1,7 @@
 import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
 import { admin, db } from "./emailShared";
+import { pilotAllowsEmail, PILOT_SKIPPED_INFO } from "./pilotGuard";
 
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 const BREVO_ACCOUNT_URL = "https://api.brevo.com/v3/account";
@@ -19,6 +20,10 @@ export type BrevoSendInput = {
  * status -- see emailBounceWebhook.ts.
  */
 export async function sendViaBrevo(input: BrevoSendInput): Promise<{ messageId: string }> {
+  if (!(await pilotAllowsEmail(input.to))) {
+    logger.info("pilot_guard.email_skipped", { subject: input.subject, via: "brevo" });
+    return { messageId: PILOT_SKIPPED_INFO.messageId };
+  }
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) throw new Error("Missing env: BREVO_API_KEY");
 
