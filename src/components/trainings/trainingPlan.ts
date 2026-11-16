@@ -124,7 +124,7 @@ type Scheduler = { departmentId: string; role: string };
  * enrollment, smeEmail is the person's own email), or an SME whose people
  * aren't on record yet, invited as one record as before.
  */
-function invitationFor(
+export function invitationFor(
   { enrollment, attendee }: TrainingInvitee,
   training: Training,
   session: TrainingPlanSession,

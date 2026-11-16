@@ -109,6 +109,8 @@ import {
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { TrainingPlanAppointmentModal } from '@/components/trainings/TrainingPlanAppointmentModal'
 import { isTrainingInterventionId } from '@/components/trainings/trainingPlan'
+import { ChangeInviteesModal, type InviteeCandidate, type InviteeMember } from '@/components/appointments/ChangeInviteesModal'
+import type { InvitationDraft } from '@/services/sessionInviteesService'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { Helmet } from 'react-helmet'
 import SessionReviewModal from './SessionReviewModal'
@@ -5457,8 +5459,12 @@ const Appointments: React.FC = () => {
                         memberBySmeId.set(key, member)
                     }
                 })
-            const members = Array.from(memberBySmeId.values())
+            const everyMember = Array.from(memberBySmeId.values())
                 .sort((a, b) => String(a.participantName || '').localeCompare(String(b.participantName || '')))
+            // Someone withdrawn from the session (Change who's invited) keeps a cancelled
+            // invitation; leave them out unless the whole session was cancelled.
+            const activeMembers = everyMember.filter(member => member.status !== 'cancelled')
+            const members = activeMembers.length ? activeMembers : everyMember
 
             const allEmails = members
                 .map((m: Appt) => m.participantEmail)
@@ -5608,6 +5614,74 @@ const Appointments: React.FC = () => {
 
     const canCancel = (r: Appt) =>
         !isCoverageOnly(r) && !['completed', 'cancelled', 'postponed'].includes(derivedStatus(r))
+
+    // Change who's invited: a group session's guest list, until coverage is recorded.
+    const [changingInvitees, setChangingInvitees] = useState<Appt | null>(null)
+    const canChangeInvitees = (r: Appt) =>
+        (r as any)?._displayType === 'group' && !!(r as any).appointmentSessionId && canCancel(r) && !r.sessionCoverage?.latest
+
+    const inviteeMembersOf = (r: Appt): InviteeMember[] =>
+        getDisplayRowMembers(r).map(member => ({
+            id: member.id,
+            smeId: String(member.participantId || ''),
+            attendeeId: (member as any).attendeeId || null,
+            name: member.participantName || 'SME',
+            email: memberEmailOf(member, participantEmails) || undefined,
+            checkedIn: isAttendedRecord((member as any).attendance) || !!(member as any).attendance?.checkedInAt
+        }))
+
+    /**
+     * A programme group session can invite the other SMEs of its grouped
+     * intervention (the same group key the booking used), each with an
+     * invitation built the way group booking builds one. Training sessions
+     * find their people in the dialog itself.
+     */
+    const programmeCandidatesOf = (r: Appt): InviteeCandidate[] => {
+        if (isTrainingInterventionId(r.interventionId)) return []
+        const groupKey = String((r as any).groupKey || '').trim()
+        if (!groupKey) return []
+        const seen = new Set<string>()
+        return assignedInterventions
+            .filter(ai => isEligibleForGroupScheduling(ai) && isGroupedIntervention(ai) && !isCatchingUp(ai) && getSchedulableGroupKey(ai) === groupKey)
+            .flatMap(ai => {
+                const participantId = String(ai?.participantId || ai?.beneficiaryId || '').trim()
+                if (!participantId || seen.has(participantId)) return []
+                seen.add(participantId)
+                const name = String(ai?.participantName || ai?.beneficiaryName || participantId)
+                const email = String(participantEmails[participantId] || ai?.participantEmail || ai?.beneficiaryEmail || ai?.email || '').trim()
+                return [{
+                    key: participantId,
+                    name,
+                    detail: email || undefined,
+                    draft: () => ({
+                        schemaVersion: 5,
+                        programId: r.programId,
+                        departmentId: String(ai?.departmentId || r.departmentId || ''),
+                        assignedInterventionId: String(ai?.id || ''),
+                        smeId: participantId,
+                        smeName: name,
+                        smeEmail: email || null,
+                        interventionId: String(ai?.interventionId || r.interventionId || ''),
+                        interventionTitle: String(r.interventionTitle || ai?.interventionTitle || ai?.title || ''),
+                        subInterventionId: ai?.subInterventionId || null,
+                        subInterventionTitle: ai?.subInterventionTitle || null,
+                        cycleKey: (r as any).cycleKey ?? null,
+                        // The session's facilitator and linkage are applied when the invitation is written.
+                        assigneeId: String(r.assigneeId || ''),
+                        assigneeName: String(r.assigneeName || ''),
+                        assigneeEmail: r.assigneeEmail || null,
+                        assigneeRole: (r as any).assigneeRole === 'operations' ? 'operations' : 'coordinator',
+                        groupKey,
+                        status: 'scheduled',
+                        smeConfirmation: 'pending',
+                        smeDeclineReason: null,
+                        attendance: { status: 'expected', checkedInAt: null, checkedOutAt: null },
+                        foodSelections: [],
+                        completedAt: null
+                    } as InvitationDraft)
+                }]
+            })
+    }
 
 
     const pageLoading = coordinatorLoading || appointmentsLoading || assignedLoading
@@ -6755,6 +6829,9 @@ const Appointments: React.FC = () => {
         if (!isCoverageOnly(row) && !closed && primary?.key !== 'reschedule') {
             secondary.push({ key: 'edit', label: 'Change time or place', icon: <EditOutlined />, onClick: () => openEdit(row) })
         }
+        if (canChangeInvitees(row)) {
+            secondary.push({ key: 'invitees', label: 'Change who’s invited', icon: <TeamOutlined />, onClick: () => setChangingInvitees(row) })
+        }
         if (canViewFoodMenu(row)) secondary.push({ key: 'food', label: 'Food menu', icon: <BookOutlined />, onClick: () => openFoodMenu(row) })
         if (canCancel(row)) {
             secondary.push({
@@ -7090,6 +7167,22 @@ const Appointments: React.FC = () => {
                 </Drawer>
             )}
 
+
+            {changingInvitees && (
+                <ChangeInviteesModal
+                    open
+                    sessionId={String((changingInvitees as any).appointmentSessionId || '')}
+                    sessionTitle={(changingInvitees as any).sessionTitle || changingInvitees.interventionTitle || 'Session'}
+                    interventionId={String(changingInvitees.interventionId || '')}
+                    members={inviteeMembersOf(changingInvitees)}
+                    programmeCandidates={programmeCandidatesOf(changingInvitees)}
+                    onClose={() => setChangingInvitees(null)}
+                    onSaved={() => {
+                        setChangingInvitees(null)
+                        void loadAppointments()
+                    }}
+                />
+            )}
 
             {activeProgramIsTraining && activeProgramId && (
                 <TrainingPlanAppointmentModal
