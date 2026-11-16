@@ -57,6 +57,7 @@ import DashboardOverview from '@/components/incubatee/DashboardOverview'
 import NeedsAttentionCard, { type AttentionItem } from '@/components/incubatee/NeedsAttentionCard'
 import Button from '@/components/incubatee/DashboardButton'
 import { buildDashboardComplianceRows } from '@/lib/dashboardCompliance'
+import { canShowIncubateePlanMetrics } from '@/lib/incubateePlanMetrics'
 import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
 import {
     resolveComplianceRequirements,
@@ -1274,9 +1275,13 @@ export const IncubateeDashboard: React.FC = () => {
     /** -----------------
      *  Top metrics (map-driven, responsive)
      *  ----------------- */
-    const planConfirmed = !waiting.plansLoading &&
-        waiting.participantId === participantId &&
-        waiting.plan?.finalConfirmation === true
+    const planConfirmed = canShowIncubateePlanMetrics(
+        waiting.plan,
+        waiting.plansLoading,
+        waiting.plans.length,
+        waiting.participantId,
+        participantId
+    )
 
     const topMetrics: DashboardMetric[] = useMemo(() => [
         {
