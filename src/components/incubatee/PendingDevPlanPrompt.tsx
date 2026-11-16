@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Drawer, Empty, Grid, List, Modal, Space, Steps, Tag, Typography } from 'antd'
+import { Alert, Button, Drawer, Empty, Grid, List, Modal, Space, Tag, Typography } from 'antd'
 import {
     CalendarOutlined,
     CheckCircleOutlined,
@@ -384,6 +384,7 @@ export const WaitingForYouPrompt: React.FC = () => {
         <>
             {isMobile ? (
                 <Drawer
+                    rootClassName='wfy-dialog'
                     open
                     placement='bottom'
                     height='100%'
@@ -396,16 +397,17 @@ export const WaitingForYouPrompt: React.FC = () => {
                 </Drawer>
             ) : (
                 <Modal
+                    className='wfy-dialog'
                     open
                     title={heading}
                     onCancel={dismiss}
                     footer={footer}
-                    width={720}
+                    width={880}
                     maskClosable={false}
                     destroyOnClose
                     centered
                     // Header and Not now stay put; a long list scrolls in between.
-                    styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', paddingRight: 4 } }}
+                    styles={{ body: { maxHeight: 'calc(100dvh - 220px)', overflowY: 'auto', paddingRight: 4 } }}
                 >
                     {body}
                 </Modal>
@@ -433,7 +435,6 @@ type WalkthroughProps = {
 
 /** The development plan walkthrough: one department per step, review, then confirm. */
 export const PlanWalkthrough: React.FC<WalkthroughProps> = ({
-    isMobile,
     departments: stepDepts,
     current,
     onStepChange,
@@ -458,21 +459,26 @@ export const PlanWalkthrough: React.FC<WalkthroughProps> = ({
         }))
 
     return (
-        <Space direction='vertical' size={16} style={{ width: '100%' }}>
+        <div className='wfy-walkthrough'>
             {stepDepts.length > 1 && (
-                <Steps
-                    size='small'
-                    type={isMobile ? 'inline' : 'default'}
-                    current={current}
-                    onChange={onStepChange}
-                    items={stepDepts.map((d, i) => ({
-                        title: d.name,
-                        status: !pendingIds.has(d.id) ? 'finish' : i === current ? 'process' : 'wait'
-                    }))}
-                />
+                <nav className='wfy-departments' aria-label='Departments to review'>
+                    {stepDepts.map((d, i) => (
+                        <button
+                            key={d.id}
+                            type='button'
+                            className={`wfy-department${i === current ? ' is-active' : ''}`}
+                            aria-current={i === current ? 'step' : undefined}
+                            disabled={!!confirmingId || finalizing}
+                            onClick={() => onStepChange(i)}
+                        >
+                            <span className='wfy-department-number'>{!pendingIds.has(d.id) ? <CheckOutlined /> : i + 1}</span>
+                            <span><strong>{d.name}</strong><small>{!pendingIds.has(d.id) ? 'Confirmed' : i === current ? 'Reviewing now' : 'Needs confirmation'}</small></span>
+                        </button>
+                    ))}
+                </nav>
             )}
 
-            <div>
+            <div className='wfy-plan-intro'>
                 {stepDepts.length > 1 && (
                     <Text type='secondary' style={{ fontSize: 12 }}>
                         Department {current + 1} of {stepDepts.length}
@@ -486,6 +492,7 @@ export const PlanWalkthrough: React.FC<WalkthroughProps> = ({
 
             {ivs.length ? (
                 <List
+                    className='wfy-interventions'
                     size='small'
                     bordered
                     dataSource={ivs}
@@ -497,7 +504,6 @@ export const PlanWalkthrough: React.FC<WalkthroughProps> = ({
                                     <Text strong>{String(iv.title)}</Text>
                                     {iv.compulsory && <Tag color='blue'>Compulsory</Tag>}
                                 </Space>
-                                <Text type='secondary' style={{ fontSize: 12 }}>{String(iv.departmentName)}</Text>
                             </Space>
                         </List.Item>
                     )}
@@ -533,12 +539,11 @@ export const PlanWalkthrough: React.FC<WalkthroughProps> = ({
                         disabled={activeConfirmed || finalizing}
                         loading={confirmingId === active.id || finalizing}
                     >
-                        {/* On a phone the department is already named just above. */}
-                        {isMobile ? 'Confirm Plan' : `Confirm ${active.name}`}
+                        Confirm department
                     </Button>
                 </Space>
             </div>
-        </Space>
+        </div>
     )
 }
 
