@@ -107,12 +107,17 @@ export const PILOT_SKIPPED_INFO = Object.freeze({
   pilotSkipped: true,
 });
 
-/** Wraps a nodemailer transport so every send goes through pilotFilterMail. */
+/**
+ * Wraps a nodemailer transport so every send goes through pilotFilterMail.
+ * A mail with pilotExempt: true is sent as is; that is for mail that must reach
+ * real users during the pilot, such as application decisions.
+ */
 export function withPilotGuard<T extends { sendMail: (...args: any[]) => any }>(transport: T): T {
   const rawSendMail = transport.sendMail.bind(transport);
   transport.sendMail = (async (options: any, callback?: any) => {
     try {
-      const guarded = await pilotFilterMail(options || {});
+      const { pilotExempt, ...mail } = options || {};
+      const guarded = pilotExempt === true ? mail : await pilotFilterMail(mail);
       const info = guarded ? await rawSendMail(guarded) : PILOT_SKIPPED_INFO;
       if (typeof callback === "function") callback(null, info);
       return info;

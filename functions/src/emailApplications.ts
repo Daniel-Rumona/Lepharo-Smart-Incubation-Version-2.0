@@ -180,7 +180,8 @@ export const onApplicationDecisionEmail = onDocumentWritten(
       if (suppressRecordNotifications(after, event.params.appId)) return;
       if (prev === next) return;
       if (next !== "accepted" && next !== "rejected") return;
-      // The choice is saved before creation; absent flags retain the existing workflow.
+      // An SME added manually or imported carries the staff member's choice; absent
+      // (every other acceptance, old version included) means send as always.
       if (next === "accepted" && after.sendAcceptanceEmail === false) return;
 
       const already = after?.notifications?.statusEmail?.[next]?.sentAt ?? null;
@@ -195,10 +196,11 @@ export const onApplicationDecisionEmail = onDocumentWritten(
 
       if (next === "accepted") {
         const email = buildAcceptanceEmail({ name, programName, loginUrl: process.env.APP_LOGIN_URL || "https://lepharosmartinc.co.za/login" });
-        await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text });
+        // Decisions reach real applicants during the pilot too (pilotGuard.ts).
+        await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text, pilotExempt: true } as any);
       } else {
         const { subject, html, text } = buildRejectionEmail({ name, programName });
-        await transporter.sendMail({ from, to, subject, html, text });
+        await transporter.sendMail({ from, to, subject, html, text, pilotExempt: true } as any);
       }
 
       await notifyInApp({

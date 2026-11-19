@@ -217,7 +217,8 @@ exports.onApplicationDecisionEmail = (0, firestore_1.onDocumentWritten)({ region
             return;
         if (next !== "accepted" && next !== "rejected")
             return;
-        // The choice is saved before creation; absent flags retain the existing workflow.
+        // An SME added manually or imported carries the staff member's choice; absent
+        // (every other acceptance, old version included) means send as always.
         if (next === "accepted" && after.sendAcceptanceEmail === false)
             return;
         const already = after?.notifications?.statusEmail?.[next]?.sentAt ?? null;
@@ -232,11 +233,12 @@ exports.onApplicationDecisionEmail = (0, firestore_1.onDocumentWritten)({ region
         const from = process.env.SMTP_FROM || process.env.SMTP_USER;
         if (next === "accepted") {
             const email = (0, emailHelpers_1.buildAcceptanceEmail)({ name, programName, loginUrl: process.env.APP_LOGIN_URL || "https://lepharosmartinc.co.za/login" });
-            await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text });
+            // Decisions reach real applicants during the pilot too (pilotGuard.ts).
+            await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text, pilotExempt: true });
         }
         else {
             const { subject, html, text } = (0, emailHelpers_1.buildRejectionEmail)({ name, programName });
-            await transporter.sendMail({ from, to, subject, html, text });
+            await transporter.sendMail({ from, to, subject, html, text, pilotExempt: true });
         }
         await (0, inAppNotifications_1.notifyInApp)({
             type: next === "accepted" ? "application_accepted" : "application_rejected",
