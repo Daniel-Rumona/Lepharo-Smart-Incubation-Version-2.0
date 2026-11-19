@@ -185,6 +185,13 @@ export type OwnershipSummary = {
 }
 
 export type SmeRow = {
+    incubationStatus?: string
+    lastParticipationAt?: string | null
+    inactivityBaselineAt?: string | null
+    inactivityBaselineSource?: string
+    inactiveDays?: number | null
+    exitQualified?: boolean
+    incubationStatusReason?: string | null
     appId: string
     participantId?: string | null
     programId?: string
@@ -581,6 +588,10 @@ export const buildDetailsSheetRows = (rows: SmeRow[]) =>
         Group: row.group || '—',
         'Recruited At': formatDateTime(row.recruitedAt),
         'Onboarded At': formatDateTime(row.onboardedAt),
+        'SME Status': row.incubationStatus || 'Active',
+        'Last Participation': formatDateTime(row.lastParticipationAt),
+        'Days Without Participation': row.inactiveDays ?? '',
+        'Qualified for Exit Review': row.exitQualified ? 'Yes' : 'No',
         Sector: row.sector || '—',
         Gender: row.gender || '—',
         Hub: row.hub || '—',

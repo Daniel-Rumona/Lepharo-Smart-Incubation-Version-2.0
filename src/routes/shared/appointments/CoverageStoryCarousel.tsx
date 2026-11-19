@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import dayjs from 'dayjs'
+import { Image } from 'antd'
 import type { CoverageReviewPhoto } from '@/lib/coveragePhotos'
 
 const controlStyle: React.CSSProperties = {
@@ -10,6 +11,7 @@ const controlStyle: React.CSSProperties = {
 
 const CoverageStoryCarousel: React.FC<{ photos: CoverageReviewPhoto[] }> = ({ photos }) => {
     const [index, setIndex] = useState(0)
+    const [previewOpen, setPreviewOpen] = useState(false)
     const touchStart = useRef<number | null>(null)
     useEffect(() => { setIndex(0) }, [photos])
     const activeIndex = Math.min(index, Math.max(0, photos.length - 1))
@@ -27,12 +29,16 @@ const CoverageStoryCarousel: React.FC<{ photos: CoverageReviewPhoto[] }> = ({ ph
             tabIndex={0}
             style={{ width: '100%', minWidth: 0, touchAction: 'pan-y' }}
             onKeyDown={event => {
+                if (previewOpen) {
+                    event.stopPropagation()
+                    return
+                }
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
                 event.preventDefault()
                 event.stopPropagation()
                 move(event.key === 'ArrowLeft' ? -1 : 1)
             }}
-            onTouchStart={event => { touchStart.current = event.touches[0]?.clientX ?? null }}
+            onTouchStart={event => { touchStart.current = previewOpen ? null : event.touches[0]?.clientX ?? null }}
             onTouchEnd={event => {
                 const end = event.changedTouches[0]?.clientX
                 if (touchStart.current !== null && end !== undefined && Math.abs(end - touchStart.current) > 40) {
@@ -43,10 +49,26 @@ const CoverageStoryCarousel: React.FC<{ photos: CoverageReviewPhoto[] }> = ({ ph
             onTouchCancel={() => { touchStart.current = null }}
         >
             <figure style={{ margin: 0 }}>
-                <img
-                    src={photo.url}
-                    alt={`Coverage image ${activeIndex + 1} for ${photo.title}`}
-                    style={{ display: 'block', width: '100%', height: 184, objectFit: 'contain', borderRadius: 10, background: 'rgba(0,0,0,0.2)' }}
+                <button
+                    type='button'
+                    aria-label={`Enlarge coverage image ${activeIndex + 1} for ${photo.title}`}
+                    onClick={() => setPreviewOpen(true)}
+                    style={{ display: 'block', width: '100%', border: 0, padding: 0, background: 'transparent', cursor: 'zoom-in', borderRadius: 10 }}
+                >
+                    <img
+                        src={photo.url}
+                        alt={`Coverage image ${activeIndex + 1} for ${photo.title}`}
+                        style={{ display: 'block', width: '100%', height: 184, objectFit: 'contain', borderRadius: 10, background: 'rgba(0,0,0,0.2)' }}
+                    />
+                </button>
+                <Image.PreviewGroup
+                    items={photos.map(item => item.url)}
+                    preview={{
+                        visible: previewOpen,
+                        current: activeIndex,
+                        onVisibleChange: setPreviewOpen,
+                        onChange: setIndex
+                    }}
                 />
                 <figcaption
                     title={photo.title}

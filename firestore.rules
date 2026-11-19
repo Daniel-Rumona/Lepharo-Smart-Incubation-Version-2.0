@@ -1228,10 +1228,10 @@ service cloud.firestore {
       // its login and only the server sets it (linkMySmeAccount).
       allow create: if request.auth != null &&
         request.resource.data.get('createdByUid', '') == request.auth.uid &&
-        !request.resource.data.keys().hasAny(['uid']) &&
+        !request.resource.data.keys().hasAny(['uid', 'incubationStatus']) &&
         hasProfile() && myRole() == 'incubatee' && currentUser().get('participantId', '') == '';
       allow update: if isMyParticipant(resource.data) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'createdByUid']);
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'createdByUid', 'incubationStatus']);
     }
 
     match /applications/{applicationId} {
@@ -1239,14 +1239,19 @@ service cloud.firestore {
       allow read: if ownsApplicationData(resource.data);
       allow read: if funderSeesProgram(resource.data.programId);
       allow create: if ownsApplicationData(request.resource.data) &&
-        request.resource.data.get('applicationStatus', 'pending') == 'pending';
+        request.resource.data.get('applicationStatus', 'pending') == 'pending' &&
+        !request.resource.data.keys().hasAny(['incubationStatus', 'incubationStatusChangedAt', 'incubationStatusActivityAt',
+          'incubationStatusHistory', 'incubationStatusReason', 'lastParticipationAt', 'inactivityBaselineAt',
+          'inactivityBaselineSource', 'exitQualified', 'incubationStatusCheckedAt']);
       // SMEs sign agreements and record their own progress on the
       // application; the decision and identity fields are staff's.
       allow update: if ownsApplicationData(resource.data) && ownsApplicationData(request.resource.data) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'applicationStatus', 'status', 'decision', 'participantId', 'programId', 'email',
           'applicantEmail', 'acceptedAt', 'acceptedBy', 'romSignatureURL', 'aiEvaluation',
-          'aiEvaluationStatus'
+          'aiEvaluationStatus', 'incubationStatus', 'incubationStatusChangedAt', 'incubationStatusReason',
+          'incubationStatusHistory', 'incubationStatusActivityAt', 'lastParticipationAt', 'inactivityBaselineAt', 'inactivityBaselineSource',
+          'exitQualified', 'incubationStatusCheckedAt'
         ]);
 
       // agreements, complianceDocuments, ... An SME uploads documents as

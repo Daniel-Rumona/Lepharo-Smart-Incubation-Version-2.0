@@ -579,7 +579,7 @@ const DocumentsHub: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: screens.md ? 24 : 12, minHeight: '100vh' }}>
+        <div style={{ padding: screens.md ? '0px 24px' : '0px 12px' }}>
             <div style={{ marginBottom: 12 }}>
                 <MetricsGrid
                     metrics={[

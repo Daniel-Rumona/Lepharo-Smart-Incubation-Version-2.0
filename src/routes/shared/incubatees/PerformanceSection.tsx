@@ -3,7 +3,8 @@ import { Row, Col, Space, Empty, Skeleton } from 'antd'
 import { TeamOutlined, DollarCircleOutlined } from '@ant-design/icons'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { Dayjs } from 'dayjs'
+import type { DashboardDateRange } from '@/lib/useDashboardDateRange'
+import { smeReportingWindow } from './smeReportingWindow'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { groupJobs } from '@/lib/jobs'
@@ -14,7 +15,7 @@ type PerformanceSectionProps = {
     perfDetail: SmePerformanceDetail | null
     financeRevenue: MonthlyFinancePoint[]
     jobContracts: JobContract[]
-    reportingRange: [Dayjs, Dayjs]
+    reportingRange: DashboardDateRange
     loading: boolean
     isPhone: boolean
     isDark: boolean
@@ -32,8 +33,9 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
     isDark
 }) => {
     const performanceTrend = useMemo(() => {
-        const startMonth = reportingRange[0].startOf('month')
-        const monthCount = Math.max(1, reportingRange[1].endOf('month').diff(startMonth, 'month') + 1)
+        const window = smeReportingWindow(reportingRange, [selectedRow?.recruitedAt, selectedRow?.onboardedAt, ...financeRevenue.map(point => monthKeyFromValue(point.month) || monthKeyFromValue(point.monthLabel)), ...jobContracts.map(contract => contract.startDate)])
+        const startMonth = window[0].startOf('month')
+        const monthCount = Math.max(1, window[1].endOf('month').diff(startMonth, 'month') + 1)
         const months = Array.from({ length: monthCount }, (_, index) => {
             const month = startMonth.add(index, 'month')
             const date = month.toDate()
@@ -219,7 +221,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                 ? 'Carried-forward headcount and HSE contracts'
                 : hasVerifiedJobs ? 'HSE job contracts' : 'Carried-forward reported headcount'
         }
-    }, [financeRevenue, jobContracts, perfDetail, reportingRange, isDark])
+    }, [financeRevenue, jobContracts, perfDetail, reportingRange, isDark, selectedRow?.recruitedAt, selectedRow?.onboardedAt])
 
     if (!selectedRow) return <Empty description='Select an SME to view performance' />
 

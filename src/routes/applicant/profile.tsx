@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Form,
     Input,
@@ -61,6 +61,7 @@ import { useColorMode } from '@/contexts/ThemeContext'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import { Helmet } from 'react-helmet'
+import OptionCards from '../resources/OptionCards'
 dayjs.extend(customParseFormat)
 
 const { Title, Text } = Typography
@@ -814,9 +815,12 @@ const ProfileSkeleton: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
 const ActionBar: React.FC<{
     isMobile: boolean
     isInitialSetup: boolean
+    hasChanges: boolean
     onSave: () => void
-}> = ({ isMobile, isInitialSetup, onSave }) => {
+}> = ({ isMobile, isInitialSetup, hasChanges, onSave }) => {
     const { token } = theme.useToken()
+
+    if (!hasChanges) return null
 
     return (
         <div
@@ -873,6 +877,8 @@ const ApplicantProfileForm: React.FC = () => {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null)
     const [uploadingAvatar, setUploadingAvatar] = useState(false)
     const [loading, setLoading] = useState(true)
+    const [hasChanges, setHasChanges] = useState(false)
+    const savedValuesRef = useRef<string>('')
     const navigate = useNavigate()
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -1112,6 +1118,8 @@ const ApplicantProfileForm: React.FC = () => {
                 }
 
                 computeProgress()
+                savedValuesRef.current = JSON.stringify(form.getFieldsValue(true))
+                setHasChanges(false)
             } catch (err) {
                 console.error(err)
                 message.error('Failed to load your profile.')
@@ -1376,6 +1384,8 @@ const ApplicantProfileForm: React.FC = () => {
                     },
                     { merge: true }
                 )
+                savedValuesRef.current = JSON.stringify(form.getFieldsValue(true))
+                setHasChanges(false)
                 message.success('Profile updated successfully')
             } else {
                 const newDocRef = doc(collection(db, 'participants'))
@@ -1476,8 +1486,10 @@ const ApplicantProfileForm: React.FC = () => {
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 6,
-                        padding: '3px 2px',
+                        gap: 7,
+                        maxWidth: '100%',
+                        textAlign: 'center',
+                        padding: '3px 4px',
                         lineHeight: 1.2,
                         fontSize: isMobile ? 12 : 13,
                         fontWeight: 600,
@@ -1489,12 +1501,15 @@ const ApplicantProfileForm: React.FC = () => {
                     </span>
                     <span
                         style={{
+                            display: 'block',
+                            minWidth: 0,
+                            textAlign: 'center',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                         }}
                     >
-                        {isMobile ? section.shortLabel : section.label}
+                        {section.label}
                     </span>
                     {missing > 0 && (
                         <Tooltip
@@ -1557,7 +1572,12 @@ const ApplicantProfileForm: React.FC = () => {
                         form={form}
                         style={{ width: '100%' }}
                         requiredMark={true}
-                        onValuesChange={computeProgress}
+                        onValuesChange={() => {
+                            computeProgress()
+                            setHasChanges(
+                                JSON.stringify(form.getFieldsValue(true)) !== savedValuesRef.current
+                            )
+                        }}
                         validateMessages={{
                             required: '${label} is required',
                             types: { email: 'Enter a valid email' }
@@ -1653,6 +1673,7 @@ const ApplicantProfileForm: React.FC = () => {
                                         )
                                     ) : (
                                         <Segmented
+                                            className='profile-section-segmented'
                                             block
                                             size='middle'
                                             value={activeSection}
@@ -1663,6 +1684,34 @@ const ApplicantProfileForm: React.FC = () => {
                                             style={{ width: '100%', marginBottom: 20 }}
                                         />
                                     )}
+
+                                    <style>{`
+                                        .profile-section-segmented.ant-segmented {
+                                            display: flex;
+                                            width: 100%;
+                                            align-items: stretch;
+                                            padding: 4px;
+                                        }
+                                        .profile-section-segmented .ant-segmented-group {
+                                            display: flex;
+                                            width: 100%;
+                                            align-items: stretch;
+                                        }
+                                        .profile-section-segmented .ant-segmented-item {
+                                            flex: 1 1 0;
+                                            min-width: 0;
+                                        }
+                                        .profile-section-segmented .ant-segmented-item-label {
+                                            width: 100%;
+                                            height: 100%;
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            box-sizing: border-box;
+                                            text-align: center;
+                                            padding-inline: 6px;
+                                        }
+                                    `}</style>
 
                                     {/* ---- Personal Details ---- */}
                                     <div style={sectionStyle('personal')}>
@@ -1689,11 +1738,12 @@ const ApplicantProfileForm: React.FC = () => {
                                                     label='Gender'
                                                     rules={[{ required: true }]}
                                                 >
-                                                    <Select placeholder='Select gender' allowClear>
-                                                        <Select.Option value='Male'>Male</Select.Option>
-                                                        <Select.Option value='Female'>Female</Select.Option>
-                                                        <Select.Option value='Other'>Other</Select.Option>
-                                                    </Select>
+                                                    <OptionCards
+                                                        options={[
+                                                            { value: 'Male', label: 'Male' },
+                                                            { value: 'Female', label: 'Female' }
+                                                        ]}
+                                                    />
                                                 </Form.Item>
                                             </Col>
                                             <Col xs={24} md={8}>
@@ -1983,18 +2033,20 @@ const ApplicantProfileForm: React.FC = () => {
                                                     </Select>
                                                 </Form.Item>
                                             </Col>
-                                            <Col xs={24} md={8}>
+                                            <Col xs={24} md={10}>
                                                 <Form.Item name='hub' label='Host Community'>
                                                     <Input />
                                                 </Form.Item>
                                             </Col>
-                                            <Col xs={24} md={8}>
+                                            <Col xs={24} md={14}>
                                                 <Form.Item name='location' label='Location Type'>
-                                                    <Select placeholder='Select type' allowClear>
-                                                        <Select.Option value='Urban'>Urban</Select.Option>
-                                                        <Select.Option value='Rural'>Rural</Select.Option>
-                                                        <Select.Option value='Township'>Township</Select.Option>
-                                                    </Select>
+                                                    <OptionCards
+                                                        options={[
+                                                            { value: 'Urban', label: 'Urban' },
+                                                            { value: 'Rural', label: 'Rural' },
+                                                            { value: 'Township', label: 'Township' }
+                                                        ]}
+                                                    />
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -2099,6 +2151,7 @@ const ApplicantProfileForm: React.FC = () => {
                                         <ActionBar
                                             isMobile={isMobile}
                                             isInitialSetup={isInitialSetup}
+                                            hasChanges={hasChanges}
                                             onSave={onSave}
                                         />
                                     )}

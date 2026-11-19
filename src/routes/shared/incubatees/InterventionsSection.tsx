@@ -2,7 +2,8 @@ import React, { useMemo } from 'react'
 import { Row, Col, Space, Tag, Empty, Skeleton } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { Dayjs } from 'dayjs'
+import type { DashboardDateRange } from '@/lib/useDashboardDateRange'
+import { smeReportingWindow } from './smeReportingWindow'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { DeptGap, INTERVENTION_BUCKETS, Intervention, InterventionBucket, SmeRow, chartDataLabels, getAssignedCompletedAt, isStrictlyCompleted, monthKeyFromValue } from './participantsData'
 import { SummaryStrip } from './SummaryStrip'
@@ -14,7 +15,7 @@ type InterventionsSectionProps = {
     loading: boolean
     diagnosticConfirmed: boolean | null
     deptGaps: DeptGap[]
-    reportingRange: [Dayjs, Dayjs]
+    reportingRange: DashboardDateRange
     statusFilter: InterventionBucket | null
     onStatusFilterChange: (bucket: InterventionBucket | null) => void
     selectedDeptKey: string | null
@@ -53,8 +54,9 @@ export const InterventionsSection: React.FC<InterventionsSectionProps> = ({
     }, [interventions])
 
     const interventionMonthlyTrend = useMemo(() => {
-        const startMonth = reportingRange[0].startOf('month')
-        const monthCount = Math.max(1, reportingRange[1].endOf('month').diff(startMonth, 'month') + 1)
+        const window = smeReportingWindow(reportingRange, interventions.flatMap(intervention => [intervention.assignedAt, intervention.createdAt, getAssignedCompletedAt(intervention)]))
+        const startMonth = window[0].startOf('month')
+        const monthCount = Math.max(1, window[1].endOf('month').diff(startMonth, 'month') + 1)
         const months = Array.from({ length: monthCount }, (_, index) => {
             const month = startMonth.add(index, 'month')
             return {

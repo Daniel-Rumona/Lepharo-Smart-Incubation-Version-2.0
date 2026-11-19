@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
-import { Modal, Button, Space, Typography, DatePicker, Row, Col, Card, Empty, Tag, Progress, message } from 'antd'
+import { Modal, Button, Space, Typography, DatePicker, Row, Col, Card, Empty, Tag, Progress, Input, Pagination, message } from 'antd'
 import {
+    SearchOutlined,
     FullscreenOutlined,
     FullscreenExitOutlined,
     FileWordOutlined,
@@ -16,13 +17,14 @@ import {
 } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
-import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
 
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import SessionReviewStory from './SessionReviewStory'
 import { getCoverageReviewPhotos } from '@/lib/coveragePhotos'
 import CoveragePhotoGallery from '@/components/appointments/CoveragePhotoGallery'
+import './session-review.css'
+import { aggregateCoverageTopics } from '@/lib/coverageTopics'
+import { isSessionReviewStatus } from '@/lib/sessionReviewScope'
 import {
     exportAttendanceReportDocx,
     exportAttendanceReportPdf,
@@ -148,25 +150,13 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             return d.isValid() && d.isBetween(activeRange.start, activeRange.end, 'day', '[]')
         })
     }, [groupedDisplayAppointments, activeRange])
-    const isCalledOff = (row: any) => ['cancelled', 'postponed'].includes(derivedStatus(row))
-    // The report is about sessions that took place, or should have.
-    const rows = useMemo(() => inRange.filter(row => !isCalledOff(row)), [inRange]) // eslint-disable-line react-hooks/exhaustive-deps
-    const cancelledCount = inRange.length - rows.length
-
-    const upcoming = useMemo(() => {
-        return groupedDisplayAppointments
-            .filter(row => {
-                const d = dayjs(row.date, 'YYYY-MM-DD')
-                return d.isValid() && d.isAfter(activeRange.end, 'day')
-            })
-            .sort((a, b) => dayjs(a.date, 'YYYY-MM-DD').valueOf() - dayjs(b.date, 'YYYY-MM-DD').valueOf())
-            .slice(0, 5)
-            .map(row => ({
-                date: row.date,
-                title: row.sessionTitle || (row as any)?.sessionCoverage?.title || row.interventionTitle || 'Untitled session',
-                branchName: row.branchName || row.branchId || ''
-            }))
-    }, [groupedDisplayAppointments, activeRange])
+    // Use the same finished-session statuses as the appointments list. A date
+    // range can include future days, but planned/live sessions are not results.
+    const rows = useMemo(
+        () => inRange.filter(row => isSessionReviewStatus(derivedStatus(row))),
+        [inRange, derivedStatus]
+    )
+    const cancelledCount = inRange.filter(row => ['cancelled', 'postponed'].includes(derivedStatus(row))).length
 
     const reviewData = useMemo(() => {
         const invitedIds = new Set<string>()
@@ -199,18 +189,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             y: rows.filter(row => row.deliveryMethod === method.value).length
         }))
 
-        const coveredMap = new Map<string, number>()
-        rows.forEach(row => {
-            const latest = (row as any)?.sessionCoverage?.latest
-            const points = latest?.coveredPoints || []
-            points.forEach((point: string) => {
-                coveredMap.set(point, (coveredMap.get(point) || 0) + 1)
-            })
-        })
-
-        const coveredItems = Array.from(coveredMap.entries())
-            .map(([topic, count]) => ({ topic, count }))
-            .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic))
+        const coveredItems = aggregateCoverageTopics(rows)
 
         const attendanceRate = invited ? Math.round((attended / invited) * 100) : 0
         // Ended, but nobody has recorded what happened.
@@ -289,41 +268,28 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
     // Skips zero-count topics — a 0-height bar is just clutter.
     const chartedTopics = reviewData.coveredItems.filter(item => item.count > 0).slice(0, 8)
 
-    const topicsChartOptions: Highcharts.Options = {
-        chart: { type: 'column', height: 280 },
-        title: { text: undefined },
-        credits: { enabled: false },
-        xAxis: {
-            categories: chartedTopics.map(item => item.topic),
-            labels: { rotation: -25 }
-        },
-        yAxis: {
-            min: 0,
-            allowDecimals: false,
-            title: { text: 'Sessions' }
-        },
-        tooltip: { pointFormat: '<b>{point.y}</b> session(s)' },
-        series: [
-            {
-                type: 'column',
-                name: 'Covered',
-                data: chartedTopics.map(item => item.count)
-            }
-        ]
-    }
+    const [sessionSearch, setSessionSearch] = useState('')
+    const [sessionPage, setSessionPage] = useState(1)
+    const matchingRows = reviewData.rows.filter(row =>
+        [row.sessionTitle, row.sessionCoverage?.title, row.interventionTitle, row.branchName, row.branchId]
+            .some(value => String(value || '').toLowerCase().includes(sessionSearch.trim().toLowerCase()))
+    ).sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    const currentPage = Math.min(sessionPage, Math.max(1, Math.ceil(matchingRows.length / 6)))
+    const visibleRows = matchingRows.slice((currentPage - 1) * 6, currentPage * 6)
 
     return (
         <Modal
- wrapClassName="mobile-sheet"
+            wrapClassName={isFullscreen ? 'session-review-fullscreen' : 'mobile-sheet'}
             className='guide-session-review-modal'
-            centered
-            title='Session review'
+            centered={!isFullscreen}
+            title={<span className='session-review-title'><CalendarOutlined /> Session review</span>}
             open={open}
             onCancel={onClose}
-            width={isFullscreen ? '96vw' : 900}
+            afterClose={() => setIsFullscreen(false)}
+            width={isFullscreen ? '100%' : 1120}
             styles={{
                 body: {
-                    maxHeight: '78vh',
+                    maxHeight: isFullscreen ? undefined : '78vh',
                     overflowY: 'auto',
                     overflowX: 'hidden',
                     paddingRight: 4
@@ -332,8 +298,16 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             footer={null}
             destroyOnClose
         >
-            <Space direction='vertical' size={16} style={{ width: '100%' }}>
-                <div data-guide='session-review-controls'>
+            <div className='session-review-layout'>
+                <header className='session-review-heading'>
+                    <div>
+                        <span className='session-review-eyebrow'>DELIVERY & PARTICIPATION</span>
+                        <h2>Your sessions at a glance</h2>
+                        <Text type='secondary'>{rangeLabel}</Text>
+                    </div>
+                    <Tag color='blue'>{reviewData.sessions} ended sessions in this period</Tag>
+                </header>
+                <div className='session-review-toolbar' data-guide='session-review-controls'>
                     <Space wrap style={{ width: '100%', justifyContent: 'space-between' }} align='center'>
                         <Space wrap align='center' size={10}>
                             {/* This Week / This Month / This Quarter live as the
@@ -345,6 +319,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                 onChange={value => {
                                     if (value && value[0] && value[1]) {
                                         setDateRange([value[0], value[1]])
+                                        setSessionPage(1)
                                         onDateChange(value[0])
                                     }
                                 }}
@@ -360,8 +335,8 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                 default Segmented look. */}
                             <div className='workspace-primary-nav'>
                                 {[
-                                    { value: 'data' as ViewMode, label: 'Data', icon: <TableOutlined /> },
-                                    { value: 'story' as ViewMode, label: 'Story', icon: <PlayCircleOutlined /> }
+                                    { value: 'data' as ViewMode, label: 'Overview', icon: <TableOutlined /> },
+                                    { value: 'story' as ViewMode, label: 'Play review', icon: <PlayCircleOutlined /> }
                                 ].map(option => (
                                     <button
                                         type='button'
@@ -369,6 +344,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                         className={`workspace-primary-segment ${
                                             viewMode === option.value ? 'workspace-primary-segment-active' : ''
                                         }`}
+                                        aria-pressed={viewMode === option.value}
                                         onClick={() => setViewMode(option.value)}
                                     >
                                         <span className='workspace-segment-icon'>{option.icon}</span>
@@ -398,6 +374,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                             <Button
                                 icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
                                 aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                                aria-pressed={isFullscreen}
                                 onClick={() => setIsFullscreen(v => !v)}
                             />
                         </Space>
@@ -408,7 +385,6 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                     <SessionReviewStory
                         rangeLabel={rangeLabel}
                         reviewData={reviewData}
-                        upcoming={upcoming}
                         onExit={() => setViewMode('data')}
                     />
                 ) : (
@@ -448,7 +424,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                             </Col>
                         </Row>
                         {(reviewData.needsCoverage > 0 || cancelledCount > 0) && (
-                            <Text type='secondary' className='ap-review-note'>
+                            <Text type='secondary' className='session-review-note'>
                                 {[
                                     reviewData.needsCoverage ? `${reviewData.needsCoverage} ended session${reviewData.needsCoverage === 1 ? '' : 's'} still need${reviewData.needsCoverage === 1 ? 's' : ''} coverage.` : null,
                                     cancelledCount ? `${cancelledCount} cancelled or postponed session${cancelledCount === 1 ? ' is' : 's are'} left out.` : null
@@ -458,10 +434,10 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 
                         <Row data-guide='session-review-insights' gutter={[12, 12]}>
                             <Col xs={24} lg={12}>
-                                <Card size='small' title='Delivery Distribution'>
-                                    {reviewData.deliveryCounts.length ? (
+                                <Card className='session-review-panel' title='How sessions were delivered'>
+                                    {reviewData.deliveryCounts.some(method => method.y > 0) ? (
                                         <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                            {reviewData.deliveryCounts.map(method => (
+                                            {reviewData.deliveryCounts.filter(method => method.y > 0).map(method => (
                                                 <div key={method.name}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                                         <Text>{method.name}</Text>
@@ -476,14 +452,24 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                             ))}
                                         </Space>
                                     ) : (
-                                        <Empty description='No delivery methods configured.' />
+                                        <Empty description='No delivery data for this period.' />
                                     )}
                                 </Card>
                             </Col>
                             <Col xs={24} lg={12}>
-                                <Card size='small' title='Top Covered Topics'>
+                                <Card className='session-review-panel' title='Topics covered'>
                                     {reviewData.coveredItems.length ? (
-                                        <HighchartsReact highcharts={Highcharts} options={topicsChartOptions} />
+                                        <div className='session-review-topics'>
+                                            {chartedTopics.map(item => (
+                                                <div key={item.topic}>
+                                                    <div className='session-review-topic-label'>
+                                                        <Text>{item.topic}</Text>
+                                                        <Text type='secondary'>{item.count} {item.count === 1 ? 'session' : 'sessions'}</Text>
+                                                    </div>
+                                                    <Progress percent={Math.round(item.count / Math.max(1, reviewData.sessions) * 100)} showInfo={false} size='small' strokeColor='#7c83db' />
+                                                </div>
+                                            ))}
+                                        </div>
                                     ) : (
                                         <Empty description='No covered topics captured for this range yet.' />
                                     )}
@@ -492,20 +478,25 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                         </Row>
 
                         <div data-guide='session-review-table'>
-                            <Card size='small' title='Coverage'>
-                                {reviewData.rows.length ? (
-                                    <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                                        {reviewData.rows.map((row: ReviewAppt) => {
+                            <Card className='session-review-panel session-review-records' title='Session details'>
+                                <div className='session-review-list-tools'>
+                                    <Text type='secondary'>Coverage, attendance and photos · newest first</Text>
+                                    <Input prefix={<SearchOutlined />} placeholder='Search sessions or branches' aria-label='Search sessions or branches' allowClear value={sessionSearch}
+                                        onChange={event => { setSessionSearch(event.target.value); setSessionPage(1) }} />
+                                </div>
+                                {matchingRows.length ? (
+                                    <div className='session-review-session-grid'>
+                                        {visibleRows.map((row: ReviewAppt) => {
                                             const latest = row.sessionCoverage?.latest
                                             const points: string[] = latest?.coveredPoints || []
                                             const meta = deliveryMethods.find(m => m.value === row.deliveryMethod)
-                                            const title = row.sessionTitle || row.sessionCoverage?.title || row.interventionTitle
+                                            const title = row.sessionTitle || row.sessionCoverage?.title || row.interventionTitle || 'Untitled session'
 
                                             return (
                                                 <Card
                                                     key={row.id}
                                                     size='small'
-                                                    style={{ borderRadius: 12, background: 'var(--app-surface-sunken)' }}
+                                                    className='session-review-session-card'
                                                 >
                                                     <Space direction='vertical' size={10} style={{ width: '100%' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
@@ -519,7 +510,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                                             </div>
                                                             <Space size={6} wrap style={{ flex: '0 0 auto' }}>
                                                                 <Tag icon={<CalendarOutlined />} color='blue'>
-                                                                    {dayjs(row.date).format('YYYY-MM-DD')}
+                                                                    {dayjs(row.date).format('DD MMM YYYY')}
                                                                 </Tag>
                                                                 <Tag>{meta?.label || row.deliveryMethod}</Tag>
                                                                 {derivedStatus(row) === 'awaiting_coverage' ? <Tag color='gold'>Needs coverage</Tag> : null}
@@ -557,15 +548,18 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                                 </Card>
                                             )
                                         })}
-                                    </Space>
+                                    </div>
                                 ) : (
-                                    <Empty description='No sessions in this period.' />
+                                    <Empty description={sessionSearch ? 'No sessions match your search.' : 'No ended sessions in this period.'} />
+                                )}
+                                {matchingRows.length > 6 && (
+                                    <Pagination className='session-review-pagination' current={currentPage} pageSize={6} total={matchingRows.length} onChange={setSessionPage} showSizeChanger={false} />
                                 )}
                             </Card>
                         </div>
                     </>
                 )}
-            </Space>
+            </div>
         </Modal>
     )
 }

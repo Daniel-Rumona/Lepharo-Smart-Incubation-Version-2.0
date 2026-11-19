@@ -1,3 +1,4 @@
+import { countTrainingCompanies, trainingCompanyKey } from "./trainingCompanies";
 import React, { useEffect, useMemo, useState } from "react";
 import { App, Badge, Button, Drawer, Dropdown, Empty, Grid, Input, Modal, Pagination, Popover, Segmented, Space, Tag, Tooltip, Typography, theme } from "antd";
 import {
@@ -20,6 +21,7 @@ import {
     UserAddOutlined,
     UserOutlined,
 } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
@@ -90,6 +92,9 @@ type Section = "profile" | "people" | "certification" | "documents" | "progress"
 export default function EnrollSme() {
     const { token } = theme.useToken();
     const { user } = useFullIdentity();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const requestedSmeId = searchParams.get("smeId");
+    const requestedTrainingId = searchParams.get("trainingId");
     const { message, modal } = App.useApp();
     const isPhone = !Grid.useBreakpoint().md;
     const [trainings, setTrainings] = useState<Training[]>([]);
@@ -97,9 +102,12 @@ export default function EnrollSme() {
     const [loading, setLoading] = useState(true);
     // The shared programme selector is the training scope; the Filters popover narrows within it.
     const { activeProgramId } = useActiveProgramId();
-    const selectedTrainingId = trainings.some((t) => t.id === activeProgramId)
-        ? activeProgramId
-        : undefined;
+    // A dashboard deep link takes precedence over the global programme selector.
+    const selectedTrainingId = requestedTrainingId && trainings.some((t) => t.id === requestedTrainingId)
+        ? requestedTrainingId
+        : trainings.some((t) => t.id === activeProgramId)
+            ? activeProgramId
+            : undefined;
     const [addOpen, setAddOpen] = useState(false);
     const [assigning, setAssigning] = useState<TrainingEnrollment | null>(null);
     const [discontinuing, setDiscontinuing] = useState<TrainingEnrollment | null>(null);
@@ -190,6 +198,14 @@ export default function EnrollSme() {
 
     const submitAdd = async (values: EnrollSmeFormValues) => {
         try {
+            const existing = enrollments.find(e => e.trainingId === values.trainingId &&
+                trainingCompanyKey(e) === trainingCompanyKey({ id: "new", companyName: values.companyName }));
+            if (existing) {
+                setAddOpen(false);
+                setPeopleOf(existing);
+                message.info("This company is already registered. Use Add employee in People to add someone with their own training categories.");
+                return;
+            }
             const result = await createEnrollment({ ...values, owner: user?.uid || "" });
             message.success(
                 values.trainingId ? (result.accountError ? "SME enrolled." : "SME enrolled and portal login emailed.") : "SME added."
@@ -314,11 +330,23 @@ export default function EnrollSme() {
 
     const resetKey = JSON.stringify(filters) + sort;
     useEffect(() => setPage(1), [resetKey]);
-    // Desktop always shows a detail: keep the selection while it's in view, otherwise take the first row.
+    // Honor a dashboard SME link once enrollment records have loaded.
+    // Mobile opens the selected SME immediately in the detail drawer.
     useEffect(() => {
-        if (!rows.length) return;
-        if (!selectedId || !rows.some((r) => r.id === selectedId)) setSelectedId(rows[0].id);
-    }, [rows, selectedId]);
+        if (loading) return;
+        if (!rows.length) {
+            setSelectedId(null);
+            return;
+        }
+        const linked = requestedSmeId ? rows.find((r) => r.id === requestedSmeId) : undefined;
+        if (linked) {
+            setSelectedId(linked.id);
+            setSection("profile");
+            if (isPhone) setDetailOpen(true);
+        } else if (!selectedId || !rows.some((r) => r.id === selectedId)) {
+            setSelectedId(rows[0].id);
+        }
+    }, [rows, selectedId, requestedSmeId, isPhone, loading]);
     // Keep the selected SME's page in view when it changes from outside.
     useEffect(() => {
         const index = rows.findIndex((r) => r.id === selectedId);
@@ -330,49 +358,72 @@ export default function EnrollSme() {
     const selectedTraining = selected ? trainingById.get(selected.trainingId) : undefined;
     const select = (e: TrainingEnrollment) => {
         setSelectedId(e.id);
+        setSection("profile");
+        // Allow normal manual selection after arriving through a dashboard link.
+        if (requestedSmeId) {
+            setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("smeId");
+                return next;
+            }, { replace: true });
+        }
         if (isPhone) setDetailOpen(true);
     };
 
     const count = (value: number) => (loading ? "…" : value);
+    const statusCounts = {
+        enrolled: countTrainingCompanies(inScope.filter((e) => e.status === "enrolled")),
+        unassigned: countTrainingCompanies(inScope.filter((e) => e.status === "unassigned")),
+        discontinued: countTrainingCompanies(inScope.filter((e) => e.status === "discontinued")),
+        other: countTrainingCompanies(inScope.filter((e) => !["enrolled", "unassigned", "discontinued"].includes(e.status))),
+        eligible: countTrainingCompanies(inScope.filter((e) => certificationState(progress[e.id]) === "eligible")),
+    };
     const metrics: DashboardMetric[] = [
         {
             key: "total",
             title: "Total SMEs",
-            value: count(inScope.length),
-            subtitle: selectedTrainingId ? "In this training" : "Added so far",
+            value: count(countTrainingCompanies(inScope)),
+            subtitle: selectedTrainingId ? "Companies registered for this training" : "Distinct companies added",
             icon: <TeamOutlined style={{ color: token.colorPrimary }} />,
             important: true,
         },
         {
             key: "enrolled",
             title: "Enrolled",
-            value: count(inScope.filter((e) => e.status === "enrolled").length),
-            subtitle: "Currently in a training",
+            value: count(statusCounts.enrolled),
+            subtitle: "Companies currently in a training",
             icon: <CheckCircleOutlined style={{ color: token.colorSuccess }} />,
             important: true,
         },
-        {
+        ...(statusCounts.unassigned > 0 ? [{
             key: "unassigned",
             title: "Awaiting training",
-            value: count(inScope.filter((e) => e.status === "unassigned").length),
+            value: count(statusCounts.unassigned),
             subtitle: "Added, not yet enrolled",
             icon: <ClockCircleOutlined style={{ color: token.colorWarning }} />,
-        },
+        } as DashboardMetric] : []),
         {
             key: "discontinued",
             title: "Discontinued",
-            value: count(inScope.filter((e) => e.status === "discontinued").length),
+            value: count(statusCounts.discontinued),
             subtitle: "Stopped attending",
             icon: <StopOutlined style={{ color: token.colorError }} />,
         },
-        {
+        ...(statusCounts.other > 0 ? [{
+            key: "other",
+            title: "Other statuses",
+            value: count(statusCounts.other),
+            subtitle: "Records needing status review",
+            icon: <TeamOutlined style={{ color: token.colorWarning }} />,
+        } as DashboardMetric] : []),
+        ...(statusCounts.eligible > 0 ? [{
             key: "eligible",
             title: "Awaiting certificate",
-            value: count(inScope.filter((e) => certificationState(progress[e.id]) === "eligible").length),
+            value: count(statusCounts.eligible),
             subtitle: "SMEs with someone eligible, not yet certified",
             icon: <SafetyCertificateOutlined style={{ color: token.colorWarning }} />,
             onClick: () => patchFilters({ certification: CERTIFICATION_LABEL.eligible }),
-        },
+        } as DashboardMetric] : []),
     ];
 
     const peopleOfSme = (r: TrainingEnrollment) => attendees.filter((a) => a.enrollmentId === r.id);
@@ -391,8 +442,8 @@ export default function EnrollSme() {
                 ? r.certificationOverride
                     ? [{ key: "undo", icon: <SafetyCertificateOutlined />, label: "Undo eligible override", onClick: () => void saveCompanyOverride(r, null) }]
                     : companyStatus !== "eligible" && companyStatus !== "certified"
-                      ? [{ key: "eligible", icon: <SafetyCertificateOutlined />, label: "Mark eligible", onClick: () => { setOverrideReason(""); setOverridingCompany(r); } }]
-                      : []
+                        ? [{ key: "eligible", icon: <SafetyCertificateOutlined />, label: "Mark eligible", onClick: () => { setOverrideReason(""); setOverridingCompany(r); } }]
+                        : []
                 : []),
             { type: "divider" as const },
             { key: "delete", icon: <DeleteOutlined />, label: "Delete completely", danger: true, onClick: () => confirmDelete(r) },

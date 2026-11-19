@@ -122,14 +122,15 @@ export type IncubationGroup = 'A' | 'B' | 'C' | 'Graduated'
  * sheets, the later stage is kept and the clash is flagged. "Soft incubation"
  * is not one: it's a kind of work (bricklaying…), so that sheet is a label.
  */
-export const SME_STATUSES = ['Exited', 'Potential exit', 'Dormant', 'Active'] as const
+export const SME_STATUSES = ['Exited', 'Potential Exit', 'Dormant', 'Inactive', 'Active'] as const
 
 /** A status named in a sheet name or cell, if it's one of the known ones. */
 export const statusFromText = (value: string): string | null => {
     const v = value.toLowerCase()
-    if (/potential\s*exit/.test(v)) return 'Potential exit'
+    if (/potential\s*exit/.test(v)) return 'Potential Exit'
     if (/\bexit(ed)?\b/.test(v)) return 'Exited'
-    if (/dormant|non\s*-?\s*active|inactive/.test(v)) return 'Dormant'
+    if (/dormant/.test(v)) return 'Dormant'
+    if (/non\s*-?\s*active|inactive/.test(v)) return 'Inactive'
     if (/^\s*active\s*$/.test(v)) return 'Active'
     return null
 }

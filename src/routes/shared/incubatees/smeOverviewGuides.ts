@@ -26,9 +26,9 @@ export const SME_OVERVIEW_GUIDES: PageGuideRegistration = {
                 {
                     element: guideTarget('sme-overview-filters'),
                     popover: {
-                        title: 'Filters and reporting period',
+                        title: 'Search, statuses and filters',
                         description:
-                            'Search and filter the SME portfolio, and choose the monthly reporting range used by performance and intervention trends.',
+                            'Search the SME portfolio, choose a status, and use Filters for additional criteria. The topbar date range controls performance and intervention trends.',
                         side: 'bottom',
                         align: 'start'
                     }

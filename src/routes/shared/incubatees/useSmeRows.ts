@@ -1,3 +1,4 @@
+import { incubationState, latestSmeActivity, normalizeSmeStatus } from '@/lib/smeIncubation'
 import { applicationProgramId, isAcceptedApplication } from '@/lib/applicationPopulation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { message } from 'antd'
@@ -99,21 +100,23 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
         setLoading(true)
 
         try {
-            const [appsResult, assignedResult] = await Promise.allSettled([
+            const [appsResult, assignedResult, appointmentsResult] = await Promise.allSettled([
                 getDocs(collection(db, 'applications')),
-                getDocs(query(
-                    collection(db, 'assignedInterventions'),
-                    ...(activeProgramId ? [where('programId', '==', activeProgramId)] : [])
-                ))
+                getDocs(collection(db, 'assignedInterventions')),
+                getDocs(collection(db, 'appointments'))
             ])
 
             if (appsResult.status === 'rejected') throw appsResult.reason
             const appsSnap = appsResult.value
 
+            const activityAssignments = assignedResult.status === 'fulfilled' ? assignedResult.value.docs.map(d => d.data()) : []
+            const activityAppointments = appointmentsResult.status === 'fulfilled' ? appointmentsResult.value.docs.map(d => d.data()) : []
+            const activityLoaded = assignedResult.status === 'fulfilled' && appointmentsResult.status === 'fulfilled'
             const activeBySme = new Map<string, number>()
             if (assignedResult.status === 'fulfilled') {
                 assignedResult.value.forEach(snapshot => {
                     const intervention = snapshot.data() as any
+                    if (activeProgramId && applicationProgramId(intervention) && applicationProgramId(intervention) !== activeProgramId) return
                     const status = String(intervention.assignmentStatus || '').toLowerCase().trim()
                     if (['completed', 'cancelled', 'canceled'].includes(status)) return
                     const key = String(intervention.participantId || intervention.applicationId || '').trim()
@@ -199,7 +202,7 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
                     const mergedPerm = mergePrefUploaded(uploaded.perm, pHC.perm)
                     const mergedTemp = mergePrefUploaded(uploaded.temp, pHC.temp)
 
-                    const totalRevenue = mergedRev.reduce((acc, v) => acc + (v || 0), 0)
+                    const totalRevenue = mergedRev.reduce<number>((acc, v) => acc + (v || 0), 0)
 
                     let currentEmployees = 0
                     for (let i = mergedPerm.length - 1; i >= 0; i--) {
@@ -252,7 +255,22 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
                         String(app.branchName || participant?.branchName || '').trim() ||
                         resolvedBranchName
 
+                    const sameSme = (record: any) =>
+                        (!applicationProgramId(record) || applicationProgramId(record) === app.programId) &&
+                        ((participantId && (record.participantId === participantId || record.smeId === participantId)) || record.applicationId === app.id)
+                    const lastActivity = activityLoaded ? latestSmeActivity(activityAssignments.filter(sameSme), activityAppointments.filter(sameSme), Date.now()) : null
+                    const statusState = incubationState(activityLoaded ? { ...app, lastParticipationAt: null } : app, participant || {}, lastActivity)
+                    // An incomplete read is not evidence of inactivity for an unassessed legacy SME.
+                    if (!activityLoaded && !(app as any).incubationStatusCheckedAt) {
+                        statusState.status = normalizeSmeStatus((app as any).incubationStatus)
+                        statusState.inactiveDays = null
+                        statusState.exitQualified = false
+                        statusState.inactivityBaselineSource = 'unknown'
+                    }
                     return {
+                        ...statusState,
+                        incubationStatus: statusState.status,
+                        incubationStatusReason: (app as any).incubationStatusReason || null,
                         appId: app.id,
                         participantId,
                         programId: app.programId,

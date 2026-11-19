@@ -39,8 +39,6 @@
 }
 
 /* --- Compliance documents ------------------------------------------------ */
-/* One bordered list, a row per document. The row stays neutral; status shows
-   in the icon tint and one tag, so a valid document doesn't shout in green. */
 .ptx-docs {
     margin: 0;
     padding: 0;
@@ -59,7 +57,7 @@
     transition: background 140ms ease;
 }
 
-.ptx-doc + .ptx-doc {
+.ptx-doc+.ptx-doc {
     border-top: 1px solid var(--app-border);
 }
 
@@ -120,14 +118,12 @@
 }
 
 /* --- Performance trend ----------------------------------------------------- */
-/* Revenue and employment as two aligned charts on one month axis (never one
-   chart with two y-scales). Each has a heading and its data source beneath. */
 .ptx-trend {
     display: grid;
     gap: 18px;
 }
 
-.ptx-trend section + section {
+.ptx-trend section+section {
     padding-top: 14px;
     border-top: 1px solid var(--app-border);
 }
@@ -157,8 +153,6 @@
 }
 
 /* --- Timeline (horizontal) ---------------------------------------------------- */
-/* A dot per step joined by a rail; label and date sit under each dot. The rail
-   between two steps is filled once the later step has happened. */
 .ptx-timeline {
     display: grid;
     margin: 0;
@@ -172,7 +166,6 @@
     padding-inline-end: 12px;
 }
 
-/* The rail runs from this dot to the next one. */
 .ptx-timeline-step:not(:last-child)::after {
     position: absolute;
     top: 6px;
@@ -223,8 +216,188 @@
 }
 
 /* --- Section spacing ----------------------------------------------------------- */
-/* Performance, interventions and compliance end with a card or list; leave
-   room under it so it doesn't sit on the panel's bottom edge. */
 .ptx-section-pad {
     padding-bottom: 20px;
+}
+
+.ptx-page .ant-btn,
+.ptx-toolbar .ant-btn {
+    border-radius: 12px;
+}
+
+.ptx-toolbar .ws-toolbar-search {
+    flex: 2 1 230px;
+}
+
+.ptx-toolbar .ptx-statuses.ant-segmented {
+    flex: 0 1 auto;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: 12px;
+}
+
+.ptx-toolbar .ptx-statuses .ant-segmented-item,
+.ptx-toolbar .ptx-statuses .ant-segmented-thumb {
+    border-radius: 9px;
+}
+
+.ptx-toolbar .ptx-filter-button,
+.ptx-toolbar .ws-toolbar-button {
+    flex: 0 0 auto;
+}
+
+.ptx-toolbar .ptx-filter-button .ant-btn {
+    padding-inline: 12px;
+}
+
+@media (max-width: 767px) {
+    .ptx-toolbar .ws-toolbar-search {
+        flex-basis: 100%;
+    }
+}
+
+.ptx-page .ws-row-side.ptx-row-badges {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.ptx-status-summary {
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.ptx-page .ws-detail-actions {
+    flex-wrap: wrap;
+}
+
+/* --- Compact SME header actions -----------------------------------------------
+   Right-side actions share the header's first row with SME details. Narrow
+   detail panels stack buttons vertically rather than forcing a full-width row. */
+.ws-detail {
+    container-type: inline-size;
+}
+
+.ws-detail-head.ptx-compact-detail-head {
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+.ptx-detail-header-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 12px;
+    width: 100%;
+    min-width: 0;
+}
+
+.ptx-detail-header-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ptx-detail-header-content>.ws-detail-identity {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+}
+
+.ptx-detail-header-content .ws-detail-name {
+    overflow-wrap: anywhere;
+}
+
+.ptx-detail-header-content .ws-detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.ptx-detail-header-content .ws-detail-tags .ant-tag {
+    margin-inline-end: 0;
+}
+
+.ptx-detail-header-actions {
+    justify-self: end;
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Override the shared workspace's full-width/wrapping action bar in this header. */
+.ptx-detail-header-actions .ws-detail-actions,
+.ptx-detail-header-actions .ant-space {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: auto;
+    max-width: 100%;
+    margin: 0;
+}
+
+.ptx-detail-header-actions .ant-space-item {
+    flex: 0 0 auto;
+}
+
+.ptx-detail-header-actions .ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 0;
+    height: 32px;
+    padding-inline: 10px;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    border-radius: 999px;
+}
+
+/* The detail panel can be narrow even on a large desktop window. */
+@container (max-width: 780px) {
+
+    .ptx-detail-header-actions .ws-detail-actions,
+    .ptx-detail-header-actions .ant-space {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    .ptx-detail-header-actions .ant-btn {
+        width: 100%;
+        min-width: 112px;
+    }
+}
+
+/* Phone drawer: keep the identity readable and put actions immediately below. */
+@container (max-width: 480px) {
+    .ptx-detail-header-layout {
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 12px;
+    }
+
+    .ptx-detail-header-actions {
+        justify-self: stretch;
+        width: 100%;
+    }
+
+    .ptx-detail-header-actions .ws-detail-actions,
+    .ptx-detail-header-actions .ant-space {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: stretch;
+        justify-content: flex-start;
+    }
+
+    .ptx-detail-header-actions .ant-btn {
+        min-width: 0;
+        width: auto;
+    }
 }

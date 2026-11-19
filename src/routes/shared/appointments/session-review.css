@@ -1,0 +1,132 @@
+.guide-session-review-modal .session-review-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    max-width: 1440px;
+    margin: 0 auto;
+}
+
+.session-review-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.session-review-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 24px;
+    border: 1px solid var(--app-border, #e5e7eb);
+    border-radius: 16px;
+    background: linear-gradient(120deg, rgba(99, 102, 241, .09), rgba(14, 165, 233, .04));
+}
+
+.session-review-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--app-text-secondary, #64748b);
+}
+
+.session-review-heading h2 {
+    margin: 8px 0;
+    color: var(--app-text, inherit);
+    font-size: clamp(22px, 3vw, 30px);
+    line-height: 1.2;
+    font-weight: 650;
+}
+
+.session-review-toolbar {
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--app-border, #e5e7eb);
+}
+
+.session-review-note {
+    padding: 12px 16px;
+    border-left: 3px solid #d4a144;
+    border-radius: 6px;
+    background: rgba(212, 161, 68, .08);
+}
+
+.guide-session-review-modal .session-review-panel {
+    height: 100%;
+    border-radius: 14px;
+}
+
+.session-review-topics {
+    display: grid;
+    gap: 12px;
+}
+
+.session-review-topic-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.session-review-topic-label > :last-child {
+    white-space: nowrap;
+}
+
+.session-review-list-tools {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.session-review-list-tools .ant-input-affix-wrapper {
+    width: min(100%, 300px);
+}
+
+.session-review-session-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 16px;
+}
+
+.guide-session-review-modal .session-review-session-card {
+    border-radius: 12px;
+    background: var(--app-surface-sunken, #f8fafc);
+    overflow-wrap: anywhere;
+}
+
+.session-review-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+@media (max-width: 600px) {
+    .session-review-heading { padding: 18px; }
+    .session-review-records > .ant-card-body { padding: 12px; }
+}
+
+.session-review-fullscreen .ant-modal {
+    top: 0;
+    max-width: 100%;
+    margin: 0;
+    padding-bottom: 0;
+}
+
+.session-review-fullscreen .ant-modal-content {
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.session-review-fullscreen .ant-modal-header {
+    flex-shrink: 0;
+}
+
+.session-review-fullscreen .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+}

@@ -217,6 +217,9 @@ exports.onApplicationDecisionEmail = (0, firestore_1.onDocumentWritten)({ region
             return;
         if (next !== "accepted" && next !== "rejected")
             return;
+        // The choice is saved before creation; absent flags retain the existing workflow.
+        if (next === "accepted" && after.sendAcceptanceEmail === false)
+            return;
         const already = after?.notifications?.statusEmail?.[next]?.sentAt ?? null;
         if (already)
             return;

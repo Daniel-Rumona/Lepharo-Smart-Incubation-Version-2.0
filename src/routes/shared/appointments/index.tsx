@@ -1,3 +1,6 @@
+import { hasMinimumPlannedCoverage, validatePlannedCoverage } from '@/lib/plannedCoverageValidation'
+import CoverageTopicSelect from '@/components/appointments/CoverageTopicSelect'
+import { buildCoverageTopicCatalog } from '@/lib/coverageTopics'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     List,
@@ -192,11 +195,6 @@ const validateCoverageNotes = (_rule: unknown, value: unknown) =>
         ? Promise.resolve()
         : Promise.reject(new Error('Enter at least 5 words.'))
 
-const validatePlannedCoverage = (_rule: unknown, value: unknown) =>
-    coverageNoteWordCount(value) > 5
-        ? Promise.resolve()
-        : Promise.reject(new Error('Enter more than 5 words.'))
-
 const toAllocatedInterventionDeliveryMethod = (value: Delivery): string => {
     if (value === 'in_person') return 'in-person'
     if (value === 'virtual') return 'online'
@@ -330,7 +328,7 @@ type Appt = {
     _displayType?: 'single' | 'group'
     /** Schema v5: the session this SME invitation belongs to, and the SME's own attendance. */
     appointmentSessionId?: string
-    attendance?: { status?: string; checkedInAt?: any; checkedOutAt?: any; [key: string]: any }
+    attendance?: { status?: string; checkedInAt?: any; checkedOutAt?: any;[key: string]: any }
     id: string
     assigneeId: string
     assigneeName: string
@@ -3553,8 +3551,8 @@ const Appointments: React.FC = () => {
         } else if (smeParticipated && isTrainingAcademyCoverage && !coveredPoints.length) {
             message.warning('Please add at least one formal topic or unit standard covered.')
             return
-        } else if (values.usePlannedCoverage === true && coverageNoteWordCount(plannedCoverageForReuse) <= 5) {
-            message.warning('Planned coverage needs more than 5 words before it can be reused.')
+        } else if (values.usePlannedCoverage === true && !hasMinimumPlannedCoverage(plannedCoverageForReuse)) {
+            message.warning('Planned coverage needs at least 5 words before it can be reused.')
             return
         } else if (!notes || coverageNoteWordCount(notes) < 5) {
             message.warning('Please add a coverage summary of at least 5 words.')
@@ -3837,26 +3835,26 @@ const Appointments: React.FC = () => {
                     shouldTrackAttendedSession && isSharedGroupMember
                         ? { 'tracking.sessionsLogged': info?.attendedCount ?? 0 }
                         : shouldTrackAttendedSession && alreadyLogged
-                        ? { 'tracking.sessionsLogged': info?.attendedCount ?? 0, computedProgress: derivedProgress }
-                        : shouldTrackAttendedSession
-                        ? {
-                            'tracking.sessionsLogged': info?.attendedCount ?? 0,
-                            progressUpdates: arrayUnion({
-                                by: user.uid || user.email,
-                                source: 'appointment',
-                                appointmentId: row.id,
-                                note: notes || coveredPoints.join('; '),
-                                createdAt: Timestamp.now(),
-                                resources: photos.map((url, index) => ({
-                                    type: 'image',
-                                    label: `Session photo ${index + 1}`,
-                                    link: url
-                                })),
-                                computedProgress: derivedProgress
-                            }),
-                            computedProgress: derivedProgress
-                        }
-                        : {}
+                            ? { 'tracking.sessionsLogged': info?.attendedCount ?? 0, computedProgress: derivedProgress }
+                            : shouldTrackAttendedSession
+                                ? {
+                                    'tracking.sessionsLogged': info?.attendedCount ?? 0,
+                                    progressUpdates: arrayUnion({
+                                        by: user.uid || user.email,
+                                        source: 'appointment',
+                                        appointmentId: row.id,
+                                        note: notes || coveredPoints.join('; '),
+                                        createdAt: Timestamp.now(),
+                                        resources: photos.map((url, index) => ({
+                                            type: 'image',
+                                            label: `Session photo ${index + 1}`,
+                                            link: url
+                                        })),
+                                        computedProgress: derivedProgress
+                                    }),
+                                    computedProgress: derivedProgress
+                                }
+                                : {}
 
                 batch.update(doc(db, 'assignedInterventions', id), {
                     // Every coverage outcome belongs to the intervention, even
@@ -4336,7 +4334,7 @@ const Appointments: React.FC = () => {
                             const u = d.data() as any
                             const url = String(u.photoURL || '').trim()
                             if (!url || !u.email) return
-                            ;(byEmail.get(String(u.email).toLowerCase()) || []).forEach(pid => { photos[pid] = url })
+                                ; (byEmail.get(String(u.email).toLowerCase()) || []).forEach(pid => { photos[pid] = url })
                         })
                     }
                     if (!cancelled) setParticipantPhotos(photos)
@@ -4634,8 +4632,8 @@ const Appointments: React.FC = () => {
                 return
             }
 
-            if (!plannedCoverage.length || coverageNoteWordCount(plannedCoverage.join(' ')) <= 5) {
-                message.warning('Planned coverage must contain more than 5 words.')
+            if (!plannedCoverage.length || !hasMinimumPlannedCoverage(plannedCoverage)) {
+                message.warning('Planned coverage must contain at least 5 words.')
                 return
             }
 
@@ -5142,8 +5140,8 @@ const Appointments: React.FC = () => {
                 return
             }
 
-            if (!plannedCoverage.length || coverageNoteWordCount(plannedCoverage.join(' ')) <= 5) {
-                message.warning('Planned coverage must contain more than 5 words.')
+            if (!plannedCoverage.length || !hasMinimumPlannedCoverage(plannedCoverage)) {
+                message.warning('Planned coverage must contain at least 5 words.')
                 return
             }
 
@@ -5550,6 +5548,13 @@ const Appointments: React.FC = () => {
         })
     }, [sortedAppointments, clockNow])
 
+    const coverageTopicCatalog = useMemo(() => buildCoverageTopicCatalog(
+        allDisplayAppointments.flatMap(row => [
+            ...(row.plannedTopics || row.sessionCoverage?.plannedTopics || []),
+            ...(row.sessionCoverage?.latest?.coveredPoints || [])
+        ])
+    ), [allDisplayAppointments])
+
     const groupedDisplayAppointments = useMemo(
         () => allDisplayAppointments.filter(rowMatchesFilters),
         [allDisplayAppointments, clockNow, filterDelivery, filterParticipant, filterDateRange, filterStatus] // eslint-disable-line react-hooks/exhaustive-deps
@@ -5693,123 +5698,123 @@ const Appointments: React.FC = () => {
     /** The open appointment's tabs (overview, members, coverage, food), shown in the side panel. */
     const detailBody = (
         <>
-                {selectedAppt ? (
-                    <>
-                        <div style={{ marginBottom: 14 }}>
-                            <SetupSegmented
-                                fullWidth
-                                value={detailModalTab}
-                                onChange={value => setDetailModalTab(value)}
-                                options={[
-                                    { label: 'Overview', value: 'overview' as const, icon: <AppstoreOutlined /> },
-                                    {
-                                        label: `Members (${getDisplayRowMembers(selectedAppt).length})`,
-                                        value: 'members' as const,
-                                        icon: <TeamOutlined />
-                                    },
-                                    { label: 'Coverage', value: 'coverage' as const, icon: <FileDoneOutlined /> },
-                                    ...(canSeeSessionBrief ? [{ label: 'Brief', value: 'brief' as const, icon: <BulbOutlined /> }] : []),
-                                    ...(hasConfiguredFoodMenu(selectedAppt)
-                                        ? [{ label: 'Food Menu', value: 'food' as const, icon: <BookOutlined /> }]
-                                        : [])
-                                ]}
-                            />
-                        </div>
+            {selectedAppt ? (
+                <>
+                    <div style={{ marginBottom: 14 }}>
+                        <SetupSegmented
+                            fullWidth
+                            value={detailModalTab}
+                            onChange={value => setDetailModalTab(value)}
+                            options={[
+                                { label: 'Overview', value: 'overview' as const, icon: <AppstoreOutlined /> },
+                                {
+                                    label: `Members (${getDisplayRowMembers(selectedAppt).length})`,
+                                    value: 'members' as const,
+                                    icon: <TeamOutlined />
+                                },
+                                { label: 'Coverage', value: 'coverage' as const, icon: <FileDoneOutlined /> },
+                                ...(canSeeSessionBrief ? [{ label: 'Brief', value: 'brief' as const, icon: <BulbOutlined /> }] : []),
+                                ...(hasConfiguredFoodMenu(selectedAppt)
+                                    ? [{ label: 'Food Menu', value: 'food' as const, icon: <BookOutlined /> }]
+                                    : [])
+                            ]}
+                        />
+                    </div>
 
-                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' && (() => {
-                            const stats = getAttendanceCounts(selectedAppt)
+                    {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' && (() => {
+                        const stats = getAttendanceCounts(selectedAppt)
 
-                            if (!hasQrAttendance(selectedAppt)) {
-                                return (
-                                    <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-                                        <Col xs={12} md={8}>
-                                            <MetricTile
-                                                icon={<TeamOutlined />}
-                                                tone='info'
-                                                title='RSVP Confirmed'
-                                                value={`${stats.confirmed}/${stats.total}`}
-                                            />
-                                        </Col>
-                                        <Col xs={0} md={8}>
-                                            <MetricTile
-                                                icon={<CheckCircleOutlined />}
-                                                tone='success'
-                                                title='Meeting Outcome'
-                                                value={meetingOutcomeLabel(selectedAppt)}
-                                            />
-                                        </Col>
-                                        <Col xs={12} md={8}>
-                                            <MetricTile
-                                                icon={<UserOutlined />}
-                                                tone='warning'
-                                                title='SME Attendance'
-                                                value={smeAttendanceLabel(getSmeAttendanceOutcome(selectedAppt))}
-                                            />
-                                        </Col>
-                                    </Row>
-                                )
-                            }
-
-                            /*
-                              Each tile is measured against the population the
-                              number actually belongs to.
-
-                              Checked Out previously read "0/29 invited", which
-                              is unanswerable — someone who never arrived cannot
-                              check out. Its denominator is the people who
-                              checked in.
-                            */
-                            const pct = (part: number, whole: number) =>
-                                whole > 0 ? Math.round((part / whole) * 100) : null
-
-                            const turnout = pct(stats.checkedIn, stats.total)
-                            const followThrough = pct(stats.checkedIn, stats.confirmed)
-                            const noShows = Math.max(stats.confirmed - stats.checkedIn, 0)
-                            const isGroupRow = (selectedAppt as any)?._displayType === 'group'
-
+                        if (!hasQrAttendance(selectedAppt)) {
                             return (
                                 <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-                                    <Col xs={12} md={isGroupRow ? 6 : 6}>
+                                    <Col xs={12} md={8}>
                                         <MetricTile
                                             icon={<TeamOutlined />}
                                             tone='info'
                                             title='RSVP Confirmed'
                                             value={`${stats.confirmed}/${stats.total}`}
-                                            subtitle='of those invited'
                                         />
                                     </Col>
-
-                                    <Col xs={12} md={6}>
+                                    <Col xs={0} md={8}>
                                         <MetricTile
-                                            icon={<LoginOutlined />}
+                                            icon={<CheckCircleOutlined />}
                                             tone='success'
-                                            title='Checked In'
-                                            value={`${stats.checkedIn}/${stats.total}`}
-                                            subtitle={turnout === null ? 'of those invited' : `${turnout}% of those invited`}
+                                            title='Meeting Outcome'
+                                            value={meetingOutcomeLabel(selectedAppt)}
                                         />
                                     </Col>
-
-                                    <Col xs={12} md={6}>
+                                    <Col xs={12} md={8}>
                                         <MetricTile
-                                            icon={<LogoutOutlined />}
+                                            icon={<UserOutlined />}
                                             tone='warning'
-                                            title='Checked Out'
-                                            value={`${stats.checkedOut}/${stats.checkedIn}`}
-                                            subtitle='of those who checked in'
+                                            title='SME Attendance'
+                                            value={smeAttendanceLabel(getSmeAttendanceOutcome(selectedAppt))}
                                         />
                                     </Col>
+                                </Row>
+                            )
+                        }
 
-                                    <Col xs={12} md={6}>
-                                        <MetricTile
-                                            icon={<ClockCircleOutlined />}
-                                            tone='info'
-                                            title='Still Present'
-                                            value={stats.currentlyPresent}
-                                            subtitle='checked in, not yet out'
-                                        />
-                                    </Col>
+                        /*
+                          Each tile is measured against the population the
+                          number actually belongs to.
 
-                                    {/*
+                          Checked Out previously read "0/29 invited", which
+                          is unanswerable — someone who never arrived cannot
+                          check out. Its denominator is the people who
+                          checked in.
+                        */
+                        const pct = (part: number, whole: number) =>
+                            whole > 0 ? Math.round((part / whole) * 100) : null
+
+                        const turnout = pct(stats.checkedIn, stats.total)
+                        const followThrough = pct(stats.checkedIn, stats.confirmed)
+                        const noShows = Math.max(stats.confirmed - stats.checkedIn, 0)
+                        const isGroupRow = (selectedAppt as any)?._displayType === 'group'
+
+                        return (
+                            <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+                                <Col xs={12} md={isGroupRow ? 6 : 6}>
+                                    <MetricTile
+                                        icon={<TeamOutlined />}
+                                        tone='info'
+                                        title='RSVP Confirmed'
+                                        value={`${stats.confirmed}/${stats.total}`}
+                                        subtitle='of those invited'
+                                    />
+                                </Col>
+
+                                <Col xs={12} md={6}>
+                                    <MetricTile
+                                        icon={<LoginOutlined />}
+                                        tone='success'
+                                        title='Checked In'
+                                        value={`${stats.checkedIn}/${stats.total}`}
+                                        subtitle={turnout === null ? 'of those invited' : `${turnout}% of those invited`}
+                                    />
+                                </Col>
+
+                                <Col xs={12} md={6}>
+                                    <MetricTile
+                                        icon={<LogoutOutlined />}
+                                        tone='warning'
+                                        title='Checked Out'
+                                        value={`${stats.checkedOut}/${stats.checkedIn}`}
+                                        subtitle='of those who checked in'
+                                    />
+                                </Col>
+
+                                <Col xs={12} md={6}>
+                                    <MetricTile
+                                        icon={<ClockCircleOutlined />}
+                                        tone='info'
+                                        title='Still Present'
+                                        value={stats.currentlyPresent}
+                                        subtitle='checked in, not yet out'
+                                    />
+                                </Col>
+
+                                {/*
                                       Follow-through, for group bookings only.
 
                                       Measured against SMEs who confirmed rather
@@ -5820,212 +5825,212 @@ const Appointments: React.FC = () => {
                                       Checked In tile, so both readings are
                                       available without conflating them.
                                     */}
-                                    {isGroupRow ? (
-                                        <Col xs={24}>
-                                            <MetricTile
-                                                icon={<CheckCircleOutlined />}
-                                                tone={
-                                                    followThrough === null
-                                                        ? 'neutral'
-                                                        : followThrough >= 80
-                                                            ? 'success'
-                                                            : followThrough >= 50
-                                                                ? 'warning'
-                                                                : 'danger'
-                                                }
-                                                title='Attendance follow-through'
-                                                value={followThrough === null ? '—' : `${followThrough}%`}
-                                                subtitle={
-                                                    stats.confirmed === 0
-                                                        ? 'No SME confirmed this session yet'
-                                                        : `${stats.checkedIn} of ${stats.confirmed} who confirmed attended · ${noShows} did not follow through`
-                                                }
-                                            />
-                                        </Col>
-                                    ) : null}
-                                </Row>
-                            )
-                        })()}
+                                {isGroupRow ? (
+                                    <Col xs={24}>
+                                        <MetricTile
+                                            icon={<CheckCircleOutlined />}
+                                            tone={
+                                                followThrough === null
+                                                    ? 'neutral'
+                                                    : followThrough >= 80
+                                                        ? 'success'
+                                                        : followThrough >= 50
+                                                            ? 'warning'
+                                                            : 'danger'
+                                            }
+                                            title='Attendance follow-through'
+                                            value={followThrough === null ? '—' : `${followThrough}%`}
+                                            subtitle={
+                                                stats.confirmed === 0
+                                                    ? 'No SME confirmed this session yet'
+                                                    : `${stats.checkedIn} of ${stats.confirmed} who confirmed attended · ${noShows} did not follow through`
+                                            }
+                                        />
+                                    </Col>
+                                ) : null}
+                            </Row>
+                        )
+                    })()}
 
-                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' ? (
-                            <Space wrap style={{ marginBottom: 12 }}>
-                                <Tag color={(selectedAppt as any)._groupKind === 'grouped_assignment' ? 'purple' : 'cyan'}>
-                                    {(selectedAppt as any)._groupKind === 'grouped_assignment'
-                                        ? 'Grouped Assignment'
-                                        : 'Grouped by Cycle'}
-                                </Tag>
+                    {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' ? (
+                        <Space wrap style={{ marginBottom: 12 }}>
+                            <Tag color={(selectedAppt as any)._groupKind === 'grouped_assignment' ? 'purple' : 'cyan'}>
+                                {(selectedAppt as any)._groupKind === 'grouped_assignment'
+                                    ? 'Grouped Assignment'
+                                    : 'Grouped by Cycle'}
+                            </Tag>
 
-                            </Space>
-                        ) : null}
+                        </Space>
+                    ) : null}
 
-                        {detailModalTab === 'overview' && (() => {
-                            const st = displayStatus(selectedAppt)
-                            const dStatus = derivedStatus(selectedAppt)
-                            const isGroupRow = (selectedAppt as any)?._displayType === 'group'
-                            const deliveryMeta = DELIVERY_METHODS.find(m => m.value === selectedAppt.deliveryMethod)
-                            const rsvp = String(selectedAppt.userConfirmation || '').toLowerCase()
-                            const tone =
-                                dStatus === 'completed'
-                                    ? 'is-completed'
-                                    : ['cancelled', 'postponed'].includes(dStatus) || rsvp === 'declined'
-                                        ? 'is-cancelled'
-                                        : dStatus === 'awaiting_coverage' || rsvp === 'pending' || !rsvp
-                                            ? 'is-pending'
-                                            : 'is-accepted'
-                            const note =
-                                dStatus === 'completed'
-                                    ? 'This appointment is complete. Add or review its coverage in the Coverage tab.'
-                                    : dStatus === 'cancelled'
-                                        ? 'This appointment was cancelled.'
-                                        : dStatus === 'postponed'
-                                            ? 'This appointment was postponed.'
-                                            : dStatus === 'awaiting_coverage'
-                                                ? 'The meeting has ended. Record what happened in the Coverage tab.'
-                                                : rsvp === 'declined'
-                                                    ? 'The SME declined this appointment. Reschedule it or choose a different time.'
-                                                    : isGroupRow
-                                                        ? 'Each SME in the group confirms individually. See the Members tab for responses.'
-                                                        : rsvp === 'confirmed'
-                                                            ? 'This appointment is confirmed and ready to go ahead.'
-                                                            : 'This appointment is awaiting confirmation from the SME. You can still record the outcome once the meeting takes place.'
-                            return (
-                                <div className={`apt-detail ${tone}`}>
-                                    <div className='apt-detail-head'>
-                                        <span className='apt-detail-icon'>
-                                            {isGroupRow ? (
-                                                <TeamOutlined />
-                                            ) : participantPhotos[selectedAppt.participantId] ? (
-                                                <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]} />
-                                            ) : (
-                                                deliveryMeta?.icon || <UserOutlined />
-                                            )}
-                                        </span>
-                                        <div style={{ minWidth: 0 }}>
-                                            <h3>{selectedAppt.participantName || '-'}</h3>
-                                            {!isGroupRow && (memberEmailOf(selectedAppt, participantEmails)) ? (
-                                                <small>{memberEmailOf(selectedAppt, participantEmails)}</small>
-                                            ) : null}
-                                        </div>
-                                        <Tag bordered color={st.color} icon={st.icon} style={{ borderRadius: 999, marginInlineEnd: 0 }}>{st.label}</Tag>
+                    {detailModalTab === 'overview' && (() => {
+                        const st = displayStatus(selectedAppt)
+                        const dStatus = derivedStatus(selectedAppt)
+                        const isGroupRow = (selectedAppt as any)?._displayType === 'group'
+                        const deliveryMeta = DELIVERY_METHODS.find(m => m.value === selectedAppt.deliveryMethod)
+                        const rsvp = String(selectedAppt.userConfirmation || '').toLowerCase()
+                        const tone =
+                            dStatus === 'completed'
+                                ? 'is-completed'
+                                : ['cancelled', 'postponed'].includes(dStatus) || rsvp === 'declined'
+                                    ? 'is-cancelled'
+                                    : dStatus === 'awaiting_coverage' || rsvp === 'pending' || !rsvp
+                                        ? 'is-pending'
+                                        : 'is-accepted'
+                        const note =
+                            dStatus === 'completed'
+                                ? 'This appointment is complete. Add or review its coverage in the Coverage tab.'
+                                : dStatus === 'cancelled'
+                                    ? 'This appointment was cancelled.'
+                                    : dStatus === 'postponed'
+                                        ? 'This appointment was postponed.'
+                                        : dStatus === 'awaiting_coverage'
+                                            ? 'The meeting has ended. Record what happened in the Coverage tab.'
+                                            : rsvp === 'declined'
+                                                ? 'The SME declined this appointment. Reschedule it or choose a different time.'
+                                                : isGroupRow
+                                                    ? 'Each SME in the group confirms individually. See the Members tab for responses.'
+                                                    : rsvp === 'confirmed'
+                                                        ? 'This appointment is confirmed and ready to go ahead.'
+                                                        : 'This appointment is awaiting confirmation from the SME. You can still record the outcome once the meeting takes place.'
+                        return (
+                            <div className={`apt-detail ${tone}`}>
+                                <div className='apt-detail-head'>
+                                    <span className='apt-detail-icon'>
+                                        {isGroupRow ? (
+                                            <TeamOutlined />
+                                        ) : participantPhotos[selectedAppt.participantId] ? (
+                                            <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]} />
+                                        ) : (
+                                            deliveryMeta?.icon || <UserOutlined />
+                                        )}
+                                    </span>
+                                    <div style={{ minWidth: 0 }}>
+                                        <h3>{selectedAppt.participantName || '-'}</h3>
+                                        {!isGroupRow && (memberEmailOf(selectedAppt, participantEmails)) ? (
+                                            <small>{memberEmailOf(selectedAppt, participantEmails)}</small>
+                                        ) : null}
                                     </div>
-
-                                    <dl className='apt-detail-meta'>
-                                        <div>
-                                            <dt><CalendarOutlined />Date</dt>
-                                            <dd>{dayjs(selectedAppt.date).format('dddd, DD MMMM YYYY')}</dd>
-                                        </div>
-                                        <div>
-                                            <dt><ClockCircleOutlined />Time</dt>
-                                            <dd>{formatTime(selectedAppt.startTime)} — {formatTime(selectedAppt.endTime)}</dd>
-                                        </div>
-                                        <div>
-                                            <dt>{deliveryMeta?.icon}Format</dt>
-                                            <dd>{deliveryMeta?.label || '—'}</dd>
-                                        </div>
-                                        <div>
-                                            <dt>{isGroupRow ? <TeamOutlined /> : <UserOutlined />}{isGroupRow ? 'RSVP' : 'Appointment RSVP'}</dt>
-                                            <dd>
-                                                {isGroupRow
-                                                    ? (() => {
-                                                        const stats = getAttendanceCounts(selectedAppt)
-                                                        return `${stats.confirmed}/${stats.total} confirmed`
-                                                    })()
-                                                    : memberRsvpTag(selectedAppt, selectedAppt, true)}
-                                            </dd>
-                                        </div>
-                                        <div className='is-wide'>
-                                            <dt><EnvironmentOutlined />Details</dt>
-                                            <dd>
-                                {selectedAppt.deliveryMethod === 'virtual' ? (
-                                                    isApptDone(selectedAppt) ? (
-                                                        <Tag color={selectedAppt.sessionCoverage?.latest?.held ? 'green' : selectedAppt.sessionCoverage?.latest?.held === false ? 'red' : 'default'}>
-                                                            {selectedAppt.sessionCoverage?.latest?.held
-                                                                ? 'Session completed'
-                                                                : selectedAppt.sessionCoverage?.latest?.held === false
-                                                                    ? 'Session not held'
-                                                                    : 'Meeting ended'}
-                                                        </Tag>
-                                                    ) : selectedAppt.meetingLink ? (
-                                                        <a href={selectedAppt.meetingLink} target='_blank' rel='noreferrer'>
-                                                            <LinkOutlined /> Join link
-                                                        </a>
-                                                    ) : (
-                                                        <Text type='secondary'>No link provided</Text>
-                                                    )
-                                                ) : selectedAppt.deliveryMethod === 'in_person' ? (
-                                                    selectedAppt.location ? (
-                                                        <Space>
-                                                            <EnvironmentOutlined />
-                                                            <span>{selectedAppt.location}</span>
-                                                        </Space>
-                                                    ) : (
-                                                        <Text type='secondary'>No location provided</Text>
-                                                    )
-                                                ) : (
-                                                    <Space>
-                                                        <PhoneFilled />
-                                                        <span>
-                                                            {(selectedAppt as any)?._displayType === 'group'
-                                                                ? 'See participant list below'
-                                                                : participantPhones[selectedAppt.participantId] || 'No phone on file'}
-                                                        </span>
-                                                    </Space>
-                                                )}
-                                            </dd>
-                                        </div>
-                                    </dl>
-
-                                    <p className='apt-detail-note'><InfoCircleOutlined />{note}</p>
+                                    <Tag bordered color={st.color} icon={st.icon} style={{ borderRadius: 999, marginInlineEnd: 0 }}>{st.label}</Tag>
                                 </div>
-                            )
-                        })()}
 
-                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType !== 'group' &&
-                            (selectedAppt as any)?.smeRescheduleRequest?.status === 'proposed' &&
-                            Array.isArray((selectedAppt as any)?.smeRescheduleRequest?.proposals) ? (
-                            <Card
-                                size="small"
-                                title="SME Proposed Times"
-                                style={{ marginTop: 12, borderColor: '#faad14' }}
-                            >
-                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                                    <Text type="secondary">
-                                        Decline reason: {(selectedAppt as any).smeRescheduleRequest.reasonText || selectedAppt.declineReason || '-'}
-                                    </Text>
-                                    {(selectedAppt as any).smeRescheduleRequest.proposals.map((proposal: any, index: number) => (
-                                        <Card key={proposal.id || index} size="small">
-                                            <Space
-                                                wrap
-                                                style={{ width: '100%', justifyContent: 'space-between' }}
+                                <dl className='apt-detail-meta'>
+                                    <div>
+                                        <dt><CalendarOutlined />Date</dt>
+                                        <dd>{dayjs(selectedAppt.date).format('dddd, DD MMMM YYYY')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt><ClockCircleOutlined />Time</dt>
+                                        <dd>{formatTime(selectedAppt.startTime)} — {formatTime(selectedAppt.endTime)}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>{deliveryMeta?.icon}Format</dt>
+                                        <dd>{deliveryMeta?.label || '—'}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>{isGroupRow ? <TeamOutlined /> : <UserOutlined />}{isGroupRow ? 'RSVP' : 'Appointment RSVP'}</dt>
+                                        <dd>
+                                            {isGroupRow
+                                                ? (() => {
+                                                    const stats = getAttendanceCounts(selectedAppt)
+                                                    return `${stats.confirmed}/${stats.total} confirmed`
+                                                })()
+                                                : memberRsvpTag(selectedAppt, selectedAppt, true)}
+                                        </dd>
+                                    </div>
+                                    <div className='is-wide'>
+                                        <dt><EnvironmentOutlined />Details</dt>
+                                        <dd>
+                                            {selectedAppt.deliveryMethod === 'virtual' ? (
+                                                isApptDone(selectedAppt) ? (
+                                                    <Tag color={selectedAppt.sessionCoverage?.latest?.held ? 'green' : selectedAppt.sessionCoverage?.latest?.held === false ? 'red' : 'default'}>
+                                                        {selectedAppt.sessionCoverage?.latest?.held
+                                                            ? 'Session completed'
+                                                            : selectedAppt.sessionCoverage?.latest?.held === false
+                                                                ? 'Session not held'
+                                                                : 'Meeting ended'}
+                                                    </Tag>
+                                                ) : selectedAppt.meetingLink ? (
+                                                    <a href={selectedAppt.meetingLink} target='_blank' rel='noreferrer'>
+                                                        <LinkOutlined /> Join link
+                                                    </a>
+                                                ) : (
+                                                    <Text type='secondary'>No link provided</Text>
+                                                )
+                                            ) : selectedAppt.deliveryMethod === 'in_person' ? (
+                                                selectedAppt.location ? (
+                                                    <Space>
+                                                        <EnvironmentOutlined />
+                                                        <span>{selectedAppt.location}</span>
+                                                    </Space>
+                                                ) : (
+                                                    <Text type='secondary'>No location provided</Text>
+                                                )
+                                            ) : (
+                                                <Space>
+                                                    <PhoneFilled />
+                                                    <span>
+                                                        {(selectedAppt as any)?._displayType === 'group'
+                                                            ? 'See participant list below'
+                                                            : participantPhones[selectedAppt.participantId] || 'No phone on file'}
+                                                    </span>
+                                                </Space>
+                                            )}
+                                        </dd>
+                                    </div>
+                                </dl>
+
+                                <p className='apt-detail-note'><InfoCircleOutlined />{note}</p>
+                            </div>
+                        )
+                    })()}
+
+                    {detailModalTab === 'overview' && (selectedAppt as any)?._displayType !== 'group' &&
+                        (selectedAppt as any)?.smeRescheduleRequest?.status === 'proposed' &&
+                        Array.isArray((selectedAppt as any)?.smeRescheduleRequest?.proposals) ? (
+                        <Card
+                            size="small"
+                            title="SME Proposed Times"
+                            style={{ marginTop: 12, borderColor: '#faad14' }}
+                        >
+                            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    Decline reason: {(selectedAppt as any).smeRescheduleRequest.reasonText || selectedAppt.declineReason || '-'}
+                                </Text>
+                                {(selectedAppt as any).smeRescheduleRequest.proposals.map((proposal: any, index: number) => (
+                                    <Card key={proposal.id || index} size="small">
+                                        <Space
+                                            wrap
+                                            style={{ width: '100%', justifyContent: 'space-between' }}
+                                        >
+                                            <Text>
+                                                <CalendarOutlined /> {proposal.date || '-'}{' '}
+                                                <ClockCircleOutlined /> {formatTime(proposal.startTime, proposal.date)} — {formatTime(proposal.endTime, proposal.date)}
+                                            </Text>
+                                            <Button
+                                                type="primary"
+                                                size="small"
+                                                loading={rescheduleDecisionLoading === String(proposal.id || '')}
+                                                onClick={() => acceptProposedAppointmentTime(selectedAppt, proposal)}
                                             >
-                                                <Text>
-                                                    <CalendarOutlined /> {proposal.date || '-'}{' '}
-                                                    <ClockCircleOutlined /> {formatTime(proposal.startTime, proposal.date)} — {formatTime(proposal.endTime, proposal.date)}
-                                                </Text>
-                                                <Button
-                                                    type="primary"
-                                                    size="small"
-                                                    loading={rescheduleDecisionLoading === String(proposal.id || '')}
-                                                    onClick={() => acceptProposedAppointmentTime(selectedAppt, proposal)}
-                                                >
-                                                    Accept This Time
-                                                </Button>
-                                            </Space>
-                                        </Card>
-                                    ))}
-                                    <Button
-                                        onClick={() => {
-                                            openEdit(selectedAppt)
-                                            setDetailModalOpen(false)
-                                        }}
-                                    >
-                                        Choose a Different Time
-                                    </Button>
-                                </Space>
-                            </Card>
-                        ) : null}
+                                                Accept This Time
+                                            </Button>
+                                        </Space>
+                                    </Card>
+                                ))}
+                                <Button
+                                    onClick={() => {
+                                        openEdit(selectedAppt)
+                                        setDetailModalOpen(false)
+                                    }}
+                                >
+                                    Choose a Different Time
+                                </Button>
+                            </Space>
+                        </Card>
+                    ) : null}
 
-                        {/*
+                    {/*
                             Decline reasons on the overview tab.
 
                             This previously only handled a single appointment, so
@@ -6034,328 +6039,328 @@ const Appointments: React.FC = () => {
                             never shown anywhere. Groups now get one alert
                             listing who declined and why.
                         */}
-                        {detailModalTab === 'overview' &&
-                            (selectedAppt as any)?.smeRescheduleRequest?.status !== 'proposed' ? (() => {
-                                const declineReasonOf = (row: Appt) => String(
-                                    row.declineReason ||
-                                    (row as any)?.smeDeclineReason ||
-                                    (row as any)?.smeRescheduleRequest?.reasonText ||
-                                    ''
-                                ).trim()
+                    {detailModalTab === 'overview' &&
+                        (selectedAppt as any)?.smeRescheduleRequest?.status !== 'proposed' ? (() => {
+                            const declineReasonOf = (row: Appt) => String(
+                                row.declineReason ||
+                                (row as any)?.smeDeclineReason ||
+                                (row as any)?.smeRescheduleRequest?.reasonText ||
+                                ''
+                            ).trim()
 
-                                const members: Appt[] = Array.isArray((selectedAppt as any)?._groupMembers)
-                                    ? (selectedAppt as any)._groupMembers
-                                    : []
+                            const members: Appt[] = Array.isArray((selectedAppt as any)?._groupMembers)
+                                ? (selectedAppt as any)._groupMembers
+                                : []
 
-                                if ((selectedAppt as any)?._displayType === 'group' && members.length) {
-                                    const declined = members.filter(
-                                        m => String(m.userConfirmation || '').toLowerCase() === 'declined'
-                                    )
-                                    if (!declined.length) return null
-
-                                    return (
-                                        <Alert
-                                            type='warning'
-                                            showIcon
-                                            style={{ marginTop: 12 }}
-                                            message={`${declined.length} SME${declined.length === 1 ? '' : 's'} declined this appointment`}
-                                            description={
-                                                <Space direction='vertical' size={4} style={{ width: '100%' }}>
-                                                    {declined.map(m => (
-                                                        <Text key={m.id} style={{ fontSize: 13 }}>
-                                                            <Text strong>{m.participantName || 'SME'}</Text>
-                                                            {' — '}
-                                                            {declineReasonOf(m) || 'No reason was provided.'}
-                                                        </Text>
-                                                    ))}
-                                                </Space>
-                                            }
-                                        />
-                                    )
-                                }
-
-                                if (String(selectedAppt.userConfirmation || '').toLowerCase() !== 'declined') return null
+                            if ((selectedAppt as any)?._displayType === 'group' && members.length) {
+                                const declined = members.filter(
+                                    m => String(m.userConfirmation || '').toLowerCase() === 'declined'
+                                )
+                                if (!declined.length) return null
 
                                 return (
                                     <Alert
                                         type='warning'
                                         showIcon
                                         style={{ marginTop: 12 }}
-                                        message='SME declined this appointment'
-                                        description={declineReasonOf(selectedAppt) || 'No reason was provided.'}
+                                        message={`${declined.length} SME${declined.length === 1 ? '' : 's'} declined this appointment`}
+                                        description={
+                                            <Space direction='vertical' size={4} style={{ width: '100%' }}>
+                                                {declined.map(m => (
+                                                    <Text key={m.id} style={{ fontSize: 13 }}>
+                                                        <Text strong>{m.participantName || 'SME'}</Text>
+                                                        {' — '}
+                                                        {declineReasonOf(m) || 'No reason was provided.'}
+                                                    </Text>
+                                                ))}
+                                            </Space>
+                                        }
                                     />
                                 )
-                            })() : null}
+                            }
 
-                        {detailModalTab === 'overview' && derivedStatus(selectedAppt) === 'completed' && getSmeAttendanceOutcome(selectedAppt) === 'unverified' ? (
-                            <Alert
-                                type='warning'
-                                showIcon
-                                style={{ marginTop: 12 }}
-                                message='Completed session with unverified SME attendance'
-                                description='Completion records the facilitator outcome; it does not prove that the SME attended. Update Meeting Coverage to record an attended or no-show outcome.'
-                            />
-                        ) : null}
+                            if (String(selectedAppt.userConfirmation || '').toLowerCase() !== 'declined') return null
 
-                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType !== 'group' ? (
-                            (() => {
-                                const qr = hasQrAttendance(selectedAppt)
-                                const timing = qr ? getAttendanceTimingForMember(selectedAppt, selectedAppt, participantEmails) : null
-                                const checkedIn = Boolean((selectedAppt as any)?.attendance?.checkedInAt) || Number(selectedAppt.attendanceSummary?.count || 0) > 0
-                                const checkedOut = Boolean((selectedAppt as any)?.attendance?.checkedOutAt) || Boolean(getCheckedOutEmails(selectedAppt).length)
-                                const email = memberEmailOf(selectedAppt, participantEmails) || ''
-                                return (
-                                    <div className='apt-detail is-accepted'>
-                                        <div className='apt-detail-head'>
-                                            <span className='apt-detail-icon'>
-                                                <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]}>
-                                                    {String(selectedAppt.participantName || '?').trim().charAt(0).toUpperCase()}
-                                                </Avatar>
-                                            </span>
-                                            <div style={{ minWidth: 0 }}>
-                                                <h3>{selectedAppt.participantName || 'SME member'}</h3>
-                                                {email ? <small>{email}</small> : null}
-                                            </div>
-                                            <span />
+                            return (
+                                <Alert
+                                    type='warning'
+                                    showIcon
+                                    style={{ marginTop: 12 }}
+                                    message='SME declined this appointment'
+                                    description={declineReasonOf(selectedAppt) || 'No reason was provided.'}
+                                />
+                            )
+                        })() : null}
+
+                    {detailModalTab === 'overview' && derivedStatus(selectedAppt) === 'completed' && getSmeAttendanceOutcome(selectedAppt) === 'unverified' ? (
+                        <Alert
+                            type='warning'
+                            showIcon
+                            style={{ marginTop: 12 }}
+                            message='Completed session with unverified SME attendance'
+                            description='Completion records the facilitator outcome; it does not prove that the SME attended. Update Meeting Coverage to record an attended or no-show outcome.'
+                        />
+                    ) : null}
+
+                    {detailModalTab === 'members' && (selectedAppt as any)?._displayType !== 'group' ? (
+                        (() => {
+                            const qr = hasQrAttendance(selectedAppt)
+                            const timing = qr ? getAttendanceTimingForMember(selectedAppt, selectedAppt, participantEmails) : null
+                            const checkedIn = Boolean((selectedAppt as any)?.attendance?.checkedInAt) || Number(selectedAppt.attendanceSummary?.count || 0) > 0
+                            const checkedOut = Boolean((selectedAppt as any)?.attendance?.checkedOutAt) || Boolean(getCheckedOutEmails(selectedAppt).length)
+                            const email = memberEmailOf(selectedAppt, participantEmails) || ''
+                            return (
+                                <div className='apt-detail is-accepted'>
+                                    <div className='apt-detail-head'>
+                                        <span className='apt-detail-icon'>
+                                            <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]}>
+                                                {String(selectedAppt.participantName || '?').trim().charAt(0).toUpperCase()}
+                                            </Avatar>
+                                        </span>
+                                        <div style={{ minWidth: 0 }}>
+                                            <h3>{selectedAppt.participantName || 'SME member'}</h3>
+                                            {email ? <small>{email}</small> : null}
                                         </div>
-                                        <dl className='apt-detail-meta'>
-                                            <div>
-                                                <dt><CheckCircleOutlined />Appointment RSVP</dt>
-                                                <dd>{memberRsvpTag(selectedAppt, selectedAppt)}</dd>
-                                            </div>
-                                            <div>
-                                                <dt><UserOutlined />Attendance</dt>
-                                                <dd>{memberAttendanceTag(selectedAppt, selectedAppt)}</dd>
-                                            </div>
-                                            {timing ? (
-                                                <>
-                                                    <div>
-                                                        <dt><LoginOutlined />Check-in</dt>
-                                                        <dd>{timing.checkInTime}</dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt><LogoutOutlined />Check-out</dt>
-                                                        <dd>{timing.checkOutTime}</dd>
-                                                    </div>
-                                                    {checkedIn ? (
-                                                        <div className='is-wide'>
-                                                            <dt><ClockCircleOutlined />Time spent</dt>
-                                                            <dd>{formatMinutesSpent(timing.minutesSpent)}</dd>
-                                                        </div>
-                                                    ) : null}
-                                                </>
-                                            ) : null}
-                                        </dl>
-                                        {qr && checkedIn && !checkedOut ? (
-                                            <Button
-                                                block
-                                                shape='round'
-                                                icon={<LogoutOutlined />}
-                                                loading={checkoutLoading === `${selectedAppt.id}-${String(memberEmailOf(selectedAppt, participantEmails) || '').trim().toLowerCase()}`}
-                                                onClick={() => checkOutParticipant(selectedAppt)}
-                                            >
-                                                Check Out
-                                            </Button>
-                                        ) : null}
+                                        <span />
                                     </div>
-                                )
-                            })()
-                        ) : null}
+                                    <dl className='apt-detail-meta'>
+                                        <div>
+                                            <dt><CheckCircleOutlined />Appointment RSVP</dt>
+                                            <dd>{memberRsvpTag(selectedAppt, selectedAppt)}</dd>
+                                        </div>
+                                        <div>
+                                            <dt><UserOutlined />Attendance</dt>
+                                            <dd>{memberAttendanceTag(selectedAppt, selectedAppt)}</dd>
+                                        </div>
+                                        {timing ? (
+                                            <>
+                                                <div>
+                                                    <dt><LoginOutlined />Check-in</dt>
+                                                    <dd>{timing.checkInTime}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt><LogoutOutlined />Check-out</dt>
+                                                    <dd>{timing.checkOutTime}</dd>
+                                                </div>
+                                                {checkedIn ? (
+                                                    <div className='is-wide'>
+                                                        <dt><ClockCircleOutlined />Time spent</dt>
+                                                        <dd>{formatMinutesSpent(timing.minutesSpent)}</dd>
+                                                    </div>
+                                                ) : null}
+                                            </>
+                                        ) : null}
+                                    </dl>
+                                    {qr && checkedIn && !checkedOut ? (
+                                        <Button
+                                            block
+                                            shape='round'
+                                            icon={<LogoutOutlined />}
+                                            loading={checkoutLoading === `${selectedAppt.id}-${String(memberEmailOf(selectedAppt, participantEmails) || '').trim().toLowerCase()}`}
+                                            onClick={() => checkOutParticipant(selectedAppt)}
+                                        >
+                                            Check Out
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            )
+                        })()
+                    ) : null}
 
-                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType === 'group' && Array.isArray((selectedAppt as any)?._groupMembers) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>Participants in this group</Text>
-                                        <Space wrap>
-                                            <Tag color='purple'>
-                                                {(selectedAppt as any)._groupMembers.length} SME(s)
-                                            </Tag>
-                                            {hasQrAttendance(selectedAppt) ? (() => {
-                                                const eligibility = getBulkCheckoutEligibility(selectedAppt)
-                                                const eligibleCount = eligibility.eligibleMembers.length
-                                                const excludedReasons = [
-                                                    eligibility.notCheckedInCount
-                                                        ? `${eligibility.notCheckedInCount} not checked in`
-                                                        : '',
-                                                    eligibility.alreadyCheckedOutCount
-                                                        ? `${eligibility.alreadyCheckedOutCount} already checked out`
-                                                        : '',
-                                                    eligibility.missingEmailCount
-                                                        ? `${eligibility.missingEmailCount} missing email`
-                                                        : ''
-                                                ].filter(Boolean)
+                    {detailModalTab === 'members' && (selectedAppt as any)?._displayType === 'group' && Array.isArray((selectedAppt as any)?._groupMembers) ? (
+                        <>
+                            <Divider style={{ margin: '14px 0' }} />
+                            <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                    <Text strong>Participants in this group</Text>
+                                    <Space wrap>
+                                        <Tag color='purple'>
+                                            {(selectedAppt as any)._groupMembers.length} SME(s)
+                                        </Tag>
+                                        {hasQrAttendance(selectedAppt) ? (() => {
+                                            const eligibility = getBulkCheckoutEligibility(selectedAppt)
+                                            const eligibleCount = eligibility.eligibleMembers.length
+                                            const excludedReasons = [
+                                                eligibility.notCheckedInCount
+                                                    ? `${eligibility.notCheckedInCount} not checked in`
+                                                    : '',
+                                                eligibility.alreadyCheckedOutCount
+                                                    ? `${eligibility.alreadyCheckedOutCount} already checked out`
+                                                    : '',
+                                                eligibility.missingEmailCount
+                                                    ? `${eligibility.missingEmailCount} missing email`
+                                                    : ''
+                                            ].filter(Boolean)
+
+                                            return (
+                                                <Space direction="vertical" size={2} align="end">
+                                                    <Popconfirm
+                                                        title={`Check out ${eligibleCount} eligible SME${eligibleCount === 1 ? '' : 's'}?`}
+                                                        description='Only checked-in SMEs with an email who have not checked out will be updated.'
+                                                        okText='Check out eligible'
+                                                        cancelText='Cancel'
+                                                        disabled={!eligibleCount}
+                                                        onConfirm={() => checkOutAllPresent(selectedAppt)}
+                                                    >
+                                                        <Button
+                                                            size='small'
+                                                            shape='round'
+                                                            icon={<LogoutOutlined />}
+                                                            disabled={!eligibleCount}
+                                                            loading={checkoutLoading === `${selectedAppt.id}-bulk`}
+                                                        >
+                                                            Check Out Eligible ({eligibleCount})
+                                                        </Button>
+                                                    </Popconfirm>
+                                                    {eligibility.excludedCount > 0 ? (
+                                                        <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
+                                                            {eligibility.excludedCount} excluded: {excludedReasons.join(', ')}
+                                                        </Text>
+                                                    ) : null}
+                                                </Space>
+                                            )
+                                        })() : null}
+                                    </Space>
+                                </Space>
+
+                                {(() => {
+                                    const memberColumns: any[] = [
+                                        {
+                                            title: 'SME',
+                                            dataIndex: 'participantName',
+                                            key: 'participantName',
+                                            width: 220,
+                                            render: (_: any, m: Appt) => (
+                                                <Space direction="vertical" size={0}>
+                                                    <Text strong>{m.participantName || '-'}</Text>
+                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        {memberEmailOf(m, participantEmails) || 'No email on file'}
+                                                    </Text>
+                                                </Space>
+                                            )
+                                        },
+                                        {
+                                            title: 'Appointment RSVP',
+                                            dataIndex: 'userConfirmation',
+                                            key: 'userConfirmation',
+                                            width: 200,
+                                            render: (value: UserConfirmation, m: Appt) => {
+                                                // A decline is only actionable if you can see why. The
+                                                // reason was previously stored but never surfaced for
+                                                // group members.
+                                                const declined = String(value || '').toLowerCase() === 'declined'
+                                                const reason = String(
+                                                    m.declineReason ||
+                                                    (m as any)?.smeDeclineReason ||
+                                                    (m as any)?.smeRescheduleRequest?.reasonText ||
+                                                    ''
+                                                ).trim()
 
                                                 return (
-                                                    <Space direction="vertical" size={2} align="end">
-                                                        <Popconfirm
-                                                            title={`Check out ${eligibleCount} eligible SME${eligibleCount === 1 ? '' : 's'}?`}
-                                                            description='Only checked-in SMEs with an email who have not checked out will be updated.'
-                                                            okText='Check out eligible'
-                                                            cancelText='Cancel'
-                                                            disabled={!eligibleCount}
-                                                            onConfirm={() => checkOutAllPresent(selectedAppt)}
-                                                        >
-                                                            <Button
-                                                                size='small'
-                                                                shape='round'
-                                                                icon={<LogoutOutlined />}
-                                                                disabled={!eligibleCount}
-                                                                loading={checkoutLoading === `${selectedAppt.id}-bulk`}
+                                                    <Space direction="vertical" size={2}>
+                                                        {memberRsvpTag(selectedAppt, m)}
+                                                        {declined ? (
+                                                            <Text
+                                                                type="danger"
+                                                                style={{ fontSize: 12 }}
+                                                                title={reason || undefined}
                                                             >
-                                                                Check Out Eligible ({eligibleCount})
-                                                            </Button>
-                                                        </Popconfirm>
-                                                        {eligibility.excludedCount > 0 ? (
-                                                            <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
-                                                                {eligibility.excludedCount} excluded: {excludedReasons.join(', ')}
+                                                                {reason || 'No reason given'}
                                                             </Text>
                                                         ) : null}
                                                     </Space>
                                                 )
-                                            })() : null}
-                                        </Space>
-                                    </Space>
+                                            }
+                                        },
+                                        {
+                                            title: 'Attendance',
+                                            key: 'attendanceOutcome',
+                                            width: 170,
+                                            render: (_: any, m: Appt) => memberAttendanceTag(selectedAppt, m)
+                                        },
+                                        {
+                                            title: 'Check-in',
+                                            key: 'checkInTime',
+                                            width: 150,
+                                            hidden: !hasQrAttendance(selectedAppt),
+                                            render: (_: any, m: Appt) => {
+                                                const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+                                                const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
 
-                                    {(() => {
-                                    const memberColumns: any[] = [
-                                            {
-                                                title: 'SME',
-                                                dataIndex: 'participantName',
-                                                key: 'participantName',
-                                                width: 220,
-                                                render: (_: any, m: Appt) => (
-                                                    <Space direction="vertical" size={0}>
-                                                        <Text strong>{m.participantName || '-'}</Text>
+                                                return (
+                                                    <Space direction="vertical" size={2}>
+                                                        {checkedIn ? <Tag color="green">Checked In</Tag> : <Tag>Not checked in</Tag>}
                                                         <Text type="secondary" style={{ fontSize: 12 }}>
-                                                            {memberEmailOf(m, participantEmails) || 'No email on file'}
+                                                            {timing.checkInTime}
                                                         </Text>
                                                     </Space>
                                                 )
-                                            },
-                                            {
-                                                title: 'Appointment RSVP',
-                                                dataIndex: 'userConfirmation',
-                                                key: 'userConfirmation',
-                                                width: 200,
-                                                render: (value: UserConfirmation, m: Appt) => {
-                                                    // A decline is only actionable if you can see why. The
-                                                    // reason was previously stored but never surfaced for
-                                                    // group members.
-                                                    const declined = String(value || '').toLowerCase() === 'declined'
-                                                    const reason = String(
-                                                        m.declineReason ||
-                                                        (m as any)?.smeDeclineReason ||
-                                                        (m as any)?.smeRescheduleRequest?.reasonText ||
-                                                        ''
-                                                    ).trim()
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {memberRsvpTag(selectedAppt, m)}
-                                                            {declined ? (
-                                                                <Text
-                                                                    type="danger"
-                                                                    style={{ fontSize: 12 }}
-                                                                    title={reason || undefined}
-                                                                >
-                                                                    {reason || 'No reason given'}
-                                                                </Text>
-                                                            ) : null}
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Attendance',
-                                                key: 'attendanceOutcome',
-                                                width: 170,
-                                                render: (_: any, m: Appt) => memberAttendanceTag(selectedAppt, m)
-                                            },
-                                            {
-                                                title: 'Check-in',
-                                                key: 'checkInTime',
-                                                width: 150,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {checkedIn ? <Tag color="green">Checked In</Tag> : <Tag>Not checked in</Tag>}
-                                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                {timing.checkInTime}
-                                                            </Text>
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Checkout',
-                                                key: 'checkOutTime',
-                                                width: 150,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {checkedOut ? <Tag color="default">Checked Out</Tag> : <Tag color="gold">Not Out</Tag>}
-                                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                {timing.checkOutTime}
-                                                            </Text>
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Time Spent',
-                                                key: 'timeSpent',
-                                                width: 120,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Text strong>
-                                                            {formatMinutesSpent(timing.minutesSpent)}
-                                                        </Text>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Action',
-                                                key: 'action',
-                                                width: 140,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                fixed: screens.md ? 'right' : undefined,
-                                                render: (_: any, m: Appt) => {
-                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
-                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
-
-                                                    const targetEmail = String(memberEmailOf(m, participantEmails))
-                                                        .trim()
-                                                        .toLowerCase()
-
-                                                    const loadingKey = `${selectedAppt?.id}-${targetEmail}`
-
-                                                    return (
-                                                        <Button
-                                                            size="small"
-                                                            shape="round"
-                                                            icon={<LogoutOutlined />}
-                                                            disabled={!checkedIn || checkedOut || !selectedAppt}
-                                                            loading={checkoutLoading === loadingKey}
-                                                            onClick={() => selectedAppt && checkOutParticipant(selectedAppt, m)}
-                                                        >
-                                                            Check Out
-                                                        </Button>
-                                                    )
-                                                }
                                             }
+                                        },
+                                        {
+                                            title: 'Checkout',
+                                            key: 'checkOutTime',
+                                            width: 150,
+                                            hidden: !hasQrAttendance(selectedAppt),
+                                            render: (_: any, m: Appt) => {
+                                                const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+                                                const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
+
+                                                return (
+                                                    <Space direction="vertical" size={2}>
+                                                        {checkedOut ? <Tag color="default">Checked Out</Tag> : <Tag color="gold">Not Out</Tag>}
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                            {timing.checkOutTime}
+                                                        </Text>
+                                                    </Space>
+                                                )
+                                            }
+                                        },
+                                        {
+                                            title: 'Time Spent',
+                                            key: 'timeSpent',
+                                            width: 120,
+                                            hidden: !hasQrAttendance(selectedAppt),
+                                            render: (_: any, m: Appt) => {
+                                                const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+
+                                                return (
+                                                    <Text strong>
+                                                        {formatMinutesSpent(timing.minutesSpent)}
+                                                    </Text>
+                                                )
+                                            }
+                                        },
+                                        {
+                                            title: 'Action',
+                                            key: 'action',
+                                            width: 140,
+                                            hidden: !hasQrAttendance(selectedAppt),
+                                            fixed: screens.md ? 'right' : undefined,
+                                            render: (_: any, m: Appt) => {
+                                                const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
+                                                const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
+
+                                                const targetEmail = String(memberEmailOf(m, participantEmails))
+                                                    .trim()
+                                                    .toLowerCase()
+
+                                                const loadingKey = `${selectedAppt?.id}-${targetEmail}`
+
+                                                return (
+                                                    <Button
+                                                        size="small"
+                                                        shape="round"
+                                                        icon={<LogoutOutlined />}
+                                                        disabled={!checkedIn || checkedOut || !selectedAppt}
+                                                        loading={checkoutLoading === loadingKey}
+                                                        onClick={() => selectedAppt && checkOutParticipant(selectedAppt, m)}
+                                                    >
+                                                        Check Out
+                                                    </Button>
+                                                )
+                                            }
+                                        }
                                     ]
                                     const colOf = (key: string) => memberColumns.find(c => c.key === key)
                                     return (
@@ -6415,299 +6420,299 @@ const Appointments: React.FC = () => {
                                             }}
                                         />
                                     )
-                                    })()}
+                                })()}
+                            </Space>
+                        </>
+                    ) : null}
+
+                    {detailModalTab === 'food' && hasConfiguredFoodMenu(selectedAppt) ? (
+                        <>
+                            <Divider style={{ margin: '14px 0' }} />
+
+                            <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                    <Text strong>Food Menu</Text>
+                                    {canManageFoodMenu(selectedAppt) ? (
+                                        <Button
+                                            size={screens.md ? 'middle' : 'small'}
+                                            shape='round'
+                                            icon={<BookOutlined />}
+                                            onClick={() => openFoodMenu(selectedAppt)}
+                                        >
+                                            Manage Menu
+                                        </Button>
+                                    ) : (
+                                        <Tag color='default'>Menu locked</Tag>
+                                    )}
                                 </Space>
-                            </>
-                        ) : null}
 
-                        {detailModalTab === 'food' && hasConfiguredFoodMenu(selectedAppt) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>Food Menu</Text>
-                                        {canManageFoodMenu(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<BookOutlined />}
-                                                onClick={() => openFoodMenu(selectedAppt)}
-                                            >
-                                                Manage Menu
-                                            </Button>
-                                        ) : (
-                                            <Tag color='default'>Menu locked</Tag>
-                                        )}
-                                    </Space>
-
-                                    {selectedAppt.foodMenuEnabled && normalizeFoodMenuItems(selectedAppt.foodMenu).length ? (
+                                {selectedAppt.foodMenuEnabled && normalizeFoodMenuItems(selectedAppt.foodMenu).length ? (
+                                    <Table
+                                        rowKey='id'
+                                        size='small'
+                                        pagination={false}
+                                        dataSource={normalizeFoodMenuItems(selectedAppt.foodMenu)}
+                                        columns={[
+                                            {
+                                                title: 'Item',
+                                                dataIndex: 'name',
+                                                key: 'name',
+                                                width: 140,
+                                                render: (name: string, item: FoodMenuItem) => (
+                                                    <Space direction='vertical' size={0}>
+                                                        <Text strong>{name}</Text>
+                                                        {item.description ? (
+                                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                {item.description}
+                                                            </Text>
+                                                        ) : null}
+                                                    </Space>
+                                                )
+                                            },
+                                            {
+                                                title: 'Category',
+                                                dataIndex: 'category',
+                                                key: 'category',
+                                                width: 120,
+                                                render: (category: FoodCategory) => <Tag>{getFoodCategoryLabel(category)}</Tag>
+                                            },
+                                            {
+                                                title: 'Dietary Note',
+                                                dataIndex: 'dietaryNote',
+                                                key: 'dietaryNote',
+                                                width: 180,
+                                                hidden: !normalizeFoodMenuItems(selectedAppt.foodMenu).some(item =>
+                                                    Boolean(String(item.dietaryNote || '').trim())
+                                                ),
+                                                render: (note: string) => note || <Text type='secondary'>—</Text>
+                                            },
+                                            {
+                                                title: 'Qty',
+                                                dataIndex: 'quantityAvailable',
+                                                key: 'quantityAvailable',
+                                                width: 80,
+                                                render: (qty: number | null, item: FoodMenuItem) => (
+                                                    <Space size={4}>
+                                                        <span>{qty ?? '—'}</span>
+                                                        <Text type='secondary'>
+                                                            ({getFoodSelectionCountForItem(selectedAppt, item)} selected)
+                                                        </Text>
+                                                    </Space>
+                                                )
+                                            }
+                                        ]}
+                                        scroll={{ x: 640 }}
+                                    />
+                                ) : (
+                                    <Text type='secondary'>No food menu listed for this appointment yet.</Text>
+                                )}
+                                {getFoodSelectionsForRecord(selectedAppt).length ? (
+                                    <Card size='small' title='SME selections'>
                                         <Table
-                                            rowKey='id'
+                                            rowKey={(row: FoodSelection, index?: number) =>
+                                                `${row.participantId}-${row.itemId}-${index}`
+                                            }
                                             size='small'
-                                            pagination={false}
-                                            dataSource={normalizeFoodMenuItems(selectedAppt.foodMenu)}
+                                            pagination={{
+                                                pageSize: 6,
+                                                showSizeChanger: false,
+                                                position: ['bottomCenter']
+                                            }}
+                                            scroll={{ x: 640 }}
+                                            dataSource={getFoodSelectionsForRecord(selectedAppt)}
                                             columns={[
                                                 {
-                                                    title: 'Item',
-                                                    dataIndex: 'name',
-                                                    key: 'name',
-                                                    width: 140,
-                                                    render: (name: string, item: FoodMenuItem) => (
-                                                        <Space direction='vertical' size={0}>
-                                                            <Text strong>{name}</Text>
-                                                            {item.description ? (
-                                                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                                                    {item.description}
-                                                                </Text>
-                                                            ) : null}
-                                                        </Space>
-                                                    )
+                                                    title: 'SME',
+                                                    dataIndex: 'participantName',
+                                                    key: 'participantName',
+                                                    render: (name: string) => <Text strong>{name || 'SME'}</Text>
                                                 },
                                                 {
-                                                    title: 'Category',
-                                                    dataIndex: 'category',
+                                                    title: 'Type',
                                                     key: 'category',
-                                                    width: 120,
-                                                    render: (category: FoodCategory) => <Tag>{getFoodCategoryLabel(category)}</Tag>
-                                                },
-                                                {
-                                                    title: 'Dietary Note',
-                                                    dataIndex: 'dietaryNote',
-                                                    key: 'dietaryNote',
-                                                    width: 180,
-                                                    hidden: !normalizeFoodMenuItems(selectedAppt.foodMenu).some(item =>
-                                                        Boolean(String(item.dietaryNote || '').trim())
-                                                    ),
-                                                    render: (note: string) => note || <Text type='secondary'>—</Text>
-                                                },
-                                                {
-                                                    title: 'Qty',
-                                                    dataIndex: 'quantityAvailable',
-                                                    key: 'quantityAvailable',
-                                                    width: 80,
-                                                    render: (qty: number | null, item: FoodMenuItem) => (
-                                                        <Space size={4}>
-                                                            <span>{qty ?? '—'}</span>
-                                                            <Text type='secondary'>
-                                                                ({getFoodSelectionCountForItem(selectedAppt, item)} selected)
-                                                            </Text>
-                                                        </Space>
+                                                    width: 110,
+                                                    render: (_: any, row: FoodSelection) => (
+                                                        <Tag color={String(row.category || row.itemCategory).toLowerCase() === 'drink' ? 'cyan' : 'green'}>
+                                                            {getFoodCategoryLabel((row.category || row.itemCategory || 'meal') as FoodCategory)}
+                                                        </Tag>
                                                     )
-                                                }
+                                                },
+                                                {
+                                                    title: 'Selected Item',
+                                                    dataIndex: 'itemName',
+                                                    key: 'itemName',
+                                                    // Empty rows are filtered out upstream, so a blank
+                                                    // name here means the item was deleted from the menu
+                                                    // after the SME chose it — say that, rather than
+                                                    // inventing a name.
+                                                    render: (name: string) => (
+                                                        name
+                                                            ? <Tag color='blue'>{name}</Tag>
+                                                            : <Text type='secondary'>Item no longer on the menu</Text>
+                                                    )
+                                                },
                                             ]}
-                                            scroll={{ x: 640 }}
                                         />
-                                    ) : (
-                                        <Text type='secondary'>No food menu listed for this appointment yet.</Text>
-                                    )}
-                                    {getFoodSelectionsForRecord(selectedAppt).length ? (
-                                        <Card size='small' title='SME selections'>
-                                            <Table
-                                                rowKey={(row: FoodSelection, index?: number) =>
-                                                    `${row.participantId}-${row.itemId}-${index}`
-                                                }
-                                                size='small'
-                                                pagination={{
-                                                    pageSize: 6,
-                                                    showSizeChanger: false,
-                                                    position: ['bottomCenter']
-                                                }}
-                                                scroll={{ x: 640 }}
-                                                dataSource={getFoodSelectionsForRecord(selectedAppt)}
-                                                columns={[
-                                                    {
-                                                        title: 'SME',
-                                                        dataIndex: 'participantName',
-                                                        key: 'participantName',
-                                                        render: (name: string) => <Text strong>{name || 'SME'}</Text>
-                                                    },
-                                                    {
-                                                        title: 'Type',
-                                                        key: 'category',
-                                                        width: 110,
-                                                        render: (_: any, row: FoodSelection) => (
-                                                            <Tag color={String(row.category || row.itemCategory).toLowerCase() === 'drink' ? 'cyan' : 'green'}>
-                                                                {getFoodCategoryLabel((row.category || row.itemCategory || 'meal') as FoodCategory)}
-                                                            </Tag>
-                                                        )
-                                                    },
-                                                    {
-                                                        title: 'Selected Item',
-                                                        dataIndex: 'itemName',
-                                                        key: 'itemName',
-                                                        // Empty rows are filtered out upstream, so a blank
-                                                        // name here means the item was deleted from the menu
-                                                        // after the SME chose it — say that, rather than
-                                                        // inventing a name.
-                                                        render: (name: string) => (
-                                                            name
-                                                                ? <Tag color='blue'>{name}</Tag>
-                                                                : <Text type='secondary'>Item no longer on the menu</Text>
-                                                        )
-                                                    },
-                                                ]}
-                                            />
-                                        </Card>
-                                    ) : (
-                                        <Text type='secondary'>No SME food selections captured yet.</Text>
-                                    )}
-                                </Space>
-                            </>
-                        ) : null}
+                                    </Card>
+                                ) : (
+                                    <Text type='secondary'>No SME food selections captured yet.</Text>
+                                )}
+                            </Space>
+                        </>
+                    ) : null}
 
-                        {detailModalTab === 'overview' && hasQrAttendance(selectedAppt) && !isApptDone(selectedAppt) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
+                    {detailModalTab === 'overview' && hasQrAttendance(selectedAppt) && !isApptDone(selectedAppt) ? (
+                        <>
+                            <Divider style={{ margin: '14px 0' }} />
 
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>QR Attendance</Text>
+                            <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                    <Text strong>QR Attendance</Text>
 
-                                        {selectedAppt &&
-                                            canStartQrWindow(selectedAppt) &&
-                                            derivedStatus(selectedAppt) !== 'completed' &&
-                                            derivedStatus(selectedAppt) !== 'cancelled' &&
-                                            derivedStatus(selectedAppt) !== 'postponed' &&
-                                            derivedStatus(selectedAppt) !== 'awaiting_coverage' &&
-                                            !isQrSessionActive(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<QrcodeOutlined />}
-                                                loading={qrLoading}
-                                                onClick={() => startQrSession(selectedAppt)}
-                                            >
-                                                Start QR
-                                            </Button>
-                                        ) : null}
-
-                                        {selectedAppt && isQrSessionActive(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<QrcodeOutlined />}
-                                                onClick={() => openQrModal(selectedAppt)}
-                                            >
-                                                Show QR
-                                            </Button>
-                                        ) : null}
-                                    </Space>
-
-                                    {selectedAppt && isQrSessionActive(selectedAppt) ? (
-                                        <Alert
-                                            type='success'
-                                            showIcon
-                                            message='QR attendance is active'
-                                            description='Participants can scan with their phone camera to open the meeting check-in page.'
-                                        />
-                                    ) : (
-                                        <Text type='secondary'>
-                                            QR attendance becomes available 15 minutes before the meeting and stays active until closed or expired.
-                                        </Text>
-                                    )}
-                                </Space>
-                            </>
-                        ) : null}
-
-                        {detailModalTab === 'brief' && canSeeSessionBrief ? (
-                            <SessionBriefPanel appointmentId={selectedAppt.id} />
-                        ) : null}
-
-                        {detailModalTab === 'coverage' && (() => {
-                            const latest = (selectedAppt as any)?.sessionCoverage?.latest as SessionCoverageEntry | undefined
-                            const done = isApptDone(selectedAppt)
-                            const savedAt = latest ? toDateSafe((latest as any).createdAt) : null
-                            const smeOutcome = getSmeAttendanceOutcome(selectedAppt)
-                            const tone = !latest ? 'is-pending' : latest.held ? 'is-completed' : 'is-cancelled'
-                            const hasText = Boolean(latest && (latest.notes || latest.coveredPoints?.length))
-                            return (
-                                <div className={`apt-detail ${tone}`}>
-                                    <div className='apt-detail-head'>
-                                        <span className='apt-detail-icon'>
-                                            {!latest ? <FileDoneOutlined /> : latest.held ? <CheckCircleOutlined /> : <StopOutlined />}
-                                        </span>
-                                        <div style={{ minWidth: 0 }}>
-                                            <h3>{!latest ? 'No coverage yet' : latest.held ? 'Session held' : 'Session not held'}</h3>
-                                            <small>
-                                                {latest
-                                                    ? latest.title || selectedAppt.sessionTitle || selectedAppt.interventionTitle
-                                                    : done
-                                                        ? 'Record what happened in this meeting'
-                                                        : 'Available after the meeting'}
-                                            </small>
-                                        </div>
-                                        {latest?.held ? (
-                                            <Tag
-                                                bordered
-                                                color={latest.smeAttendance === 'no_show' ? 'red' : latest.smeAttendance === 'unverified' || !latest.smeAttendance ? 'gold' : 'blue'}
-                                                style={{ borderRadius: 999, marginInlineEnd: 0 }}
-                                            >
-                                                SME: {smeAttendanceLabel(smeOutcome)}
-                                            </Tag>
-                                        ) : <span />}
-                                    </div>
-
-                                    {latest ? (
-                                        <dl className='apt-detail-meta'>
-                                            <div>
-                                                <dt><CalendarOutlined />Saved</dt>
-                                                <dd>{savedAt ? dayjs(savedAt).format('DD MMM YYYY, HH:mm') : '—'}</dd>
-                                            </div>
-                                            <div>
-                                                <dt><UserOutlined />Recorded by</dt>
-                                                <dd>{(latest as any).createdByName || '—'}</dd>
-                                            </div>
-                                            {!latest.held ? (
-                                                <div className='is-wide'>
-                                                    <dt><InfoCircleOutlined />Reason</dt>
-                                                    <dd>{latest.reasonNotHeld || (latest as any).notHeldReasonCategory || '—'}</dd>
-                                                </div>
-                                            ) : null}
-                                            {latest.held && hasText ? (
-                                                <div className='is-wide'>
-                                                    <dt><FileDoneOutlined />{latest.smeAttendance === 'no_show' || latest.smeAttendance === 'unverified' ? 'Attendance notes' : 'Covered'}</dt>
-                                                    <dd style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{latest.notes || latest.coveredPoints?.join('; ')}</dd>
-                                                    {latest.coveredPoints?.some(point => norm(point) !== norm(latest.notes)) ? (
-                                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                                                            {latest.coveredPoints.map(point => (
-                                                                <Tag key={point} bordered color='blue' style={{ borderRadius: 999, marginInlineEnd: 0 }}>{point}</Tag>
-                                                            ))}
-                                                        </div>
-                                                    ) : null}
-                                                </div>
-                                            ) : null}
-                                        </dl>
-                                    ) : (
-                                        <p className='apt-detail-note'>
-                                            <InfoCircleOutlined />
-                                            {done
-                                                ? 'No coverage has been added for this meeting yet.'
-                                                : 'Coverage can be added once the meeting has ended.'}
-                                        </p>
-                                    )}
-
-                                    {latest ? <CoveragePhotoGallery row={selectedAppt} /> : null}
-
-                                    {done ? (
+                                    {selectedAppt &&
+                                        canStartQrWindow(selectedAppt) &&
+                                        derivedStatus(selectedAppt) !== 'completed' &&
+                                        derivedStatus(selectedAppt) !== 'cancelled' &&
+                                        derivedStatus(selectedAppt) !== 'postponed' &&
+                                        derivedStatus(selectedAppt) !== 'awaiting_coverage' &&
+                                        !isQrSessionActive(selectedAppt) ? (
                                         <Button
-                                            block
+                                            size={screens.md ? 'middle' : 'small'}
                                             shape='round'
-                                            danger={!latest}
-                                            type={latest ? 'default' : 'primary'}
-                                            icon={latest ? <EyeOutlined /> : <CheckCircleOutlined />}
-                                            onClick={() => openCoverage(selectedAppt)}
+                                            icon={<QrcodeOutlined />}
+                                            loading={qrLoading}
+                                            onClick={() => startQrSession(selectedAppt)}
                                         >
-                                            {latest ? 'View or edit coverage' : 'Add coverage'}
+                                            Start QR
                                         </Button>
                                     ) : null}
+
+                                    {selectedAppt && isQrSessionActive(selectedAppt) ? (
+                                        <Button
+                                            size={screens.md ? 'middle' : 'small'}
+                                            shape='round'
+                                            icon={<QrcodeOutlined />}
+                                            onClick={() => openQrModal(selectedAppt)}
+                                        >
+                                            Show QR
+                                        </Button>
+                                    ) : null}
+                                </Space>
+
+                                {selectedAppt && isQrSessionActive(selectedAppt) ? (
+                                    <Alert
+                                        type='success'
+                                        showIcon
+                                        message='QR attendance is active'
+                                        description='Participants can scan with their phone camera to open the meeting check-in page.'
+                                    />
+                                ) : (
+                                    <Text type='secondary'>
+                                        QR attendance becomes available 15 minutes before the meeting and stays active until closed or expired.
+                                    </Text>
+                                )}
+                            </Space>
+                        </>
+                    ) : null}
+
+                    {detailModalTab === 'brief' && canSeeSessionBrief ? (
+                        <SessionBriefPanel appointmentId={selectedAppt.id} />
+                    ) : null}
+
+                    {detailModalTab === 'coverage' && (() => {
+                        const latest = (selectedAppt as any)?.sessionCoverage?.latest as SessionCoverageEntry | undefined
+                        const done = isApptDone(selectedAppt)
+                        const savedAt = latest ? toDateSafe((latest as any).createdAt) : null
+                        const smeOutcome = getSmeAttendanceOutcome(selectedAppt)
+                        const tone = !latest ? 'is-pending' : latest.held ? 'is-completed' : 'is-cancelled'
+                        const hasText = Boolean(latest && (latest.notes || latest.coveredPoints?.length))
+                        return (
+                            <div className={`apt-detail ${tone}`}>
+                                <div className='apt-detail-head'>
+                                    <span className='apt-detail-icon'>
+                                        {!latest ? <FileDoneOutlined /> : latest.held ? <CheckCircleOutlined /> : <StopOutlined />}
+                                    </span>
+                                    <div style={{ minWidth: 0 }}>
+                                        <h3>{!latest ? 'No coverage yet' : latest.held ? 'Session held' : 'Session not held'}</h3>
+                                        <small>
+                                            {latest
+                                                ? latest.title || selectedAppt.sessionTitle || selectedAppt.interventionTitle
+                                                : done
+                                                    ? 'Record what happened in this meeting'
+                                                    : 'Available after the meeting'}
+                                        </small>
+                                    </div>
+                                    {latest?.held ? (
+                                        <Tag
+                                            bordered
+                                            color={latest.smeAttendance === 'no_show' ? 'red' : latest.smeAttendance === 'unverified' || !latest.smeAttendance ? 'gold' : 'blue'}
+                                            style={{ borderRadius: 999, marginInlineEnd: 0 }}
+                                        >
+                                            SME: {smeAttendanceLabel(smeOutcome)}
+                                        </Tag>
+                                    ) : <span />}
                                 </div>
-                            )
-                        })()}
-                    </>
-                ) : (
-                    <Text type='secondary'>No appointment selected.</Text>
-                )}
+
+                                {latest ? (
+                                    <dl className='apt-detail-meta'>
+                                        <div>
+                                            <dt><CalendarOutlined />Saved</dt>
+                                            <dd>{savedAt ? dayjs(savedAt).format('DD MMM YYYY, HH:mm') : '—'}</dd>
+                                        </div>
+                                        <div>
+                                            <dt><UserOutlined />Recorded by</dt>
+                                            <dd>{(latest as any).createdByName || '—'}</dd>
+                                        </div>
+                                        {!latest.held ? (
+                                            <div className='is-wide'>
+                                                <dt><InfoCircleOutlined />Reason</dt>
+                                                <dd>{latest.reasonNotHeld || (latest as any).notHeldReasonCategory || '—'}</dd>
+                                            </div>
+                                        ) : null}
+                                        {latest.held && hasText ? (
+                                            <div className='is-wide'>
+                                                <dt><FileDoneOutlined />{latest.smeAttendance === 'no_show' || latest.smeAttendance === 'unverified' ? 'Attendance notes' : 'Covered'}</dt>
+                                                <dd style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{latest.notes || latest.coveredPoints?.join('; ')}</dd>
+                                                {latest.coveredPoints?.some(point => norm(point) !== norm(latest.notes)) ? (
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                                        {latest.coveredPoints.map(point => (
+                                                            <Tag key={point} bordered color='blue' style={{ borderRadius: 999, marginInlineEnd: 0 }}>{point}</Tag>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                    </dl>
+                                ) : (
+                                    <p className='apt-detail-note'>
+                                        <InfoCircleOutlined />
+                                        {done
+                                            ? 'No coverage has been added for this meeting yet.'
+                                            : 'Coverage can be added once the meeting has ended.'}
+                                    </p>
+                                )}
+
+                                {latest ? <CoveragePhotoGallery row={selectedAppt} /> : null}
+
+                                {done ? (
+                                    <Button
+                                        block
+                                        shape='round'
+                                        danger={!latest}
+                                        type={latest ? 'default' : 'primary'}
+                                        icon={latest ? <EyeOutlined /> : <CheckCircleOutlined />}
+                                        onClick={() => openCoverage(selectedAppt)}
+                                    >
+                                        {latest ? 'View or edit coverage' : 'Add coverage'}
+                                    </Button>
+                                ) : null}
+                            </div>
+                        )
+                    })()}
+                </>
+            ) : (
+                <Text type='secondary'>No appointment selected.</Text>
+            )}
         </>
     )
 
@@ -6883,11 +6888,20 @@ const Appointments: React.FC = () => {
         const confirmed = members.filter(member => String(member.userConfirmation || '').toLowerCase() === 'confirmed').length
         return `${members.length} SMEs · ${confirmed}/${members.length} confirmed`
     }
-    const dayLabel = (day: Dayjs) =>
-        day.isSame(clockNow, 'day') ? `Today, ${day.format('ddd D MMM')}`
-            : day.isSame(clockNow.add(1, 'day'), 'day') ? `Tomorrow, ${day.format('ddd D MMM')}`
-                : day.isSame(clockNow.subtract(1, 'day'), 'day') ? `Yesterday, ${day.format('ddd D MMM')}`
-                    : day.format('dddd D MMMM YYYY')
+    // Training names may be saved with a generic prefix; display just the meaningful title.
+    const appointmentTitleOf = (row: Appt) =>
+        String((row as any).sessionTitle || (row as any).title || row.interventionTitle || 'Appointment')
+            .replace(/^training\s*:\s*/i, '')
+            .trim() || 'Appointment'
+
+    // Full calendar dates keep a mixed past/upcoming action list unambiguous.
+    const dayLabel = (day: Dayjs) => {
+        const fullDate = day.format('dddd D MMMM YYYY')
+        if (day.isSame(clockNow, 'day')) return `Today · ${fullDate}`
+        if (day.isSame(clockNow.add(1, 'day'), 'day')) return `Tomorrow · ${fullDate}`
+        if (day.isSame(clockNow.subtract(1, 'day'), 'day')) return `Yesterday · ${fullDate}`
+        return day.isBefore(clockNow, 'day') ? `Past · ${fullDate}` : fullDate
+    }
 
     const renderAgenda = () => {
         const pageRows = agendaRows.slice((agendaPage - 1) * AGENDA_PAGE_SIZE, agendaPage * AGENDA_PAGE_SIZE)
@@ -6929,8 +6943,8 @@ const Appointments: React.FC = () => {
                                                 >
                                                     <span className="ap-time">{timeRangeOf(row)}</span>
                                                     <div className="ws-row-main">
-                                                        <div className="ws-row-name">{(row as any).sessionTitle || (row as any).title || row.interventionTitle || 'Appointment'}</div>
-                                                        <div className="ws-row-meta">{[whoOf(row), (row as any).sessionTitle || (row as any).title ? row.interventionTitle : null].filter(Boolean).join(' · ')}</div>
+                                                        <div className="ws-row-name">{appointmentTitleOf(row)}</div>
+                                                        <div className="ws-row-meta">{whoOf(row)}</div>
                                                         {(reason || (supportsQrAttendance(row) && isQrSessionActive(row))) && (
                                                             <div className="mv-row-flags">
                                                                 {reason && <span className="mv-flag is-warning">{reason}</span>}
@@ -7018,8 +7032,8 @@ const Appointments: React.FC = () => {
             </Helmet>
 
             <DashboardFilterBar>
+
                 <div className="ws-toolbar" data-guide="appointment-filters">
-                    {/* Status first: what needs the facilitator is the first thing to see. */}
                     <Segmented
                         data-guide="appointment-metrics"
                         className="ws-toolbar-status mv-status-strip"
@@ -7032,11 +7046,16 @@ const Appointments: React.FC = () => {
                             label: (
                                 <span className="mv-seg">
                                     {segment.label}
-                                    {!isInitialPageLoading && <span className={`mv-seg-count qtx-tone-${segment.tone}`}>{agendaCounts[segment.value]}</span>}
+                                    {!isInitialPageLoading && (
+                                        <span className={`mv-seg-count qtx-tone-${segment.tone}`}>
+                                            {agendaCounts[segment.value]}
+                                        </span>
+                                    )}
                                 </span>
                             )
                         }))}
                     />
+
                     <Input
                         className="ws-toolbar-search"
                         allowClear
@@ -7045,48 +7064,109 @@ const Appointments: React.FC = () => {
                         value={agendaSearch}
                         onChange={event => setAgendaSearch(event.target.value)}
                         aria-label="Search appointments"
+                        style={{
+                            height: 34,
+                            minWidth: 180,
+                            flex: screens.lg ? '1 1 260px' : '1 1 100%'
+                        }}
                     />
+
+                    <RangePicker
+                        aria-label="Appointment date range"
+                        allowClear
+                        size="small"
+                        value={filterDateRange}
+                        onChange={value =>
+                            setFilterDateRange(
+                                value && value[0] && value[1]
+                                    ? [value[0], value[1]]
+                                    : null
+                            )
+                        }
+                        format="D MMM YYYY"
+                        placeholder={['From date', 'To date']}
+                        style={{
+                            height: 34,
+                            width: screens.md ? 250 : '100%',
+                            minWidth: 0,
+                            flex: screens.md ? '0 1 250px' : '1 1 100%',
+                            borderRadius: 8
+                        }}
+                    />
+
                     <Popover
                         trigger="click"
                         placement="bottomLeft"
                         title="Filters"
                         content={
                             <FilterPanel
-                                canReset={Boolean(filterDelivery || filterParticipant || filterDateRange)}
+                                canReset={Boolean(
+                                    filterDelivery ||
+                                    filterParticipant ||
+                                    (
+                                        isOperationsView &&
+                                        isParentDepartmentView &&
+                                        selectedDepartmentScope !== 'all'
+                                    )
+                                )}
                                 onReset={() => {
                                     setFilterDelivery(undefined)
                                     setFilterParticipant(undefined)
-                                    setFilterDateRange(null)
+
+                                    if (isOperationsView && isParentDepartmentView) {
+                                        setSelectedDepartmentScope('all')
+                                    }
                                 }}
                             >
-                                {isOperationsView && isParentDepartmentView && departmentScopeOptions.length > 0 && (
-                                    <div>
-                                        <label className="ws-filter-label" htmlFor="ap-department">Department</label>
-                                        <Select
-                                            id="ap-department"
-                                            value={selectedDepartmentScope}
-                                            onChange={setSelectedDepartmentScope}
-                                            style={{ width: '100%' }}
-                                            optionFilterProp="label"
-                                            showSearch
-                                            options={departmentScopeOptions.map(option => ({ value: option.id, label: option.name }))}
-                                        />
-                                    </div>
-                                )}
+                                {isOperationsView &&
+                                    isParentDepartmentView &&
+                                    departmentScopeOptions.length > 0 && (
+                                        <div>
+                                            <label
+                                                className="ws-filter-label"
+                                                htmlFor="ap-department"
+                                            >
+                                                Department
+                                            </label>
+                                            <Select
+                                                id="ap-department"
+                                                value={selectedDepartmentScope}
+                                                onChange={setSelectedDepartmentScope}
+                                                style={{ width: '100%' }}
+                                                optionFilterProp="label"
+                                                showSearch
+                                                options={departmentScopeOptions.map(option => ({
+                                                    value: option.id,
+                                                    label: option.name
+                                                }))}
+                                            />
+                                        </div>
+                                    )}
+
                                 <div>
-                                    <label className="ws-filter-label" htmlFor="ap-delivery">Delivery</label>
+                                    <label className="ws-filter-label" htmlFor="ap-delivery">
+                                        Delivery
+                                    </label>
                                     <Select
                                         id="ap-delivery"
                                         allowClear
                                         placeholder="Any"
                                         style={{ width: '100%' }}
                                         value={filterDelivery}
-                                        onChange={(value: Delivery | undefined) => setFilterDelivery(value)}
-                                        options={DELIVERY_METHODS.map(method => ({ value: method.value, label: method.label }))}
+                                        onChange={(value: Delivery | undefined) =>
+                                            setFilterDelivery(value)
+                                        }
+                                        options={DELIVERY_METHODS.map(method => ({
+                                            value: method.value,
+                                            label: method.label
+                                        }))}
                                     />
                                 </div>
+
                                 <div>
-                                    <label className="ws-filter-label" htmlFor="ap-sme">SME</label>
+                                    <label className="ws-filter-label" htmlFor="ap-sme">
+                                        SME
+                                    </label>
                                     <Select
                                         id="ap-sme"
                                         allowClear
@@ -7094,49 +7174,88 @@ const Appointments: React.FC = () => {
                                         placeholder="Any"
                                         style={{ width: '100%' }}
                                         value={filterParticipant}
-                                        onChange={(value: string | undefined) => setFilterParticipant(value)}
+                                        onChange={(value: string | undefined) =>
+                                            setFilterParticipant(value)
+                                        }
                                         optionFilterProp="label"
-                                        options={participantOptions.map(participant => ({ value: participant.id, label: participant.name }))}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="ws-filter-label" htmlFor="ap-dates">Dates</label>
-                                    <RangePicker
-                                        id="ap-dates"
-                                        allowClear
-                                        value={filterDateRange as any}
-                                        onChange={value => setFilterDateRange((value as any) ?? null)}
-                                        style={{ width: '100%' }}
-                                        format="D MMM YYYY"
+                                        options={participantOptions.map(participant => ({
+                                            value: participant.id,
+                                            label: participant.name
+                                        }))}
                                     />
                                 </div>
                             </FilterPanel>
                         }
                     >
-                        <Badge className="ws-toolbar-button" count={[filterDelivery, filterParticipant, filterDateRange].filter(Boolean).length} size="small" offset={[-6, 4]}>
-                            <Button block icon={<FilterOutlined />}>Filters</Button>
+                        <Badge
+                            count={[
+                                filterDelivery,
+                                filterParticipant,
+                                isOperationsView &&
+                                isParentDepartmentView &&
+                                selectedDepartmentScope !== 'all'
+                            ].filter(Boolean).length}
+                            size="small"
+                            offset={[-5, 3]}
+                            style={{
+                                boxShadow: 'none'
+                            }}
+                        >
+                            <Button
+                                size="small"
+                                icon={<FilterOutlined />}
+                                style={{
+                                    height: 34,
+                                    width: 'auto',
+                                    borderRadius: 8,
+                                    paddingInline: 12
+                                }}
+                            >
+                                Filters
+                            </Button>
                         </Badge>
                     </Popover>
+
                     <Button
                         data-guide="session-review-action"
-                        className="ws-toolbar-button"
+                        size="small"
                         icon={<BarChartOutlined />}
                         onClick={() => setMonthReviewOpen(true)}
                         disabled={pageLoading}
+                        style={{
+                            height: 34,
+                            width: 'auto',
+                            flex: '0 0 auto',
+                            borderRadius: 8,
+                            paddingInline: 12
+                        }}
                     >
                         Review
                     </Button>
+
                     <Button
                         data-guide="schedule-appointment-action"
-                        className="ws-toolbar-button"
                         type="primary"
+                        size="small"
                         icon={<PlusOutlined />}
-                        onClick={() => activeProgramIsTraining ? setTrainingBookingOpen(true) : setModalOpen(true)}
+                        onClick={() =>
+                            activeProgramIsTraining
+                                ? setTrainingBookingOpen(true)
+                                : setModalOpen(true)
+                        }
                         disabled={isAddAppointmentDisabled}
+                        style={{
+                            height: 34,
+                            width: 'auto',
+                            flex: '0 0 auto',
+                            borderRadius: 8,
+                            paddingInline: 12
+                        }}
                     >
                         Schedule
                     </Button>
                 </div>
+
             </DashboardFilterBar>
 
             <div className="ws-layout">
@@ -7197,7 +7316,7 @@ const Appointments: React.FC = () => {
             )}
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 className="guide-schedule-appointment-modal"
                 centered
                 title="Schedule Appointment"
@@ -7264,25 +7383,25 @@ const Appointments: React.FC = () => {
                     <>
                         <div data-guide="schedule-type" className="ap-schedule-section">
                             <h4 className="qc-section-title">Who is it for?</h4>
-                                <div>
-                                    <ChoiceCards
-                                        compact
-                                        columns={2}
-                                        label='Who is it for?'
-                                        value={scheduleMode}
-                                        onChange={(next: string) => {
-                                            setScheduleMode(next as ScheduleMode)
-                                            setAppointmentDetailsDraft({})
-                                            setPickedParticipantId(undefined)
-                                            setPickedGroupKey(undefined)
-                                            form.resetFields()
-                                        }}
-                                        options={[
-                                            { value: 'individual', label: 'One SME', detail: 'A session for a single SME', icon: <UserOutlined /> },
-                                            { value: 'group', label: 'A group', detail: 'One session for a grouped intervention', icon: <TeamOutlined /> }
-                                        ]}
-                                    />
-                                </div>
+                            <div>
+                                <ChoiceCards
+                                    compact
+                                    columns={2}
+                                    label='Who is it for?'
+                                    value={scheduleMode}
+                                    onChange={(next: string) => {
+                                        setScheduleMode(next as ScheduleMode)
+                                        setAppointmentDetailsDraft({})
+                                        setPickedParticipantId(undefined)
+                                        setPickedGroupKey(undefined)
+                                        form.resetFields()
+                                    }}
+                                    options={[
+                                        { value: 'individual', label: 'One SME', detail: 'A session for a single SME', icon: <UserOutlined /> },
+                                        { value: 'group', label: 'A group', detail: 'One session for a grouped intervention', icon: <TeamOutlined /> }
+                                    ]}
+                                />
+                            </div>
                         </div>
 
                         <div data-guide="schedule-target">
@@ -7430,21 +7549,15 @@ const Appointments: React.FC = () => {
                                             name="plannedTopics"
                                             label="Planned topics"
                                             rules={[{ required: true, message: 'Please add at least one topic.' }]}
-                                            extra="Type each topic and press Enter. Actual topics are recorded after delivery."
+                                            extra="Choose an existing topic or add a new one. Actual topics are recorded after delivery."
                                         >
-                                            <Select
-                                                mode="tags"
-                                                open={false}
-                                                tokenSeparators={[',']}
-                                                placeholder="e.g. Introduction to Maths"
-                                                style={{ width: '100%' }}
-                                            />
+                                            <CoverageTopicSelect topics={coverageTopicCatalog} />
                                         </Form.Item>
                                         <Form.Item
                                             name="plannedCoverage"
                                             label="Planned coverage description"
                                             rules={[{ required: true, whitespace: true, message: 'Please describe what the training will cover.' }, { validator: validatePlannedCoverage }]}
-                                            extra="More than 5 words. Explain the intended learning, activity or outcome."
+                                            extra="At least 5 words. Explain the intended learning, activity or outcome."
                                         >
                                             <Input.TextArea rows={3} placeholder="Describe what participants will learn, work through or achieve in this session." />
                                         </Form.Item>
@@ -7454,7 +7567,7 @@ const Appointments: React.FC = () => {
                                         name="plannedCoverage"
                                         label="Planned coverage"
                                         rules={[{ required: true, whitespace: true, message: 'Please describe what will be covered.' }, { validator: validatePlannedCoverage }]}
-                                        extra="More than 5 words. You can reuse this description as the coverage record after the session."
+                                        extra="At least 5 words. You can reuse this description as the coverage record after the session."
                                     >
                                         <Input.TextArea rows={3} placeholder="Describe the work, support, discussion or outcome planned for this session." />
                                     </Form.Item>
@@ -7728,7 +7841,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 className="guide-edit-appointment-modal"
                 centered
                 title='Change time or place'
@@ -7891,19 +8004,13 @@ const Appointments: React.FC = () => {
                                     rules={[{ required: true, message: 'Please add at least one topic.' }]}
                                     extra='These are planned training topics. Record the actual topics delivered in Meeting Coverage.'
                                 >
-                                    <Select
-                                        mode='tags'
-                                        open={false}
-                                        tokenSeparators={[',']}
-                                        placeholder='Type a topic and press Enter'
-                                        style={{ width: '100%' }}
-                                    />
+                                    <CoverageTopicSelect topics={coverageTopicCatalog} />
                                 </Form.Item>
                                 <Form.Item
                                     name='plannedCoverage'
                                     label='Planned coverage description'
                                     rules={[{ required: true, whitespace: true, message: 'Please describe what the training will cover.' }, { validator: validatePlannedCoverage }]}
-                                    extra='More than 5 words. Explain the intended learning, activity or outcome.'
+                                    extra='At least 5 words. Explain the intended learning, activity or outcome.'
                                 >
                                     <Input.TextArea rows={3} placeholder='Describe what participants will learn, work through or achieve in this session.' />
                                 </Form.Item>
@@ -7913,7 +8020,7 @@ const Appointments: React.FC = () => {
                                 name='plannedCoverage'
                                 label='Planned coverage'
                                 rules={[{ required: true, whitespace: true, message: 'Please describe what will be covered.' }, { validator: validatePlannedCoverage }]}
-                                extra='More than 5 words. This can be reused as the coverage record after the session.'
+                                extra='At least 5 words. This can be reused as the coverage record after the session.'
                             >
                                 <Input.TextArea rows={3} placeholder='Describe the work, support, discussion or outcome planned for this session.' />
                             </Form.Item>
@@ -8013,7 +8120,7 @@ const Appointments: React.FC = () => {
 
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 centered
                 title={foodMenuRecord ? `Food Menu — ${foodMenuRecord.interventionTitle}` : 'Food Menu'}
                 open={foodMenuModalOpen}
@@ -8216,7 +8323,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 centered
                 title='Attendance QR'
                 open={qrModalOpen}
@@ -8290,7 +8397,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 centered
                 open={Boolean(completionPrompt)}
                 title={null}
@@ -8449,7 +8556,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
- wrapClassName="mobile-sheet"
+                wrapClassName="mobile-sheet"
                 className="guide-coverage-modal"
                 centered
                 width={600}
@@ -8554,37 +8661,37 @@ const Appointments: React.FC = () => {
                                                 flexWrap: 'wrap'
                                             }}
                                         >
-                                                <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-                                                    <Text strong style={{ display: 'block' }}>Ready for completion</Text>
-                                                    <Text type='secondary' style={{ fontSize: 12 }}>Finish the completion checks and MOV setup, or add another session.</Text>
-                                                </div>
-                                                <Button
-                                                    type='primary'
-                                                    shape='round'
-                                                    style={{ flex: '1 1 160px' }}
-                                                    onClick={() => {
-                                                        const assignmentIds = latest.completionAssignmentIds?.length
-                                                            ? latest.completionAssignmentIds
-                                                            : [String(coverageRecord.assignedInterventionId || '')].filter(Boolean)
-                                                        setCompletionPrompt({
-                                                            assignmentId: assignmentIds[0],
-                                                            assignmentIds,
-                                                            groupKey: latest.completionGroupKey,
-                                                            appointmentId: coverageRecord.id,
-                                                            interventionTitle:
-                                                                coverageRecord.interventionTitle ||
-                                                                latest.title ||
-                                                                'Intervention',
-                                                            sessionsCompleted: Number(linkedAssignment?.tracking?.sessionsLogged || 0),
-                                                            plannedSessions: Math.max(1, Number(linkedAssignment?.plannedSessions) || 1),
-                                                            deliveryMethod: deriveCompletionDelivery(assignmentIds, coverageRecord)
-                                                        })
-                                                        setAppointmentCompletionStep(0)
-                                                        closeCoverageModal()
-                                                    }}
-                                                >
-                                                    Complete Intervention
-                                                </Button>
+                                            <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                                                <Text strong style={{ display: 'block' }}>Ready for completion</Text>
+                                                <Text type='secondary' style={{ fontSize: 12 }}>Finish the completion checks and MOV setup, or add another session.</Text>
+                                            </div>
+                                            <Button
+                                                type='primary'
+                                                shape='round'
+                                                style={{ flex: '1 1 160px' }}
+                                                onClick={() => {
+                                                    const assignmentIds = latest.completionAssignmentIds?.length
+                                                        ? latest.completionAssignmentIds
+                                                        : [String(coverageRecord.assignedInterventionId || '')].filter(Boolean)
+                                                    setCompletionPrompt({
+                                                        assignmentId: assignmentIds[0],
+                                                        assignmentIds,
+                                                        groupKey: latest.completionGroupKey,
+                                                        appointmentId: coverageRecord.id,
+                                                        interventionTitle:
+                                                            coverageRecord.interventionTitle ||
+                                                            latest.title ||
+                                                            'Intervention',
+                                                        sessionsCompleted: Number(linkedAssignment?.tracking?.sessionsLogged || 0),
+                                                        plannedSessions: Math.max(1, Number(linkedAssignment?.plannedSessions) || 1),
+                                                        deliveryMethod: deriveCompletionDelivery(assignmentIds, coverageRecord)
+                                                    })
+                                                    setAppointmentCompletionStep(0)
+                                                    closeCoverageModal()
+                                                }}
+                                            >
+                                                Complete Intervention
+                                            </Button>
                                         </div>
                                     ) : null}
 
@@ -8930,15 +9037,9 @@ const Appointments: React.FC = () => {
                                                                 name='coveredPoints'
                                                                 label='Formal topics / unit standards covered'
                                                                 rules={[{ required: true, message: 'Please add at least one topic or unit standard.' }]}
-                                                                extra='Keep official module and unit-standard wording exactly as prescribed. Type each topic and press Enter.'
+                                                                extra='Choose an existing topic or unit standard. If none matches, type its full wording and choose Add new topic.'
                                                             >
-                                                                <Select
-                                                                    mode='tags'
-                                                                    open={false}
-                                                                    tokenSeparators={[',']}
-                                                                    placeholder='e.g. Module 5 - US 120389'
-                                                                    style={{ width: '100%' }}
-                                                                />
+                                                                <CoverageTopicSelect topics={coverageTopicCatalog} />
                                                             </Form.Item>
                                                         ) : null}
 

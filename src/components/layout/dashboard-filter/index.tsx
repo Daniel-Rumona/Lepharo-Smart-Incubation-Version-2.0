@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Badge, Button, DatePicker, Dropdown, Modal, Space, Tooltip, Typography } from 'antd'
+import { Badge, Button, DatePicker, Dropdown, Modal, Space, Tag, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
-import { CalendarOutlined, CheckOutlined, DownOutlined } from '@ant-design/icons'
+import { CalendarOutlined, CheckOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import {
@@ -129,86 +129,253 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
         <>
             <Tooltip title={`Reporting period: ${label}`}>
                 <Badge dot={isCustom} offset={[-2, 4]}>
-                  <Dropdown menu={menu} trigger={['click']} placement="bottomRight">
-                    <Button
-                        type="text"
-                        // Compact (the top bar) is an icon-only circle matching the
-                        // bell and the other top bar icon buttons.
-                        shape={compact ? 'circle' : 'round'}
-                        icon={<CalendarOutlined />}
-                        className={compact ? 'workspace-dashboard-filter workspace-icon-button' : 'workspace-dashboard-filter'}
-                        style={
-                            compact
-                                ? { flex: '0 0 auto' }
-                                : {
-                                    height: 32,
-                                    paddingInline: 14,
-                                    // A custom range label ("01 Jan 2025 – 15 Sep 2026") runs far
-                                    // longer than a preset like "This month" — let the button
-                                    // shrink and cap it instead of forcing the topbar's
-                                    // segmented nav to overflow its pill.
-                                    flex: '0 1 auto',
-                                    minWidth: 0,
-                                    maxWidth: 200,
-                                }
-                        }
-                        aria-label={`Change reporting period. Currently ${label}`}
-                    >
-                        {/* No children at all when compact: even an empty label
+                    <Dropdown menu={menu} trigger={['click']} placement="bottomRight">
+                        <Button
+                            type="text"
+                            // Compact (the top bar) is an icon-only circle matching the
+                            // bell and the other top bar icon buttons.
+                            shape={compact ? 'circle' : 'round'}
+                            icon={<CalendarOutlined />}
+                            className={compact ? 'workspace-dashboard-filter workspace-icon-button' : 'workspace-dashboard-filter'}
+                            style={
+                                compact
+                                    ? { flex: '0 0 auto' }
+                                    : {
+                                        height: 32,
+                                        paddingInline: 14,
+                                        // A custom range label ("01 Jan 2025 – 15 Sep 2026") runs far
+                                        // longer than a preset like "This month" — let the button
+                                        // shrink and cap it instead of forcing the topbar's
+                                        // segmented nav to overflow its pill.
+                                        flex: '0 1 auto',
+                                        minWidth: 0,
+                                        maxWidth: 200,
+                                    }
+                            }
+                            aria-label={`Change reporting period. Currently ${label}`}
+                        >
+                            {/* No children at all when compact: even an empty label
                             makes antd treat it as a text button and push the
                             icon off-centre. */}
-                        {compact ? undefined : (
-                            <>
-                                <span
-                                    style={{
-                                        display: 'inline-block',
-                                        minWidth: 0,
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        verticalAlign: 'bottom',
-                                    }}
-                                >
-                                    {label}
-                                </span>
-                                <DownOutlined style={{ fontSize: 10, marginInlineStart: 6 }} />
-                            </>
-                        )}
-                    </Button>
-                  </Dropdown>
+                            {compact ? undefined : (
+                                <>
+                                    <span
+                                        style={{
+                                            display: 'inline-block',
+                                            minWidth: 0,
+                                            maxWidth: '100%',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                            verticalAlign: 'bottom',
+                                        }}
+                                    >
+                                        {label}
+                                    </span>
+                                    <DownOutlined style={{ fontSize: 10, marginInlineStart: 6 }} />
+                                </>
+                            )}
+                        </Button>
+                    </Dropdown>
                 </Badge>
             </Tooltip>
+
 
             <Modal
                 open={customOpen}
                 centered
-                title="Custom reporting period"
+                width={460}
+                title={null}
+                footer={null}
                 onCancel={() => setCustomOpen(false)}
-                okText="Apply"
-                okButtonProps={{ disabled: !draft }}
-                onOk={() => {
-                    setRange(draft)
-                    setCustomOpen(false)
+                destroyOnHidden
+                styles={{
+                    body: { padding: 0 }
                 }}
-                width={440}
             >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Text type="secondary">
-                        This selection stays active across dashboards until you change it again.
-                    </Text>
-                    <RangePicker
-                        value={draft}
-                        onChange={value => {
-                            setDraft(value?.[0] && value?.[1] ? [value[0], value[1]] : null)
+                <div style={{ padding: '8px 4px 4px' }}>
+                    {/* Header */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            marginBottom: 20,
+                            paddingRight: 24
                         }}
-                        format="DD MMM YYYY"
-                        style={{ width: '100%' }}
-                        allowClear={false}
-                        placeholder={['Start date', 'End date']}
-                    />
-                </Space>
+                    >
+                        <div
+                            style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 14,
+                                background: 'rgba(22,119,255,0.10)',
+                                color: '#1677ff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 20,
+                                flexShrink: 0
+                            }}
+                        >
+                            <CalendarOutlined />
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                            <Text
+                                strong
+                                style={{
+                                    display: 'block',
+                                    fontSize: 17,
+                                    lineHeight: 1.4
+                                }}
+                            >
+                                Custom reporting period
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Choose the dates for your dashboard reports
+                            </Text>
+                        </div>
+                    </div>
+
+                    {/* Date selection */}
+                    <div
+                        style={{
+                            padding: 16,
+                            borderRadius: 14,
+                            border: '1px solid var(--ant-color-border-secondary)',
+                            background: 'var(--ant-color-fill-quaternary)'
+                        }}
+                    >
+                        <Text
+                            strong
+                            style={{
+                                display: 'block',
+                                fontSize: 13,
+                                marginBottom: 10
+                            }}
+                        >
+                            Reporting date range
+                        </Text>
+
+                        <RangePicker
+                            value={draft}
+                            onChange={value => {
+                                setDraft(
+                                    value?.[0] && value?.[1]
+                                        ? [value[0], value[1]]
+                                        : null
+                                )
+                            }}
+                            format="DD MMM YYYY"
+                            size="large"
+                            allowClear={false}
+                            placeholder={['Start date', 'End date']}
+                            style={{
+                                width: '100%',
+                                borderRadius: 10
+                            }}
+                        />
+
+                        {draft?.[0] && draft?.[1] && (
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    flexWrap: 'wrap',
+                                    gap: 8,
+                                    marginTop: 14
+                                }}
+                            >
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    Selected duration
+                                </Text>
+
+                                <Tag
+                                    color="blue"
+                                    bordered={false}
+                                    style={{
+                                        margin: 0,
+                                        borderRadius: 20,
+                                        padding: '3px 10px',
+                                        fontWeight: 600
+                                    }}
+                                >
+                                    {draft[1].diff(draft[0], 'day') + 1} days
+                                </Tag>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Information */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 9,
+                            marginTop: 16,
+                            marginBottom: 22
+                        }}
+                    >
+                        <InfoCircleOutlined
+                            style={{
+                                color: '#1677ff',
+                                fontSize: 15,
+                                marginTop: 2,
+                                flexShrink: 0
+                            }}
+                        />
+
+                        <Text
+                            type="secondary"
+                            style={{
+                                fontSize: 12,
+                                lineHeight: 1.6
+                            }}
+                        >
+                            This reporting period will remain active across dashboards
+                            until you select a different period.
+                        </Text>
+                    </div>
+
+                    {/* Footer */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            gap: 10,
+                            width: '100%'
+                        }}
+                    >
+                        <Button
+                            size="large"
+                            shape="round"
+                            style={{ flex: 1 }}
+                            onClick={() => setCustomOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+
+                        <Button
+                            type="primary"
+                            size="large"
+                            shape="round"
+                            disabled={!draft?.[0] || !draft?.[1]}
+                            icon={<CheckOutlined />}
+                            style={{ flex: 1 }}
+                            onClick={() => {
+                                if (!draft?.[0] || !draft?.[1]) return
+
+                                setRange(draft)
+                                setCustomOpen(false)
+                            }}
+                        >
+                            Apply period
+                        </Button>
+                    </div>
+                </div>
             </Modal>
+
         </>
     )
 }

@@ -145,6 +145,27 @@ export async function hydrateAppointmentViews(
     const session = sessions.get(item.data.appointmentSessionId.trim())
     return session ? [toAppointmentView(item.id, item.data, session)] : []
   })
+  // Legacy training invitations named the company, but the enrollment identifies
+  // the actual person and their category. Keep individual attendee invitations intact.
+  const legacy = views.filter(view => String(view.groupKey || '').startsWith('training:') && !view.attendeeId)
+  if (legacy.length) {
+    try {
+      const ids = [...new Set(legacy.map(view => String(view.participantId)).filter(Boolean))]
+      const snapshots = await Promise.all(chunks(ids, 30).map(group => getDocs(query(
+        collection(db, 'trainingEnrollments'), where(documentId(), 'in', group)
+      ))))
+      const enrollments = new Map(snapshots.flatMap(snapshot => snapshot.docs.map(d => [d.id, d.data()] as const)))
+      legacy.forEach(view => {
+        const enrollment = enrollments.get(String(view.participantId))
+        if (enrollment?.name) {
+          view.participantName = [enrollment.name, enrollment.companyName].filter(Boolean).join(' · ')
+          view.companyName = enrollment.companyName || ''
+        }
+      })
+    } catch {
+      // Retain the saved invitation names when the enrollment cannot be read.
+    }
+  }
   const bySessionId = new Map<string, AppointmentView[]>()
   views.forEach(view => {
     const key = String(view.appointmentSessionId)

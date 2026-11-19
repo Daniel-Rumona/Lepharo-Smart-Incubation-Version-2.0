@@ -9,7 +9,7 @@ import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
-import dayjs, { Dayjs } from 'dayjs'
+import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
 import GapAnalysisViewModal from '@/routes/gap/view/GapModal'
 import { usePageGuides } from '@/components/guide-me'
@@ -33,8 +33,8 @@ import { InterventionsSection } from './InterventionsSection'
 import { ComplianceSection } from './ComplianceSection'
 import { ReadinessSection } from './ReadinessSection'
 import { DetailActions } from './DetailActions'
+import { SmeStatusPanel, SmeStatusSummary, smeStatusColor } from './SmeStatusPanel'
 import { MoaViewerModal } from './MoaViewerModal'
-import { DummySmeModal } from './DummySmeModal'
 import { ImportSmesModal } from './import/ImportSmesModal'
 import { exportAllSmes } from './exportParticipants'
 import './participants.css'
@@ -98,10 +98,7 @@ const SMEOverview: React.FC = () => {
     const [detailOpen, setDetailOpen] = useState(false)
     const [editAppId, setEditAppId] = useState<string | null>(null)
     const [segment, setSegment] = useState<SmeSection>('demographics')
-    const [reportingRange, setReportingRange] = useState<[Dayjs, Dayjs]>(() => [
-        dayjs().subtract(11, 'month').startOf('month'),
-        dayjs().endOf('month')
-    ])
+    const { range: reportingRange } = useDashboardDateRange()
 
     const [selectedDeptKey, setSelectedDeptKey] = useState<string | null>(null)
     const [interventionStatusFilter, setInterventionStatusFilter] = useState<InterventionBucket | null>(null)
@@ -110,7 +107,6 @@ const SMEOverview: React.FC = () => {
     const [filters, setFilters] = useState<ParticipantFilterState>(DEFAULT_PARTICIPANT_FILTERS)
     const [sort, setSort] = useState<ParticipantSort>('name')
     const patchFilters = (patch: Partial<ParticipantFilterState>) => setFilters(prev => ({ ...prev, ...patch }))
-    const [dummySmeModalVisible, setDummySmeModalVisible] = useState(false)
     const [importOpen, setImportOpen] = useState(false)
 
     const {
@@ -249,25 +245,39 @@ const SMEOverview: React.FC = () => {
         return (
             <div className='ws-detail' data-guide='sme-detail-workspace'>
                 <MotionCard>
-                    <motion.header key={`head-${selectedRow.appId}`} className='ws-detail-head' {...sectionEnter}>
-                        <EntityAvatar name={selectedRow.companyName} photo={selectedRow.photoUrl} size={52} />
-                        <div className='ws-detail-identity'>
-                            <h2 className='ws-detail-name'>{selectedRow.companyName}</h2>
-                            {sub && <div className='ws-detail-sub'>{sub}</div>}
-                            <div className='ws-detail-tags'>
-                                {selectedRow.group && <Tag bordered={false} className='ptx-group-tag'>Group {selectedRow.group}</Tag>}
-                                <Tag>{selectedRow.branchName || 'No branch'}</Tag>
-                                {isQuantilytixDomain(selectedRow.email) && <Tag color='purple'>Internal / Dummy</Tag>}
+                    <motion.header key={`head-${selectedRow.appId}`} className='ws-detail-head ptx-compact-detail-head' {...sectionEnter}>
+                        <div className='ptx-detail-header-layout'>
+                            <div className='ptx-detail-header-content'>
+                                <EntityAvatar name={selectedRow.companyName} photo={selectedRow.photoUrl} size={52} />
+                                <div className='ws-detail-identity'>
+                                    <h2 className='ws-detail-name'>{selectedRow.companyName}</h2>
+                                    {sub && <div className='ws-detail-sub'>{sub}</div>}
+                                    <div className='ws-detail-tags'>
+                                        <Tag color={smeStatusColor(selectedRow.incubationStatus)}>{selectedRow.incubationStatus || 'Active'}</Tag>
+                                        {selectedRow.exitQualified && <Tag color='red'>Qualified for exit review · 90+ days</Tag>}
+                                        {selectedRow.group && <Tag bordered={false} className='ptx-group-tag'>Group {selectedRow.group}</Tag>}
+                                        <Tag>{selectedRow.branchName || 'No branch'}</Tag>
+                                        {isQuantilytixDomain(selectedRow.email) && <Tag color='purple'>Internal</Tag>}
+                                    </div>
+                                    <SmeStatusSummary row={selectedRow} />
+                                </div>
+                            </div>
+                            {/* Keep actions beside the SME identity instead of a separate full-width row. */}
+                            <div className='ptx-detail-header-actions'>
+                                <DetailActions
+                                    record={selectedRow}
+                                    canEdit={hasOnboardingAccess || isQuantilytixViewer}
+                                    onEdit={record => setEditAppId(record.appId)}
+                                    statusAction={
+                                        <SmeStatusPanel
+                                            row={selectedRow}
+                                            canManage={hasOnboardingAccess || viewerDepartmentRole === 'rom' || ['system_admin', 'superadmin', 'admin'].includes(String(user?.role))}
+                                            onSaved={loadSMEs}
+                                        />
+                                    }
+                                />
                             </div>
                         </div>
-                        {/* Same people who can onboard SMEs (plus internal Quantilytix users) can edit their details. */}
-                        <DetailActions
-                            record={selectedRow}
-                            canEdit={hasOnboardingAccess || isQuantilytixViewer}
-                            canDelete={isQuantilytixViewer && isQuantilytixDomain(selectedRow.email)}
-                            onEdit={record => setEditAppId(record.appId)}
-                            onDeleted={loadSMEs}
-                        />
                     </motion.header>
 
                     <div className='ws-detail-tabs' data-guide='sme-detail-tabs'>
@@ -343,7 +353,7 @@ const SMEOverview: React.FC = () => {
     // Same page shell as the incubatee workspace below.
     if (activeTrainingId) {
         return (
-            <div className='ws-page'>
+            <div className='ws-page ptx-page'>
                 <Helmet>
                     <title>Training SMEs | Smart Incubation</title>
                 </Helmet>
@@ -361,7 +371,7 @@ const SMEOverview: React.FC = () => {
     return (
         <div className='ws-page'>
             <Helmet>
-                <title>SME Overview | Smart Incubation</title>
+                <title>SME Overview</title>
             </Helmet>
 
             <Row data-guide='sme-overview-metrics' gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -418,14 +428,10 @@ const SMEOverview: React.FC = () => {
                     filters={filters}
                     onChange={patchFilters}
                     choices={choices}
-                    reportingRange={reportingRange}
-                    onReportingRangeChange={setReportingRange}
                     canAdd={hasOnboardingAccess}
                     addDisabled={!activeProgramId || isAllPrograms}
                     onAdd={() => navigate(`/participants/new/${activeProgramId}`)}
                     onImport={() => setImportOpen(true)}
-                    canAddDummy={isQuantilytixViewer}
-                    onAddDummy={() => setDummySmeModalVisible(true)}
                     onExport={handleExportAll}
                 />
             </motion.div>
@@ -462,7 +468,7 @@ const SMEOverview: React.FC = () => {
 
             {isPhone && (
                 <Drawer
-                    className='ws-drawer'
+                    className='ws-drawer ptx-page'
                     open={detailOpen && !!selectedRow}
                     onClose={() => setDetailOpen(false)}
                     placement='right'
@@ -511,13 +517,6 @@ const SMEOverview: React.FC = () => {
                 actor={{ email: user?.email || null, name: user?.name || null }}
             />
 
-            <DummySmeModal
-                open={dummySmeModalVisible}
-                onClose={() => setDummySmeModalVisible(false)}
-                activeProgramId={activeProgramId}
-                isAllPrograms={isAllPrograms}
-                onCreated={loadSMEs}
-            />
         </div >
     )
 }

@@ -5,11 +5,11 @@ import type { SmeRow } from './participantsData'
  * and Reset. Adding a filter means adding one entry to FILTER_DEFS.
  */
 
-export type FilterKey = 'gender' | 'group' | 'sector' | 'province' | 'branch' | 'hub' | 'bee' | 'ownership' | 'gap'
+export type FilterKey = 'incubationStatus' | 'gender' | 'group' | 'sector' | 'province' | 'branch' | 'hub' | 'bee' | 'ownership' | 'gap'
 
 export type ParticipantFilterState = { search: string } & Record<FilterKey, string>
 
-export const FILTER_KEYS: FilterKey[] = ['gender', 'group', 'sector', 'province', 'branch', 'hub', 'bee', 'ownership', 'gap']
+export const FILTER_KEYS: FilterKey[] = ['incubationStatus', 'gender', 'group', 'sector', 'province', 'branch', 'hub', 'bee', 'ownership', 'gap']
 
 export const DEFAULT_PARTICIPANT_FILTERS: ParticipantFilterState = {
     search: '',
@@ -48,6 +48,7 @@ type FilterDef = {
 }
 
 export const FILTER_DEFS: Record<FilterKey, FilterDef> = {
+    incubationStatus: { label: 'SME status', allLabel: 'All statuses', valuesOf: r => [r.incubationStatus || 'Active'], order: ['Active', 'Inactive', 'Dormant', 'Potential Exit', 'Exited'] },
     gender: { label: 'Gender', allLabel: 'All genders', valuesOf: r => [titleCase(r.gender)] },
     group: { label: 'Group', allLabel: 'All groups', valuesOf: r => [clean(r.group)] },
     sector: { label: 'Sector', allLabel: 'All sectors', valuesOf: r => [clean(r.sector)] },
@@ -82,10 +83,11 @@ const naturalSort = (a: string, b: string) => a.localeCompare(b, undefined, { nu
  * needs the programme to be multi-branch.
  */
 export const buildChoices = (rows: SmeRow[], options: { showHub: boolean }): ChoiceDef[] =>
-    FILTER_KEYS.filter(key => key !== 'hub' || options.showHub).flatMap(key => {
+    FILTER_KEYS.filter(key => key !== 'hub' || options.showHub).flatMap<ChoiceDef>(key => {
         const def = FILTER_DEFS[key]
         const perRow = rows.map(r => def.valuesOf(r).filter(Boolean))
         const values = Array.from(new Set(perRow.flat()))
+        if (key === 'incubationStatus') return [{ key, label: def.label, allLabel: def.allLabel, values: def.order! }]
         if (values.length < 2) return []
         const sorted = def.order ? def.order.filter(v => values.includes(v)) : values.sort(naturalSort)
         return [{ key, label: def.label, allLabel: def.allLabel, values: sorted }]

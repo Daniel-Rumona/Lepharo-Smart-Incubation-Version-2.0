@@ -162,9 +162,10 @@ export function EnrollSmeForm({
         </Form.Item>
       )}
 
+      {!enrollment && <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Register the company once" description="Enter its director below. Add other people through the company's People section using Add employee, and choose the categories each person attends." />}
       <Row gutter={16}>
         <Col xs={24} sm={12}>
-          <Form.Item label="SME name" name="name" rules={[{ required: true, whitespace: true, message: "Add the SME's name" }]}>
+          <Form.Item label={enrollment ? "Primary contact name" : "Director name"} name="name" rules={[{ required: true, whitespace: true, message: "Add the contact's name" }]}>
             <Input placeholder="Full name" />
           </Form.Item>
         </Col>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Modal, Progress, Segmented, Select, Steps, Upload, message } from 'antd'
+import { Alert, Button, Checkbox, Modal, Progress, Radio, Segmented, Select, Steps, Upload, message } from 'antd'
 import { CheckCircleFilled, FileExcelOutlined, InboxOutlined, WarningFilled } from '@ant-design/icons'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -76,6 +76,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
     const [checking, setChecking] = useState(false)
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const [reviewFilter, setReviewFilter] = useState<'import' | 'existing' | 'issues' | 'all'>('import')
+    const [sendAcceptanceEmail, setSendAcceptanceEmail] = useState<boolean | null>(null)
     const [sendInvites, setSendInvites] = useState(false)
 
     const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -116,6 +117,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
         setSelected(new Set())
         setReviewFilter('import')
         setSendInvites(false)
+        setSendAcceptanceEmail(null)
         setProgress({ done: 0, total: 0 })
         setFailures([])
     }
@@ -222,6 +224,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
     const toInput = (sme: ImportedSme): SmeInput => {
         const branch = branchFor(sme)
         return {
+            sendAcceptanceEmail: sendAcceptanceEmail === true,
             companyName: sme.companyName,
             registrationNumber: sme.registrationNumber,
             sector: sme.sector,
@@ -264,7 +267,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
     }
 
     const runImport = async () => {
-        if (!programId) return
+        if (!programId || sendAcceptanceEmail === null) return
         const chosen = smes.filter(s => selected.has(s.key))
         setStep('importing')
         setProgress({ done: 0, total: chosen.length })
@@ -325,7 +328,7 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
         ) : step === 'review' ? (
             <div className='imp-footer'>
                 <Button onClick={() => setStep('columns')}>Back</Button>
-                <Button type='primary' disabled={!counts.selected} onClick={() => void runImport()}>
+                <Button type='primary' disabled={!counts.selected || sendAcceptanceEmail === null} onClick={() => void runImport()}>
                     Import {counts.selected} SME{counts.selected === 1 ? '' : 's'}
                 </Button>
             </div>
@@ -557,6 +560,14 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
                                 )
                             })
                         )}
+                    </div>
+                    <div style={{ margin: '16px 0' }}>
+                        <p id='import-acceptance-label'><strong>Send acceptance emails to the imported SMEs?</strong></p>
+                        <Radio.Group value={sendAcceptanceEmail} onChange={e => setSendAcceptanceEmail(e.target.value)} aria-labelledby='import-acceptance-label'>
+                            <Radio value={true}>Yes, send</Radio>
+                            <Radio value={false}>No, skip</Radio>
+                        </Radio.Group>
+                        <p className='imp-muted'>Applies to this import. {counts.withEmail} selected SMEs have an email address; those without one will be skipped. Platform invites are controlled separately below.</p>
                     </div>
                     <Checkbox checked={sendInvites} onChange={e => setSendInvites(e.target.checked)}>
                         Email each imported SME an invite to the platform ({counts.withEmail} have an email address)

@@ -6,13 +6,11 @@ import {
     EnvironmentOutlined,
     LaptopOutlined,
     PhoneOutlined,
-    RocketOutlined,
     TeamOutlined,
     TrophyOutlined,
     UserOutlined,
     VideoCameraOutlined
 } from '@ant-design/icons'
-import dayjs from 'dayjs'
 import { motion } from 'framer-motion'
 
 import StoryViewer, { type StorySlide } from '@/components/story-viewer'
@@ -105,69 +103,13 @@ interface StoryReviewData {
     photos?: CoverageReviewPhoto[]
 }
 
-interface UpcomingAppointment {
-    date: string
-    title: string
-    branchName: string
-}
-
 interface SessionReviewStoryProps {
     rangeLabel: string
     reviewData: StoryReviewData
-    upcoming?: UpcomingAppointment[]
     onExit: () => void
 }
 
-const buildUpcomingSlide = (upcoming: UpcomingAppointment[]): StorySlide => ({
-    key: 'upcoming',
-    duration: 4600 + upcoming.length * 500,
-    background: 'linear-gradient(160deg,#8b5cf6,#3730a3)',
-    render: () => (
-        <div style={{ width: '100%', maxWidth: 460, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <SlideIcon>
-                <RocketOutlined />
-            </SlideIcon>
-            <Title level={4} style={{ color: '#fff', marginBottom: 20 }}>
-                Coming up next
-            </Title>
-            <motion.div
-                initial='hidden'
-                animate='show'
-                variants={{ hidden: {}, show: { transition: { staggerChildren: 0.15 } } }}
-                style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}
-            >
-                {upcoming.map(item => (
-                    <motion.div
-                        key={`${item.date}-${item.title}`}
-                        variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
-                        style={{
-                            background: 'rgba(255,255,255,0.14)',
-                            border: '1px solid rgba(255,255,255,0.3)',
-                            borderRadius: 10,
-                            padding: '8px 14px',
-                            textAlign: 'left',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: 12
-                        }}
-                    >
-                        <div>
-                            <Text style={{ color: '#fff', display: 'block' }}>{item.title}</Text>
-                            {item.branchName && (
-                                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{item.branchName}</Text>
-                            )}
-                        </div>
-                        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, whiteSpace: 'nowrap' }}>
-                            {dayjs(item.date).format('MMM D')}
-                        </Text>
-                    </motion.div>
-                ))}
-            </motion.div>
-        </div>
-    )
-})
-
-const SessionReviewStory: React.FC<SessionReviewStoryProps> = ({ rangeLabel, reviewData, upcoming = [], onExit }) => {
+const SessionReviewStory: React.FC<SessionReviewStoryProps> = ({ rangeLabel, reviewData, onExit }) => {
     const { sessions, held, invited, attended, attendanceRate, deliveryCounts, coveredItems } = reviewData
 
     if (sessions === 0) {
@@ -191,7 +133,6 @@ const SessionReviewStory: React.FC<SessionReviewStoryProps> = ({ rangeLabel, rev
             }
         ]
 
-        if (upcoming.length) emptySlides.push(buildUpcomingSlide(upcoming))
 
         return <StoryViewer onExit={onExit} slides={emptySlides} />
     }
@@ -310,9 +251,6 @@ const SessionReviewStory: React.FC<SessionReviewStoryProps> = ({ rangeLabel, rev
         )
     })
 
-    if (upcoming.length) {
-        slides.push(buildUpcomingSlide(upcoming))
-    }
 
     slides.push({
         key: 'outro',

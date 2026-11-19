@@ -65,6 +65,15 @@ from plan_roadmap import (
     build_roadmap_draft,
     roadmap_extraction_prompt,
 )
+from plan_progress import (
+    COLLECTIONS as PLAN_PROGRESS_COLLECTIONS,
+    MAX_RECORDS as PLAN_PROGRESS_MAX_RECORDS,
+    storage_location as plan_storage_location,
+    can_review as can_review_plan_progress,
+    build_snapshot as build_plan_progress_snapshot,
+    review_prompt as plan_progress_prompt,
+    normalize_review as normalize_plan_progress,
+)
 from opportunity_capture import (
     MAX_TEXT_CHARS as OPPORTUNITY_MAX_TEXT_CHARS,
     OpportunityDraft,
@@ -4028,6 +4037,88 @@ def map_gap_interventions(payload: GapMappingRequest, request: Request):
 # the client publishes it to `planRoadmaps` (see functions/src/planRoadmapCheckIns.ts).
 
 PLAN_ROADMAP_AUTHOR_ROLES = ADMIN_ROLES | {"projectadmin"}
+
+
+class PlanProgressRequest(BaseModel):
+    documentId: str = Field(min_length=1, max_length=150, pattern=r"^[^/]+$")
+
+
+@app.post("/plans/check-progress")
+def check_plan_progress(payload: PlanProgressRequest, request: Request):
+    """Read the saved plan and current delivery, without changing its review status."""
+    from concurrent.futures import ThreadPoolExecutor
+    from firebase_admin import storage
+
+    user = _verified_user(request, None)
+    document_ref = db.collection("implementationPlans").document(payload.documentId)
+    document = document_ref.get()
+    plan = document.to_dict() or {}
+    if not document.exists:
+        raise HTTPException(status_code=404, detail="Implementation plan not found.")
+    if plan.get("docType", "implementation_plan") != "implementation_plan":
+        raise HTTPException(status_code=400, detail="Progress checks are only available for implementation plans.")
+    program, department = plan.get("programId"), plan.get("departmentId")
+    if not program or not department:
+        raise HTTPException(status_code=422, detail="Assign this plan to a programme and department before checking progress.")
+    role = _normalise_role(user.role)
+    allowed = _allowed_program_ids(user.uid or "", user.email or "", "projectadmin") if role in {"projectadmin", "project_admin"} else []
+    departments = _hod_department_ids(user, role)
+    oversight = bool(user.isMainDepartment) or (
+        bool(user.departmentId) and get_department_role(user.departmentId, get_department_roles(), get_departments(500)) in OVERSIGHT_DEPARTMENT_ROLES
+    )
+    if not can_review_plan_progress(role, user.departmentId, department, program, allowed,
+                                    oversight=role == "operations" and oversight,
+                                    department_ids=departments):
+        raise HTTPException(status_code=403, detail="You cannot check progress for this programme or department.")
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The AI progress reviewer is not configured.")
+    attachment = plan.get("attachment") or {}
+    try:
+        bucket, path = plan_storage_location(attachment.get("url", ""), db.project)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    try:
+        blob = storage.bucket(bucket).blob(path)
+        blob.reload(timeout=30)
+        if not blob.size or blob.size > MAX_SURVEY_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="The plan must be non-empty and no larger than 10MB.")
+        data = blob.download_as_bytes(timeout=30, if_generation_match=blob.generation)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="The saved plan could not be downloaded. Check its attachment and try again.") from error
+    part, document_text, _ = _read_course_document(
+        base64.b64encode(data).decode("ascii"), attachment.get("name", ""), blob.content_type or ""
+    )
+    if len(document_text) > 120000:
+        raise HTTPException(status_code=413, detail="This plan is too long to review in one check. Upload a shorter departmental plan.")
+
+    def fetch_records(collection):
+        return [_doc_data(row) for row in db.collection(collection).where("programId", "==", program)
+                .limit(PLAN_PROGRESS_MAX_RECORDS + 1).stream(timeout=45)]
+
+    try:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            raw = dict(zip(PLAN_PROGRESS_COLLECTIONS, pool.map(fetch_records, PLAN_PROGRESS_COLLECTIONS)))
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Live delivery records could not be loaded. No progress assessment was made; please retry.") from error
+    today = datetime.now(SAST).date().isoformat()
+    facts = build_plan_progress_snapshot(raw, program, department, plan.get("departmentName", ""), today)
+    prompt = plan_progress_prompt(today, facts)
+    contents = [part, prompt] if part is not None else prompt + "\nUNTRUSTED PLAN DOCUMENT:\n" + document_text
+    parsed = _gemini_json(api_key, contents, "Implementation plan progress review")
+    try:
+        result = normalize_plan_progress(parsed, facts, today)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    # Avoid returning an assessment of a file that was replaced during the check.
+    latest = document_ref.get().to_dict() or {}
+    if (latest.get("attachment") or {}).get("url") != attachment.get("url"):
+        raise HTTPException(status_code=409, detail="The plan was replaced during this check. Run Check Progress again.")
+    return {**result, "documentId": document.id, "planTitle": plan.get("title", "Implementation plan"),
+            "departmentName": plan.get("departmentName", ""), "asOf": today,
+            "checkedAt": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/plans/extract-roadmap", response_model=RoadmapDraft)

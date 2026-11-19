@@ -3,7 +3,9 @@ import { message } from 'antd'
 import { collection, getDocs, query, where, doc, getDoc, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useDepartmentRoles } from '@/services/departmentRoles'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
+import type { DashboardDateRange } from '@/lib/useDashboardDateRange'
+import { smeReportingWindow } from './smeReportingWindow'
 import { ComplianceDoc, ComplianceStats, DeptGap, FINANCE_API_BASE_URL, Intervention, JobContract, MonthlyFinancePoint, Participant, SmePerformanceDetail, SmeRow, buildUploadedByMonth, canonicalComplianceId, directDocumentUrl, documentStoragePath, mergePrefUploaded, normalizeHeadcountMap, normalizeRevenueMap, standardComplianceName } from './participantsData'
 
 export type SmeSection = 'demographics' | 'performance' | 'interventions' | 'compliance' | 'readiness'
@@ -13,7 +15,7 @@ export type SmeSection = 'demographics' | 'performance' | 'interventions' | 'com
  * finance revenue and job contracts for the reporting range, interventions with their
  * department gaps, and compliance documents with their stats.
  */
-export const useSmeDetail = (selectedRow: SmeRow | null, reportingRange: [Dayjs, Dayjs]) => {
+export const useSmeDetail = (selectedRow: SmeRow | null, reportingRange: DashboardDateRange) => {
     const { nameOf } = useDepartmentRoles()
     const [perfDetail, setPerfDetail] = useState<SmePerformanceDetail | null>(null)
     const [financeRevenue, setFinanceRevenue] = useState<MonthlyFinancePoint[]>([])
@@ -76,7 +78,8 @@ export const useSmeDetail = (selectedRow: SmeRow | null, reportingRange: [Dayjs,
             }
 
             setPerformanceTrendLoading(true)
-            const financeMonths = Math.max(1, dayjs().endOf('month').diff(reportingRange[0], 'month') + 1)
+            const window = smeReportingWindow(reportingRange, [selectedRow.recruitedAt, selectedRow.onboardedAt])
+            const financeMonths = Math.max(1, dayjs().endOf('month').diff(window[0], 'month') + 1)
             const revenueRequest = selectedRow.email
                 ? fetch(`${FINANCE_API_BASE_URL}/api/stats/public/revenue-monthly?${new URLSearchParams({
                     email: selectedRow.email,
@@ -108,7 +111,7 @@ export const useSmeDetail = (selectedRow: SmeRow | null, reportingRange: [Dayjs,
 
         run()
         return () => { cancelled = true }
-    }, [reportingRange, selectedRow?.appId, selectedRow?.email])
+    }, [reportingRange, selectedRow?.appId, selectedRow?.email, selectedRow?.recruitedAt, selectedRow?.onboardedAt])
 
     useEffect(() => {
         const run = async () => {

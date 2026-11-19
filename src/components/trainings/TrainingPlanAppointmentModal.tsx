@@ -1,5 +1,7 @@
+import AppointmentDateTimeFields from '@/components/appointments/AppointmentDateTimeFields';
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, App, Button, DatePicker, Empty, Form, Input, Modal, Select, Space, Spin, Tag, TimePicker, Typography } from "antd";
+import { validatePlannedCoverage } from "@/lib/plannedCoverageValidation";
+import { Alert, App, Button, Checkbox, Empty, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from "antd";
 import { FileTextOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
@@ -17,15 +19,13 @@ type BookingForm = {
   description: string;
   deliverer: PlanDeliverer | null;
   category?: string | null;
-  date: Dayjs;
-  time: [Dayjs, Dayjs];
+  startsAt: Dayjs;
+  endsAt: Dayjs;
+  useDifferentLocation?: boolean;
   deliveryMethod: TrainingDeliveryMethod;
   location: string;
   meetingLink: string;
 };
-
-/** A date plus a time of day, as an ISO string. */
-const at = (date: Dayjs, time: Dayjs) => date.hour(time.hour()).minute(time.minute()).second(0).millisecond(0).toISOString();
 
 /**
  * Appointments' booking flow when the active programme is a training. Where
@@ -61,10 +61,13 @@ export function TrainingPlanAppointmentModal({
     if (!open || !trainingId) return;
     let cancelled = false;
     setLoading(true);
+    setTraining(null);
+    setSmes([]);
+    setAttendees([]);
     Promise.all([
       getDoc(doc(db, "trainings", trainingId)),
       getDocs(query(collection(db, "trainingEnrollments"), where("trainingId", "==", trainingId))),
-      listTrainingAttendees(trainingId).catch(() => [] as TrainingAttendee[]),
+      listTrainingAttendees(trainingId),
       listTrainingStaff(String(user?.departmentId || "")).catch(() => [] as TrainingStaff[]),
     ])
       .then(([trainingSnap, enrollmentSnap, people, staffList]) => {
@@ -91,8 +94,9 @@ export function TrainingPlanAppointmentModal({
     .sort((a, b) => Number(isMine(b.deliverer)) - Number(isMine(a.deliverer)))
     .map((item) => ({
       value: item.id,
+      selectedLabel: item.topic,
       label: (
-        <Space size={6} wrap>
+        <Space size={6} wrap style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: '100%' }}>
           <span>{item.topic}</span>
           {item.deliverer && <Typography.Text type="secondary">· {delivererName(item.deliverer)}</Typography.Text>}
           {isMine(item.deliverer) && <Tag color="green">You</Tag>}
@@ -108,13 +112,15 @@ export function TrainingPlanAppointmentModal({
   const initialValues: Partial<BookingForm> = {
     planItemId: first?.id,
     title: first?.topic || "",
-    deliverer: first?.deliverer || (user?.uid ? { kind: "staff", userId: user.uid, name: user.name || user.email || "Me", email: user.email || null } : null),
+    deliverer: first?.deliverer || null,
     deliveryMethod: "in_person",
+    location: "At Center",
+    useDifferentLocation: false,
   };
 
   const pickItem = (itemId?: string) => {
     const item = items.find((i) => i.id === itemId);
-    if (item) form.setFieldsValue({ title: item.topic, deliverer: item.deliverer || form.getFieldValue("deliverer") });
+    if (item) form.setFieldsValue({ title: item.topic, deliverer: item.deliverer || null });
   };
 
   // The plan already says who delivers an item, so that isn't asked again; only an item
@@ -123,6 +129,7 @@ export function TrainingPlanAppointmentModal({
   const plannedDeliverer = items.find((i) => i.id === pickedItemId)?.deliverer || null;
 
   const delivery = Form.useWatch("deliveryMethod", form);
+  const useDifferentLocation = Form.useWatch("useDifferentLocation", form);
   const category = Form.useWatch("category", form);
   const inviteCount = trainingInvitees(smes, attendees, category).length;
   const peopleLabel = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
@@ -148,11 +155,11 @@ export function TrainingPlanAppointmentModal({
       topics: [values.title.trim()],
       category: values.category || null,
       courseIds: [],
-      startAt: at(values.date, values.time[0]),
-      endAt: at(values.date, values.time[1]),
+      startAt: values.startsAt.second(0).millisecond(0).toISOString(),
+      endAt: values.endsAt.second(0).millisecond(0).toISOString(),
       deliveryMethod: values.deliveryMethod,
-      location: (values.location || "").trim(),
-      meetingLink: (values.meetingLink || "").trim(),
+      location: values.deliveryMethod === "in_person" ? (values.useDifferentLocation ? values.location.trim() : "At Center") : "",
+      meetingLink: values.deliveryMethod === "virtual" ? (values.meetingLink || "").trim() : "",
       facilitatorId: facilitator.id,
       facilitatorName: facilitator.name,
       facilitatorEmail: facilitator.email,
@@ -177,7 +184,7 @@ export function TrainingPlanAppointmentModal({
   };
 
   // Two fields to a row on wide screens; stacked on phones.
-  const pairStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", columnGap: 12 };
+  const pairStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", columnGap: 12 };
 
   const noPlan = !loading && training && !plan;
   const nothingToBook = !loading && training && plan && !usesDocument && !items.length;
@@ -190,7 +197,8 @@ export function TrainingPlanAppointmentModal({
       open={open}
       onCancel={close}
       destroyOnClose
-      width={680}
+      width={800}
+      styles={{ body: { maxHeight: "72vh", overflowY: "auto", overflowX: "hidden" } }}
       footer={
         <Button type="primary" block size="large" loading={saving} disabled={loading || !training || !!noPlan || !!nothingToBook} onClick={() => void submit()}>
           {inviteCount ? `Book for ${peopleLabel(inviteCount)}` : "Book session"}
@@ -230,19 +238,16 @@ export function TrainingPlanAppointmentModal({
             />
           ) : (
             <Form.Item name="planItemId" label="Plan item" rules={[{ required: true, message: "Choose what this session delivers" }]}>
-              <Select showSearch optionFilterProp="search" options={itemOptions} onChange={pickItem} placeholder="What this session delivers" />
+              <Select showSearch optionFilterProp="search" optionLabelProp="selectedLabel" options={itemOptions} onChange={pickItem} placeholder="What this session delivers" style={{ width: '100%', minWidth: 0 }} />
             </Form.Item>
           )}
+          <div style={{ ...pairStyle, gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 2fr) minmax(0, 1fr)" }}>
           <Form.Item name="title" label="Session title" rules={[{ required: true, whitespace: true, message: "Name the session" }]}>
             <Input placeholder="e.g. Bookkeeping basics" />
-          </Form.Item>
-          <Form.Item name="description" label="What it covers">
-            <Input.TextArea rows={2} placeholder="Shown to SMEs on their agenda" />
           </Form.Item>
           {plannedDeliverer ? (
             <Form.Item
               label="Delivered by"
-              extra={plannedDeliverer.kind === "external" ? "From the plan. Not in the system, so you hold the appointment for them." : "From the plan."}
             >
               <Typography.Text strong>{plannedDeliverer.name}</Typography.Text>
             </Form.Item>
@@ -254,33 +259,20 @@ export function TrainingPlanAppointmentModal({
               extra={
                 usesDocument
                   ? "Who delivers this part of the plan document. Someone not in the system is shown by name; you hold the appointment for them."
-                  : "This plan item doesn't name anyone yet. Someone not in the system is shown by name; you hold the appointment for them."
+                  : "No facilitator assigned. Choose someone or type an external name."
               }
             >
-              <DelivererSelect staff={staff} />
+              <DelivererSelect key={pickedItemId || "document"} staff={staff} />
             </Form.Item>
           )}
-          <div style={pairStyle}>
-            <Form.Item name="date" label="Date" rules={[{ required: true, message: "Choose a date" }]}>
-              <DatePicker format="ddd DD MMM YYYY" inputReadOnly={isMobile} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="time"
-              label="Time"
-              rules={[
-                { required: true, message: "Set the start and end time" },
-                {
-                  validator: (_, value?: [Dayjs, Dayjs] | null) =>
-                    value && !value[1].isAfter(value[0]) ? Promise.reject(new Error("End after it starts")) : Promise.resolve(),
-                },
-              ]}
-            >
-              <TimePicker.RangePicker format="HH:mm" minuteStep={15} inputReadOnly={isMobile} style={{ width: "100%" }} />
-            </Form.Item>
           </div>
+          <Form.Item name="description" label="What it covers" rules={[{ required: true, message: "Describe what the session will cover." }, { validator: validatePlannedCoverage }]} extra="At least 5 words. Explain what participants will learn or do.">
+            <Input.TextArea rows={2} placeholder="Shown to SMEs on their agenda" />
+          </Form.Item>
+          <AppointmentDateTimeFields form={form} />
           <div style={pairStyle}>
             <Form.Item name="deliveryMethod" label="Delivery">
-              <Select options={DELIVERY} />
+              <Select options={DELIVERY} onChange={() => form.setFieldsValue({ location: "At Center", useDifferentLocation: false, meetingLink: "" })} />
             </Form.Item>
             <Form.Item
               name="category"
@@ -296,14 +288,21 @@ export function TrainingPlanAppointmentModal({
             </Form.Item>
           </div>
           {delivery === "virtual" ? (
-            <Form.Item name="meetingLink" label="Meeting link">
+            <Form.Item name="meetingLink" label="Meeting link" rules={[{ required: true, whitespace: true, message: "Please provide the meeting link." }]}>
               <Input placeholder="https://" />
             </Form.Item>
-          ) : (
-            <Form.Item name="location" label="Venue">
-              <Input placeholder="e.g. Polokwane centre, Room 2" />
-            </Form.Item>
-          )}
+          ) : delivery === "in_person" ? (
+            <div style={pairStyle}>
+              <Form.Item name="location" label="Location" rules={[{ required: true, whitespace: true, message: "Please provide the appointment location." }]}>
+                <Input disabled={!useDifferentLocation} placeholder={useDifferentLocation ? "Enter venue or address" : "At Center"} />
+              </Form.Item>
+              <Form.Item name="useDifferentLocation" valuePropName="checked" style={{ marginTop: isMobile ? 0 : 30 }}>
+                <Checkbox onChange={event => form.setFieldValue("location", event.target.checked ? "" : "At Center")}>
+                  Use different location
+                </Checkbox>
+              </Form.Item>
+            </div>
+          ) : null}
           {!inviteCount && (
             <Alert
               type="warning"

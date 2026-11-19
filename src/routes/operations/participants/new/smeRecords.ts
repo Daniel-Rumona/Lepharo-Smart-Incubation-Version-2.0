@@ -68,6 +68,7 @@ export type UploadedDoc = {
 }
 
 export type SmeInput = {
+    sendAcceptanceEmail: boolean
     companyName: string
     registrationNumber: string
     dateOfRegistration?: string | null // YYYY-MM-DD
@@ -99,7 +100,7 @@ export type SmeInput = {
      * importer gave it, and spreadsheet columns that have no field of their own.
      */
     importInfo?: Record<string, any>
-    /** Where the SME is in incubation (Active, Soft incubation, Dormant, Potential exit, Exited). */
+    /** Where the SME is in incubation (Active, Inactive, Dormant, Potential Exit, Exited). */
     incubationStatus?: string | null
 }
 
@@ -237,6 +238,9 @@ const primaryOf = (directors: Director[]) => directors.find(d => d.isPrimary) ||
  * gender / idNumber / email / phone, so the primary director fills those too.
  */
 export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { email: string | null; name: string | null }) => {
+    if (typeof input.sendAcceptanceEmail !== 'boolean') {
+        throw new Error('Choose whether to send an acceptance email before saving the SME.')
+    }
     const primary = primaryOf(input.directors)
     const { uploaded, failed } = await uploadDocuments(input.documents || [])
     const complianceScore = complianceScoreOf(uploaded, ctx.requiredDocKeys)
@@ -304,7 +308,7 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
         complianceSummary,
         setup: true,
         ...(input.importInfo ? { importInfo: input.importInfo, source: 'excel-import' } : {}),
-        incubationStatus: input.incubationStatus || undefined,
+        incubationStatus: input.incubationStatus || 'Active',
         ...created
     }))
 
@@ -316,6 +320,7 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
         branchId: input.branchId || null,
         branchName: input.branchName || null,
         applicationStatus: 'accepted',
+        sendAcceptanceEmail: input.sendAcceptanceEmail,
         submittedAt: now.toISOString(),
         beneficiaryName: input.companyName,
         gender: primary?.gender,
@@ -332,7 +337,7 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
         interventions,
         profile: null,
         gapGroup: input.stage,
-        incubationStatus: input.incubationStatus || undefined,
+        incubationStatus: input.incubationStatus || 'Active',
         groupHistory: [{
             from: null,
             to: input.stage,

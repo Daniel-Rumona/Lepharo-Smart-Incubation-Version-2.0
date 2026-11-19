@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Col, DatePicker, Form, Grid, Input, InputNumber, Row, Segmented, Select, message } from 'antd'
+import { Alert, Button, Checkbox, Col, DatePicker, Form, Grid, Input, InputNumber, Radio, Row, Segmented, Select, message } from 'antd'
 import {
     ArrowLeftOutlined,
     CheckCircleFilled,
@@ -200,6 +200,7 @@ const ParticipantOnboardingForm: React.FC = () => {
 
         const branchId = v.branchId || programBranch?.id || null
         const input: SmeInput = {
+            sendAcceptanceEmail: v.sendAcceptanceEmail,
             companyName: v.companyName,
             registrationNumber: v.registrationNumber,
             dateOfRegistration: v.dateOfRegistration ? (v.dateOfRegistration as Dayjs).format('YYYY-MM-DD') : null,
@@ -282,6 +283,17 @@ const ParticipantOnboardingForm: React.FC = () => {
                     <span className='sf-checklist-count'>{attachedRequired}/{requiredDocs.length}</span>
                 </li>
             </ul>
+            <Form.Item
+                name='sendAcceptanceEmail'
+                label='Send an acceptance email?'
+                rules={[{ required: true, message: 'Choose whether to send an acceptance email.' }]}
+                extra='Sent to the main contact if they have an email address. Platform invites are controlled separately below.'
+            >
+                <Radio.Group disabled={saving}>
+                    <Radio value={true}>Yes, send</Radio>
+                    <Radio value={false}>No, skip</Radio>
+                </Radio.Group>
+            </Form.Item>
             <Checkbox checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} className='sf-invite'>
                 Invite {primary?.name?.trim() ? primary.name.trim().split(/\s+/)[0] : 'the main contact'} to the platform
             </Checkbox>

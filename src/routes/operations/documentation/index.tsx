@@ -28,6 +28,8 @@ import {
 } from 'antd'
 import {
     UploadOutlined,
+    DownloadOutlined,
+    BarChartOutlined,
     FileTextOutlined,
     TeamOutlined,
     WarningOutlined,
@@ -64,6 +66,7 @@ import {
     Timestamp,
     where,
     updateDoc,
+    runTransaction,
     doc,
     getDoc,
     deleteDoc
@@ -81,6 +84,7 @@ import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/
 import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { sendNotification } from '@/utils/sendNotification'
 import ResponsiveSheet from '@/components/common/ResponsiveSheet'
+import PlanProgressReview from '@/components/documents/PlanProgressReview'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
@@ -89,6 +93,7 @@ type ReplacementRequest = {
     status: 'requested' | 'resolved'
     message: string
     requestedById: string
+    requestedByRole?: string
     requestedByName?: string
     requestedAt: Timestamp
     resolvedAt?: Timestamp
@@ -129,11 +134,12 @@ type ImplPlanDoc = {
 
     replacementRequest?: ReplacementRequest
 
+    validation?: { byId: string; byName: string; role: string; at: Timestamp } | null
     overviewSummary?: string | null
 
     status?:
     | 'pending'
-    | 'ratified'
+    | 'valid'
     | 'queried'
 
     createdById: string
@@ -171,7 +177,7 @@ const startsWithAny = (
 const triggerEmail = async (
     kind:
         | 'upload'
-        | 'ratify'
+        | 'validate'
         | 'query',
     meta: Record<string, any>
 ) => {
@@ -326,6 +332,10 @@ const DocumentationHub: React.FC = () => {
         isDirector ||
         isProjectAdmin
 
+    const canReviewDocuments = isProjectAdmin || isME
+    const reviewerRole = isProjectAdmin ? 'Project Admin' : 'M&E'
+    const [progressDocumentId, setProgressDocumentId] = useState<string | null>(null)
+
     const isDepartmentView =
         !isGlobalViewer
 
@@ -340,6 +350,10 @@ const DocumentationHub: React.FC = () => {
     const isInternalOps =
         activeSegment ===
         'internal_operations'
+
+    useEffect(() => {
+        setProgressDocumentId(null)
+    }, [activeSegment, activeProgramId])
 
     const [
         docPlans,
@@ -462,7 +476,7 @@ const DocumentationHub: React.FC = () => {
         useState<
             | 'all'
             | 'pending'
-            | 'ratified'
+            | 'valid'
             | 'queried'
         >('all')
 
@@ -646,6 +660,7 @@ const DocumentationHub: React.FC = () => {
 
                                 return {
                                     ...data,
+                                    status: data.status === 'ratified' ? 'valid' : data.status,
 
                                     id:
                                         documentSnapshot.id,
@@ -1015,7 +1030,7 @@ const DocumentationHub: React.FC = () => {
      */
     const {
         weeklyTotal,
-        weeklyRatified,
+        weeklyValid,
         weeklyPendingOrQueried,
         weeklyDeptSubmitted,
         weeklyDeptMissing
@@ -1034,7 +1049,7 @@ const DocumentationHub: React.FC = () => {
                     weeklyTotal:
                         0,
 
-                    weeklyRatified:
+                    weeklyValid:
                         0,
 
                     weeklyPendingOrQueried:
@@ -1102,18 +1117,18 @@ const DocumentationHub: React.FC = () => {
                 }
             )
 
-            const ratified =
+            const valid =
                 docsThisWeek.filter(
                     document =>
                         document.status ===
-                        'ratified'
+                        'valid'
                 ).length
 
             const pendingOrQueried =
                 docsThisWeek.filter(
                     document =>
                         document.status !==
-                        'ratified'
+                        'valid'
                 ).length
 
             const deptSubmittedCount =
@@ -1141,8 +1156,8 @@ const DocumentationHub: React.FC = () => {
                 weeklyTotal:
                     docsThisWeek.length,
 
-                weeklyRatified:
-                    ratified,
+                weeklyValid:
+                    valid,
 
                 weeklyPendingOrQueried:
                     pendingOrQueried,
@@ -1271,7 +1286,7 @@ const DocumentationHub: React.FC = () => {
                     }
 
                     if (
-                        statusFilter !==
+                        !isInternalOps && statusFilter !==
                         'all'
                     ) {
                         const status =
@@ -1490,8 +1505,7 @@ const DocumentationHub: React.FC = () => {
                         url
                     },
 
-                    status:
-                        'pending',
+                    ...(activeSegment === 'internal_operations' ? {} : { status: 'pending' as const }),
 
                     createdById:
                         user?.uid ||
@@ -1758,7 +1772,7 @@ const DocumentationHub: React.FC = () => {
                     Array.isArray(
                         previous?.previousAttachments
                     )
-                        ? previous.previousAttachments
+                        ? previous?.previousAttachments ?? []
                         : []
 
                 const newPrevious =
@@ -1798,6 +1812,7 @@ const DocumentationHub: React.FC = () => {
                 }
 
                 if (
+                    previous?.docType !== 'internal_operations' &&
                     previous
                         ?.replacementRequest
                         ?.status ===
@@ -1825,12 +1840,9 @@ const DocumentationHub: React.FC = () => {
                     }
                 }
 
-                if (
-                    previous?.status ===
-                    'queried'
-                ) {
-                    update.status =
-                        'pending'
+                if (previous?.docType !== 'internal_operations') {
+                    update.status = 'pending'
+                    update.validation = null
                 }
 
                 await updateDoc(
@@ -1895,6 +1907,7 @@ const DocumentationHub: React.FC = () => {
 
     const saveRequest =
         async () => {
+            if (!canReviewDocuments || isInternalOps) return
             if (
                 !requestingId ||
                 isRequesting
@@ -1925,6 +1938,7 @@ const DocumentationHub: React.FC = () => {
                 {
                     status:
                         'queried',
+                    validation: null,
 
                     replacementRequest:
                     {
@@ -1939,6 +1953,7 @@ const DocumentationHub: React.FC = () => {
                             (user as any)?.id ||
                             '',
 
+                        requestedByRole: reviewerRole,
                         requestedByName:
                             user?.name ||
                             user?.email ||
@@ -2027,11 +2042,12 @@ const DocumentationHub: React.FC = () => {
      * RATIFY
      * ---------------------------------------------------------
      */
-    const ratifyDoc =
+    const validateDoc =
         async (
             record:
                 ImplPlanDoc
         ) => {
+            if (!canReviewDocuments || record.docType === 'internal_operations') return
             if (
                 statusUpdatingId
             ) {
@@ -2050,19 +2066,28 @@ const DocumentationHub: React.FC = () => {
                         record.id
                     )
 
-                await updateDoc(
-                    recordRef,
-                    {
-                        status:
-                            'ratified',
-
-                        updatedAt:
-                            Timestamp.now()
+                await runTransaction(db, async transaction => {
+                    const snapshot = await transaction.get(recordRef)
+                    const current = snapshot.data()
+                    if (!current || current.docType === 'internal_operations') throw new Error('Document unavailable for review.')
+                    if (current.status === 'valid' || current.status === 'ratified') throw new Error('This document has already been validated. Refresh to see the reviewer.')
+                    if (current.attachment?.url !== record.attachment?.url || current.replacementRequest?.status === 'requested') {
+                        throw new Error('The document changed or has an outstanding replacement request. Review the latest file first.')
                     }
-                )
+                    transaction.update(recordRef, {
+                        status: 'valid',
+                        validation: {
+                            byId: user?.uid || (user as any)?.id || '',
+                            byName: user?.name || user?.email || 'Unknown user',
+                            role: reviewerRole,
+                            at: Timestamp.now()
+                        },
+                        updatedAt: Timestamp.now()
+                    })
+                })
 
                 await triggerEmail(
-                    'ratify',
+                    'validate',
                     {
                         docId:
                             record.id,
@@ -2079,17 +2104,17 @@ const DocumentationHub: React.FC = () => {
                         programId:
                             record.programId,
 
-                        ratifiedBy:
+                        validBy:
                             user?.name ||
                             user?.email,
 
-                        ratifiedByEmail:
+                        validByEmail:
                             user?.email
                     }
                 )
 
                 message.success(
-                    'Report ratified.'
+                    'Document validated.'
                 )
             } catch (
             error
@@ -2099,7 +2124,7 @@ const DocumentationHub: React.FC = () => {
                 )
 
                 message.error(
-                    'Failed to ratify report.'
+                    error instanceof Error ? error.message : 'Failed to validate document.'
                 )
             } finally {
                 setStatusUpdatingId(
@@ -2136,75 +2161,49 @@ const DocumentationHub: React.FC = () => {
      * TABLE
      * ---------------------------------------------------------
      */
+    const documentStatus = (record: ImplPlanDoc) => (
+        <Space direction='vertical' size={4}>
+            <Tag color={record.status === 'valid' ? 'green' : record.status === 'queried' ? 'red' : 'blue'}>
+                {record.status === 'valid' ? 'Valid' : record.status === 'queried' ? 'Queried' : 'Pending'}
+            </Tag>
+            {record.status === 'valid' && (
+                <Text type='secondary' style={{ fontSize: 12 }}>
+                    {record.validation
+                        ? `Validated by ${record.validation.byName} (${record.validation.role}) · ${dayjs(record.validation.at.toDate()).format('DD MMM YYYY HH:mm')}`
+                        : 'Validator not recorded'}
+                </Text>
+            )}
+            {record.replacementRequest?.status === 'requested' && (
+                <Tooltip title={record.replacementRequest.message}>
+                    <Tag color='orange' icon={<ExclamationCircleOutlined />} tabIndex={0}>Replacement requested</Tag>
+                </Tooltip>
+            )}
+            {record.status === 'queried' && record.replacementRequest?.requestedByName && (
+                <Text type='secondary' style={{ fontSize: 12 }}>
+                    Queried by {record.replacementRequest.requestedByName}
+                    {record.replacementRequest.requestedByRole ? ` (${record.replacementRequest.requestedByRole})` : ''}
+                </Text>
+            )}
+        </Space>
+    )
+
     const docCols =
         [
-            ...(
-                isInternalOps
-                    ? [
-                        {
-                            title:
-                                'Uploaded By',
-
-                            dataIndex:
-                                'createdByName',
-
-                            render:
-                                (
-                                    value:
-                                        string
-                                ) =>
-                                    value ||
-                                    '—',
-
-                            responsive:
-                                [
-                                    'md'
-                                ]
-                        } as any
-                    ]
-                    : [
-                        {
-                            title:
-                                'Department',
-
-                            dataIndex:
-                                'departmentName',
-
-                            render:
-                                (
-                                    value:
-                                        string
-                                ) =>
-                                    value ||
-                                    '—',
-
-                            responsive:
-                                [
-                                    'md'
-                                ]
-                        } as any
-                    ]
-            ),
-
             {
-                title:
-                    'Uploaded',
-
-                dataIndex:
-                    'createdAt',
-
-                render:
-                    (
-                        timestamp:
-                            Timestamp
-                    ) =>
-                        timestamp
-                            ? dayjs(
-                                timestamp.toDate()
-                            ).format(
-                                'YYYY-MM-DD HH:mm'
-                            )
-                            : '—'
+                title: 'Document',
+                dataIndex: 'title',
+                render: (title: string, record: ImplPlanDoc) => title || record.attachment?.name || '—'
+            },
+            ...(!isInternalOps ? [{ title: 'Department', dataIndex: 'departmentName', render: (value: string) => value || '—', responsive: ['md'] }] : []),
+            {
+                title: 'Uploaded',
+                dataIndex: 'createdAt',
+                render: (timestamp: Timestamp, record: ImplPlanDoc) => (
+                    <Space direction='vertical' size={2}>
+                        {isInternalOps && <Text>{record.createdByName || '—'}</Text>}
+                        <Text type='secondary'>{timestamp ? dayjs(timestamp.toDate()).format('DD MMM YYYY HH:mm') : '—'}</Text>
+                    </Space>
+                )
             },
 
             ...(
@@ -2263,155 +2262,7 @@ const DocumentationHub: React.FC = () => {
                     : []
             ),
 
-            {
-                title:
-                    'Status',
-
-                dataIndex:
-                    'status',
-
-                render:
-                    (
-                        status:
-                            ImplPlanDoc['status']
-                    ) => {
-                        if (
-                            status ===
-                            'ratified'
-                        ) {
-                            return (
-                                <Tag color='green'>
-                                    Ratified
-                                </Tag>
-                            )
-                        }
-
-                        if (
-                            status ===
-                            'queried'
-                        ) {
-                            return (
-                                <Tag color='red'>
-                                    Queried
-                                </Tag>
-                            )
-                        }
-
-                        return (
-                            <Tag color='blue'>
-                                Pending
-                            </Tag>
-                        )
-                    },
-
-                responsive:
-                    [
-                        'md'
-                    ]
-            },
-
-            {
-                title:
-                    'Download',
-
-                dataIndex:
-                    'attachment',
-
-                render:
-                    (
-                        attachment:
-                            ImplPlanDoc['attachment']
-                    ) =>
-                        attachment?.url ? (
-                            <a
-                                href={
-                                    attachment.url
-                                }
-                                target='_blank'
-                                rel='noopener noreferrer'
-                            >
-                                <FileTextOutlined />{' '}
-                                {
-                                    attachment.name
-                                }
-                            </a>
-                        ) : (
-                            <Text type='secondary'>
-                                —
-                            </Text>
-                        )
-            },
-
-            {
-                title:
-                    'Replacement',
-
-                key:
-                    'replacement',
-
-                render:
-                    (
-                        _:
-                            any,
-                        record:
-                            ImplPlanDoc
-                    ) => {
-                        const request =
-                            record.replacementRequest
-
-                        if (
-                            !request
-                        ) {
-                            return (
-                                <Tag color='default'>
-                                    No request
-                                </Tag>
-                            )
-                        }
-
-                        if (
-                            request.status ===
-                            'requested'
-                        ) {
-                            return (
-                                <Space
-                                    size='small'
-                                    direction='vertical'
-                                >
-                                    <Tag
-                                        color='orange'
-                                        icon={
-                                            <ExclamationCircleOutlined />
-                                        }
-                                    >
-                                        Requested
-                                    </Tag>
-
-                                    <Text
-                                        type='secondary'
-                                        style={{
-                                            maxWidth:
-                                                280,
-
-                                            display:
-                                                'inline-block'
-                                        }}
-                                    >
-                                        {
-                                            request.message
-                                        }
-                                    </Text>
-                                </Space>
-                            )
-                        }
-
-                        return (
-                            <Tag color='green'>
-                                Resolved
-                            </Tag>
-                        )
-                    }
-            },
+            ...(!isInternalOps ? [{ title: 'Status', key: 'status', render: (_: unknown, record: ImplPlanDoc) => documentStatus(record) }] : []),
 
             {
                 title:
@@ -2430,6 +2281,30 @@ const DocumentationHub: React.FC = () => {
                         const actions:
                             React.ReactNode[] =
                             []
+
+                        if (record.docType === 'implementation_plan' && (isGlobalViewer || ['operations', 'system_admin', 'superadmin'].includes(roleStr))) {
+                            actions.push(
+                                <Button key='progress' size='small' icon={<BarChartOutlined />}
+                                    disabled={!record.attachment?.url || !record.programId || !record.departmentId}
+                                    onClick={() => setProgressDocumentId(record.id)}>
+                                    Check Progress
+                                </Button>
+                            )
+                        }
+                        if (record.attachment?.url) {
+                            actions.push(
+                                <Button
+                                    key='download'
+                                    size='small'
+                                    icon={<DownloadOutlined />}
+                                    href={record.attachment.url}
+                                    target='_blank'
+                                    rel='noopener noreferrer'
+                                >
+                                    Download
+                                </Button>
+                            )
+                        }
 
                         if (
                             isInternalOps
@@ -2472,37 +2347,11 @@ const DocumentationHub: React.FC = () => {
                                             )
                                         }
                                     >
-                                        {record
-                                            .replacementRequest
-                                            ?.status ===
-                                            'requested'
-                                            ? 'Respond (Replace)'
-                                            : 'Replace'}
+                                        Replace
                                     </Button>
                                 )
                             }
 
-                            if (
-                                canSeeAllInternalOps
-                            ) {
-                                actions.push(
-                                    <Button
-                                        key='req'
-                                        size='small'
-                                        icon={
-                                            <MessageOutlined />
-                                        }
-                                        onClick={() =>
-                                            openRequest(
-                                                record
-                                            )
-                                        }
-                                    >
-                                        Request
-                                        Replacement
-                                    </Button>
-                                )
-                            }
                         } else {
                             if (
                                 isDepartmentView
@@ -2548,72 +2397,16 @@ const DocumentationHub: React.FC = () => {
                                             : 'Replace'}
                                     </Button>
                                 )
-                            } else if (
-                                isGlobalViewer
-                            ) {
-                                if (
-                                    activeSegment ===
-                                    'weekly_report' &&
-                                    isDirector
-                                ) {
-                                    actions.push(
-                                        <Button
-                                            key='ratify'
-                                            size='small'
-                                            type='primary'
-                                            onClick={() =>
-                                                ratifyDoc(
-                                                    record
-                                                )
-                                            }
-                                            loading={
-                                                statusUpdatingId ===
-                                                record.id
-                                            }
-                                            disabled={
-                                                statusUpdatingId ===
-                                                record.id
-                                            }
-                                        >
-                                            Ratify
-                                        </Button>
-                                    )
-
-                                    actions.push(
-                                        <Button
-                                            key='query'
-                                            size='small'
-                                            icon={
-                                                <MessageOutlined />
-                                            }
-                                            onClick={() =>
-                                                openRequest(
-                                                    record
-                                                )
-                                            }
-                                        >
-                                            Query
-                                        </Button>
-                                    )
-                                } else {
-                                    actions.push(
-                                        <Button
-                                            key='req'
-                                            size='small'
-                                            icon={
-                                                <MessageOutlined />
-                                            }
-                                            onClick={() =>
-                                                openRequest(
-                                                    record
-                                                )
-                                            }
-                                        >
-                                            Request
-                                            Replacement
-                                        </Button>
-                                    )
-                                }
+                            } else if (canReviewDocuments) {
+                                actions.push(
+                                    <Button key='validate' size='small' type='primary'
+                                        onClick={() => validateDoc(record)}
+                                        loading={statusUpdatingId === record.id}
+                                        disabled={statusUpdatingId === record.id || record.status === 'valid' || record.replacementRequest?.status === 'requested'}>
+                                        Validate
+                                    </Button>,
+                                    <Button key='query' size='small' icon={<MessageOutlined />} onClick={() => openRequest(record)}>Query</Button>
+                                )
                             }
                         }
 
@@ -2865,18 +2658,12 @@ const DocumentationHub: React.FC = () => {
             if (card.weeks.some(week => !week.doc)) return AMBER
             const docs = card.weeks.map(week => week.doc!)
             if (docs.some(item => item.status === 'queried')) return ORANGE
-            return docs.every(item => item.status === 'ratified') ? GREEN : BLUE
+            return docs.every(item => item.status === 'valid') ? GREEN : BLUE
         }
 
         if (!card.latest) return RED
         const status = card.latest.status ?? 'pending'
-        return status === 'ratified' ? GREEN : status === 'queried' ? ORANGE : BLUE
-    }
-
-    const planStatusColor: Record<string, string> = {
-        ratified: 'green',
-        queried: 'orange',
-        pending: 'blue'
+        return status === 'valid' ? GREEN : status === 'queried' ? ORANGE : BLUE
     }
 
     const planCardActions = (record: ImplPlanDoc) => {
@@ -2893,24 +2680,22 @@ const DocumentationHub: React.FC = () => {
         const monthStart = dayjs().startOf('month')
         const departments = new Set<string>()
         let thisMonth = 0
-        let awaitingReview = 0
 
         docPlans.forEach(document => {
             if (document.departmentId) departments.add(String(document.departmentId))
             if (document.createdAt?.toDate && !dayjs(document.createdAt.toDate()).isBefore(monthStart)) {
                 thisMonth += 1
             }
-            if (document.status === 'pending' || document.status === 'queried') awaitingReview += 1
         })
 
-        return { total: docPlans.length, departments: departments.size, thisMonth, awaitingReview }
+        return { total: docPlans.length, departments: departments.size, thisMonth }
     }, [docPlans])
 
     const [filtersOpen, setFiltersOpen] = useState(false)
 
     const activeFilterCount =
         (searchText.trim() ? 1 : 0) +
-        (statusFilter !== 'all' ? 1 : 0) +
+        (!isInternalOps && statusFilter !== 'all' ? 1 : 0) +
         (isGlobalViewer && !isInternalOps && deptFilter !== 'all' ? 1 : 0) +
         (dateRange ? 1 : 0)
 
@@ -2962,14 +2747,14 @@ const DocumentationHub: React.FC = () => {
                 />,
                 'Search', 'search'
             ),
-            cell(
+            ...(!isInternalOps ? [cell(
                 { flex: '0 1 140px', minWidth: 120 },
                 stacked ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         {[
                             { value: 'all', label: 'All', color: '#8c8c8c' },
                             { value: 'pending', label: 'Pending', color: '#1677ff' },
-                            { value: 'ratified', label: 'Ratified', color: '#52c41a' },
+                            { value: 'valid', label: 'Valid', color: '#52c41a' },
                             { value: 'queried', label: 'Queried', color: '#fa8c16' }
                         ].map(option => {
                             const selected = statusFilter === option.value
@@ -3017,13 +2802,13 @@ const DocumentationHub: React.FC = () => {
                         options={[
                             { label: 'All statuses', value: 'all' },
                             { label: 'Pending', value: 'pending' },
-                            { label: 'Ratified', value: 'ratified' },
+                            { label: 'Valid', value: 'valid' },
                             { label: 'Queried', value: 'queried' }
                         ]}
                     />
                 ),
                 'Status', 'status'
-            ),
+            )] : []),
             ...(isGlobalViewer && !isInternalOps
                 ? [cell(
                     { flex: '0 1 170px', minWidth: 130 },
@@ -3113,10 +2898,7 @@ const DocumentationHub: React.FC = () => {
         <div
             style={{
                 padding:
-                    24,
-
-                minHeight:
-                    '100vh'
+                    '0px 24px',
             }}
         >
             <Helmet>
@@ -3124,6 +2906,10 @@ const DocumentationHub: React.FC = () => {
                     Documentation Hub | Smart Incubation
                 </title>
             </Helmet>
+            <PlanProgressReview
+                document={docPlans.find(document => document.id === progressDocumentId) ?? null}
+                onClose={() => setProgressDocumentId(null)}
+            />
 
             {isPageLoading ? (
                 <DocumentationSkeleton
@@ -3200,7 +2986,7 @@ const DocumentationHub: React.FC = () => {
                         </Row>
                     )}
 
-                    {activeSegment === 'weekly_report' && (isDirector || isProjectAdmin) && (
+                    {activeSegment === 'weekly_report' && (isDirector || canReviewDocuments) && (
                         <Row gutter={[16, 16]}>
                             <Col xs={12} md={12} xl={6}>
                                 <MetricTile
@@ -3226,8 +3012,8 @@ const DocumentationHub: React.FC = () => {
                             <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
                                 <MetricTile
                                     icon={<FileTextOutlined />}
-                                    title='Ratified / Pending+Queried (This Week)'
-                                    value={`${weeklyRatified} / ${weeklyPendingOrQueried}`}
+                                    title='Valid / Pending+Queried (This Week)'
+                                    value={`${weeklyValid} / ${weeklyPendingOrQueried}`}
                                 />
                             </Col>
                         </Row>
@@ -3235,34 +3021,28 @@ const DocumentationHub: React.FC = () => {
 
                     {isInternalOps && (
                         <Row gutter={[16, 16]}>
-                            <Col xs={12} md={12} xl={6}>
+                            <Col xs={12} md={12} xl={8}>
                                 <MetricTile
                                     icon={<SettingOutlined />}
                                     title={isMobile ? 'Documents' : 'Total Documents'}
                                     value={internalMetrics.total}
                                 />
                             </Col>
-                            <Col xs={12} md={12} xl={6}>
+                            <Col xs={12} md={12} xl={8}>
                                 <MetricTile
                                     icon={<TeamOutlined />}
                                     title={isMobile ? 'Departments' : 'Departments Contributing'}
                                     value={internalMetrics.departments}
                                 />
                             </Col>
-                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
+                            <Col xs={12} md={12} xl={8} style={{ display: isMobile ? 'none' : undefined }}>
                                 <MetricTile
                                     icon={<CalendarOutlined />}
                                     title='Added This Month'
                                     value={internalMetrics.thisMonth}
                                 />
                             </Col>
-                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
-                                <MetricTile
-                                    icon={<ExclamationCircleOutlined />}
-                                    title='Pending / Queried'
-                                    value={internalMetrics.awaitingReview}
-                                />
-                            </Col>
+
                         </Row>
                     )}
 
@@ -3422,7 +3202,6 @@ const DocumentationHub: React.FC = () => {
                                                                 }
 
                                                                 const weekDoc = week.doc
-                                                                const weekStatus = weekDoc.status ?? 'pending'
 
                                                                 return (
                                                                     <Popover
@@ -3434,9 +3213,7 @@ const DocumentationHub: React.FC = () => {
                                                                                     <FileTextOutlined /> {weekDoc.title || weekDoc.attachment?.name}
                                                                                 </a>
                                                                                 <Space size={8} wrap>
-                                                                                    <Tag color={planStatusColor[weekStatus] ?? 'default'}>
-                                                                                        {weekStatus.charAt(0).toUpperCase() + weekStatus.slice(1)}
-                                                                                    </Tag>
+                                                                                    {documentStatus(weekDoc)}
                                                                                     <Text type='secondary' style={{ fontSize: 12 }}>
                                                                                         {weekDoc.createdAt?.toDate
                                                                                             ? dayjs(weekDoc.createdAt.toDate()).format('DD MMM YYYY')
@@ -3463,7 +3240,6 @@ const DocumentationHub: React.FC = () => {
                                         }
 
                                         const uploaded = Boolean(card.latest)
-                                        const latestStatus = card.latest?.status ?? 'pending'
 
                                         return (
                                             <MotionCard key={card.id} style={cardStyle}>
@@ -3487,9 +3263,7 @@ const DocumentationHub: React.FC = () => {
                                                                     <FileTextOutlined /> {card.latest.title || card.latest.attachment?.name}
                                                                 </a>
                                                                 <Space size={8} wrap>
-                                                                    <Tag color={planStatusColor[latestStatus] ?? 'default'} style={{ marginInlineEnd: 0 }}>
-                                                                        {latestStatus.charAt(0).toUpperCase() + latestStatus.slice(1)}
-                                                                    </Tag>
+                                                                    {documentStatus(card.latest)}
                                                                     <Text type='secondary' style={{ fontSize: 12 }}>
                                                                         {card.latest.createdAt?.toDate
                                                                             ? dayjs(card.latest.createdAt.toDate()).format('DD MMM YYYY')
@@ -3540,22 +3314,13 @@ const DocumentationHub: React.FC = () => {
                             <>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                     {pagedInternal.map(record => {
-                                        const status = record.status ?? 'pending'
-                                        const tone = status === 'ratified' ? '#52c41a' : status === 'queried' ? '#fa8c16' : '#1677ff'
-
                                         return (
-                                            <MotionCard key={record.id} style={{ border: `1px solid ${tone}` }}>
+                                            <MotionCard key={record.id}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                                     <a href={record.attachment?.url} target='_blank' rel='noreferrer'>
                                                         <FileTextOutlined /> {record.title || record.attachment?.name}
                                                     </a>
                                                     <Space size={8} wrap>
-                                                        <Tag color={planStatusColor[status] ?? 'default'} style={{ marginInlineEnd: 0 }}>
-                                                            {status.charAt(0).toUpperCase() + status.slice(1)}
-                                                        </Tag>
-                                                        {record.replacementRequest?.status === 'requested' && (
-                                                            <Tag color='gold' style={{ marginInlineEnd: 0 }}>Replacement requested</Tag>
-                                                        )}
                                                         <Text type='secondary' style={{ fontSize: 12 }}>
                                                             {record.createdAt?.toDate
                                                                 ? dayjs(record.createdAt.toDate()).format('DD MMM YYYY')
@@ -3801,11 +3566,7 @@ const DocumentationHub: React.FC = () => {
                             reqOpen
                         }
                         title={
-                            activeSegment ===
-                                'weekly_report' &&
-                                isDirector
-                                ? 'Query Weekly Report'
-                                : 'Request Replacement'
+                            'Query Document'
                         }
                         onCancel={() => {
                             setReqOpen(
@@ -3820,11 +3581,7 @@ const DocumentationHub: React.FC = () => {
                             saveRequest
                         }
                         okText={
-                            activeSegment ===
-                                'weekly_report' &&
-                                isDirector
-                                ? 'Send Query'
-                                : 'Send Request'
+                            'Send Query'
                         }
                         okButtonProps={{
                             loading:
@@ -3844,11 +3601,7 @@ const DocumentationHub: React.FC = () => {
                             <Form.Item
                                 name='message'
                                 label={
-                                    activeSegment ===
-                                        'weekly_report' &&
-                                        isDirector
-                                        ? 'Query message to department'
-                                        : 'Message'
+                                    'Query message to department'
                                 }
                                 rules={[
                                     {
