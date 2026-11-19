@@ -30,6 +30,7 @@ export * from "./syncCoordinatorPrograms";
 export * from "./departmentNameCascade";
 export * from "./lineManagers";
 export { linkMySmeAccount } from "./smeIdentity";
+export { checkLoginAccess } from "./loginAccess";
 export {
   requestSmeLoginCode,
   verifySmeLoginCode,
@@ -82,3 +83,5 @@ export { academyAction, academyCoach } from './academy';
 export { manageTrainingAttendee, deleteTrainingSme } from './trainingAttendees';
 export * from './trainingProgress';
 export * from './trainingCertificates';
+
+export { setSmeIncubationStatus, onSmeAssignmentActivity, onSmeAppointmentActivity, smeIncubationStatusCron } from './smeIncubationStatus';

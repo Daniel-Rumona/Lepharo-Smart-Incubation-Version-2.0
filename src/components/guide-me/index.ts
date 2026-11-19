@@ -6,6 +6,7 @@ export { guideTarget } from './guideTargets'
 export { runGuide } from './driverRunner'
 export { ASSISTANT_GUIDE_CATALOG } from './guideCatalog'
 export { WelcomeTourOffer } from './WelcomeTourOffer'
+export { WhatsNewTour } from './WhatsNewTour'
 export {
   APPLICANT_WELCOME_TOUR,
   SME_WELCOME_TOUR,

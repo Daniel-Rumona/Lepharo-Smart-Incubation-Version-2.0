@@ -7,6 +7,7 @@ import {
 import { auth } from "@/firebase"; // ensure this file doesn't break SSR
 // Sign-out is centralised so all three exits behave the same; see the module.
 import { signOutApp } from "@/lib/firestoreCache";
+import { checkLoginAccess } from "@/lib/loginAccess";
 
 export const authProvider: AuthProvider = {
   login: async ({ email, password }) => {
@@ -67,9 +68,16 @@ export const authProvider: AuthProvider = {
     // every check and never torn down.
     await auth.authStateReady();
 
-    return auth.currentUser
-      ? { authenticated: true }
-      : { authenticated: false, redirectTo: "/login" };
+    const user = auth.currentUser;
+    if (!user) return { authenticated: false, redirectTo: "/login" };
+
+    // A session that is not on the access list (one restored from before it, say)
+    // is signed out. An unanswered check lets it through; the next check asks again.
+    if ((await checkLoginAccess(user)) === "denied") {
+      await signOutApp("/login?reason=access");
+      return { authenticated: false, redirectTo: "/login?reason=access" };
+    }
+    return { authenticated: true };
   },
 
   getIdentity: async () => {

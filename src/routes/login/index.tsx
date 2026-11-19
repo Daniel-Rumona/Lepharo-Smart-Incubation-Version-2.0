@@ -6,7 +6,8 @@ import {
     signInWithEmailAndPassword,
     GoogleAuthProvider,
     signInWithPopup,
-    fetchSignInMethodsForEmail
+    fetchSignInMethodsForEmail,
+    signOut
 } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { motion } from 'framer-motion'
@@ -18,6 +19,7 @@ import {
 import { auth, db, functions } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import { signOutApp } from '@/lib/firestoreCache'
+import { checkLoginAccess, LOGIN_CHECK_FAILED_MESSAGE, LOGIN_DENIED_MESSAGE } from '@/lib/loginAccess'
 import SignInHelpSheet, { type SignInHelp } from './SignInHelpSheet'
 import PickupSheet from './PickupSheet'
 import ResetPasswordSheet from './ResetPasswordSheet'
@@ -228,6 +230,12 @@ const LoginPageContent: React.FC = () => {
             content: 'You were signed out after a long period of inactivity.',
             duration: 6
         })
+    }, [searchParams])
+
+    // The route guard signs out a restored session that is not on the access list.
+    useEffect(() => {
+        if (searchParams.get('reason') !== 'access') return
+        message.error({ content: LOGIN_DENIED_MESSAGE, duration: 10 })
     }, [searchParams])
 
     // Someone can reach this screen already signed in, now that sessions survive
@@ -468,6 +476,23 @@ const LoginPageContent: React.FC = () => {
     }
 
     async function checkUser(user: any) {
+        // Only staff and the training list may sign in for now; anyone else is signed
+        // straight back out (src/lib/loginAccess.ts).
+        const access = await checkLoginAccess(user)
+        if (access !== 'allowed') {
+            await signOut(auth).catch(() => undefined)
+            return {
+                error: true,
+                message: access === 'denied' ? LOGIN_DENIED_MESSAGE : LOGIN_CHECK_FAILED_MESSAGE,
+                role: null,
+                firstLoginDone: false,
+                setupNeeded: false,
+                mustChangePassword: false,
+                whatsappPromptNeeded: false,
+                participantId: null
+            }
+        }
+
         const userRef = doc(db, 'users', user.uid)
         const userSnap = await getDoc(userRef)
 
@@ -614,8 +639,8 @@ const LoginPageContent: React.FC = () => {
             const user = result.user
 
             const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword, participantId } = await checkUser(user as any)
-        // The SME is found by its linked participant; email only until it is linked.
-        const sme = { uid: user.uid, email: user.email, participantId }
+            // The SME is found by its linked participant; email only until it is linked.
+            const sme = { uid: user.uid, email: user.email, participantId }
 
             const actor = {
                 uid: user.uid,
@@ -829,89 +854,115 @@ const LoginPageContent: React.FC = () => {
                                 onCancel={() => setPhoneMode(false)}
                             />
                         ) : (
-                        <Form
-                            layout='vertical'
-                            form={form}
-                            onFinish={handleLogin}
-                            requiredMark={false}
-                        >
-                            <Form.Item
-                                name='email'
-                                label='Email'
-                                rules={[
-                                    { required: true, message: 'Please enter your email' },
-                                    { type: 'email', message: 'Enter a valid email' }
-                                ]}
+                            <Form
+                                layout='vertical'
+                                form={form}
+                                onFinish={handleLogin}
+                                requiredMark={false}
                             >
-                                <Input
-                                    size='large'
-                                    placeholder='you@example.com'
-                                    autoComplete='username'
-                                    inputMode='email'
-                                    autoFocus
-                                />
-                            </Form.Item>
-
-                            {/* The reset link sits beside the label but outside it, so
-                                it is not read out as part of the field's name. */}
-                            <div className='as-field-with-link'>
                                 <Form.Item
-                                    name='password'
-                                    label='Password'
-                                    rules={[{ required: true, message: 'Please enter your password' }]}
-                                    extra={
-                                        capsLockOn ? (
-                                            <span className='as-caps' role='status'>
-                                                <WarningOutlined /> Caps Lock is on
-                                            </span>
-                                        ) : undefined
-                                    }
+                                    name='email'
+                                    label='Email'
+                                    rules={[
+                                        { required: true, message: 'Please enter your email' },
+                                        { type: 'email', message: 'Enter a valid email' }
+                                    ]}
                                 >
-                                    <Input.Password
+                                    <Input
                                         size='large'
-                                        placeholder='Enter your password'
-                                        autoComplete='current-password'
-                                        onKeyDown={syncCapsLock}
-                                        onKeyUp={syncCapsLock}
-                                        onBlur={() => setCapsLockOn(false)}
+                                        placeholder='you@example.com'
+                                        autoComplete='username'
+                                        inputMode='email'
+                                        autoFocus
                                     />
                                 </Form.Item>
-                                <button
-                                    type='button'
-                                    className='as-link as-field-link'
-                                    onClick={openForgotPassword}
-                                >
-                                    Forgot password?
-                                </button>
-                            </div>
 
-                            <Form.Item style={{ marginTop: 4, marginBottom: 18 }}>
-                                <Button type='primary' htmlType='submit' size='large' block>
-                                    Sign in
-                                </Button>
-                            </Form.Item>
+                                {/* The reset link sits beside the label but outside it, so
+                                it is not read out as part of the field's name. */}
+                                <div className='as-field-with-link'>
+                                    <Form.Item
+                                        name='password'
+                                        label='Password'
+                                        rules={[{ required: true, message: 'Please enter your password' }]}
+                                        extra={
+                                            capsLockOn ? (
+                                                <span className='as-caps' role='status'>
+                                                    <WarningOutlined /> Caps Lock is on
+                                                </span>
+                                            ) : undefined
+                                        }
+                                    >
+                                        <Input.Password
+                                            size='large'
+                                            placeholder='Enter your password'
+                                            autoComplete='current-password'
+                                            onKeyDown={syncCapsLock}
+                                            onKeyUp={syncCapsLock}
+                                            onBlur={() => setCapsLockOn(false)}
+                                        />
+                                    </Form.Item>
+                                    <button
+                                        type='button'
+                                        className='as-link as-field-link'
+                                        onClick={openForgotPassword}
+                                    >
+                                        Forgot password?
+                                    </button>
+                                </div>
 
-                            <div className='as-divider'>or</div>
+                                <Form.Item style={{ marginTop: 4, marginBottom: 18 }}>
+                                    <Button
+                                        type='primary'
+                                        htmlType='submit'
+                                        size='large'
+                                        block
+                                        style={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            borderRadius: 12,
+                                        }}>
+                                        Sign in
+                                    </Button>
+                                </Form.Item>
 
-                            <Button
-                                icon={<GoogleOutlined />}
-                                size='large'
-                                block
-                                onClick={handleGoogleLogin}
-                            >
-                                Continue with Google
-                            </Button>
+                                <div className='as-divider'>or</div>
 
-                            <Button
-                                icon={<WhatsAppOutlined />}
-                                size='large'
-                                block
-                                style={{ marginTop: 10 }}
-                                onClick={() => setPhoneMode(true)}
-                            >
-                                Sign in with phone (WhatsApp)
-                            </Button>
-                        </Form>
+
+                                <div style={{
+                                    display: 'flex',
+                                    gap: 14,
+                                    width: '100%',
+                                    marginBottom: 20,
+                                }}>
+                                    <Button
+                                        icon={<GoogleOutlined />}
+                                        size="large"
+                                        style={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            borderRadius: 12,
+                                        }}
+                                        loading={googleLoading}
+                                        onClick={handleGoogleLogin}
+                                    >
+                                        Google
+                                    </Button>
+
+                                    <Button
+                                        icon={<WhatsAppOutlined />}
+                                        size="large"
+                                        style={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            borderRadius: 12,
+                                        }}
+                                        onClick={() => setPhoneMode(true)}
+                                    >
+                                        Phone
+                                    </Button>
+                                </div>
+
+                            </Form>
                         )}
 
                         <p className='as-alt'>

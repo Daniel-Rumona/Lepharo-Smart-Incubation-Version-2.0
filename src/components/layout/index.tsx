@@ -30,6 +30,7 @@ import { CurrentUser } from "@/components/layout/current-user";
 import { NotificationBell } from "@/components/layout/notifications/NotificationBell";
 import { DashboardFilterControl } from "@/components/layout/dashboard-filter";
 import { useColorMode } from "@/contexts/ThemeContext";
+import { WhatsNewTour } from "@/components/guide-me/WhatsNewTour";
 import { useWindowSize } from "react-use";
 import {
     FundOutlined,
@@ -3086,7 +3087,7 @@ export const CustomLayout: React.FC = () => {
       Routes that read the reporting period directly rather than through a
       department dashboard.
     */
-    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports", "/system_admin", "/system_admin/usage", "/system_admin/email", "/finance"];
+    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports", "/system_admin", "/system_admin/usage", "/system_admin/email", "/finance", "/participants"];
 
     /*
       Extend one of these lists as each page is migrated. A page that consumes
@@ -3103,7 +3104,7 @@ export const CustomLayout: React.FC = () => {
         location.pathname.replace(/\/+$/, "") === "/operations/reports";
 
     const showDashboardFilter =
-        ROUTES_WITH_PERIOD_FILTER.includes(location.pathname) ||
+        ROUTES_WITH_PERIOD_FILTER.includes(location.pathname.replace(/\/+$/, "")) ||
         isMonitoringReports ||
         (role === "operations" &&
             location.pathname === "/operations" &&
@@ -3616,6 +3617,7 @@ export const CustomLayout: React.FC = () => {
         // What's waiting on an incubatee: one source for the dashboard and the prompt.
         <SmeWaitingProvider enabled={role === "incubatee"}>
             <Layout className="workspace-shell" style={{ minHeight: "100vh", background: pageBg }}>
+                <WhatsNewTour />
                 {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && !isImmersiveChatMobile && (
                     <div className="workspace-header-wrap">
                         <header
