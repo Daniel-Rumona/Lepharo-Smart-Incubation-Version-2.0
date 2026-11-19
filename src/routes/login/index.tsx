@@ -476,7 +476,7 @@ const LoginPageContent: React.FC = () => {
     }
 
     async function checkUser(user: any) {
-        // Only staff and the training list may sign in for now; anyone else is signed
+        // Only staff and listed testers may sign in for now; anyone else is signed
         // straight back out (src/lib/loginAccess.ts).
         const access = await checkLoginAccess(user)
         if (access !== 'allowed') {

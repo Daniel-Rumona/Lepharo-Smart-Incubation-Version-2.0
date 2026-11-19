@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth'
 import { functions } from '@/firebase'
 
 /**
- * Sign-in is limited to @quantilytix.co.za staff and the training list
+ * Sign-in is limited to @quantilytix.co.za staff and the testers list
  * (pilotSettings/recipients) while the pilot guard is on. The server decides
  * (functions/src/loginAccess.ts); staff emails are let through here too, so the
  * team is never locked out by a failed call.
@@ -11,7 +11,7 @@ import { functions } from '@/firebase'
 export const STAFF_EMAIL_DOMAIN = '@quantilytix.co.za'
 
 export const LOGIN_DENIED_MESSAGE =
-    'This platform is open to training participants only for now. If you were on the training, sign in with the email or phone number you registered with, or contact the programme team.'
+    'The system is currently in its testing phase. To get access, request permission from the system admin.'
 
 export const LOGIN_CHECK_FAILED_MESSAGE =
     'We could not confirm your access just now. Check your connection and try again.'

@@ -1,6 +1,6 @@
 // Who may sign in while the pilot guard is on (PILOT_RECIPIENTS_ONLY=true, the
-// live project): anyone with an @quantilytix.co.za email, and the people on the
-// training list in pilotSettings/recipients, by email or by phone (phone-only
+// live project): anyone with an @quantilytix.co.za email, and the testers listed
+// in pilotSettings/recipients, by email or by phone (phone-only
 // SME logins). With the guard off (the dev project) everyone may sign in.
 //
 // The web app asks this after every sign-in and on every restored session, and
