@@ -38,8 +38,8 @@ import InterventionMetricsGrid from '../metrics/InterventionMetricsGrid'
 
 const { Text } = Typography
 const API_BASE_URL = 'https://quantnow-sa1e.onrender.com'
-const QX_FINANCE_EMAIL = import.meta.env.VITE_QX_FINANCE_EMAIL || import.meta.env.VITE_FINANCE_EMAIL || ''
-const QX_FINANCE_PASSWORD = import.meta.env.VITE_QX_FINANCE_PASSWORD || import.meta.env.VITE_FINANCE_PASSWORD || ''
+const QX_FINANCE_EMAIL = import.meta.env.QX_FINANCE_EMAIL || import.meta.env.VITE_FINANCE_EMAIL || ''
+const QX_FINANCE_PASSWORD = import.meta.env.QX_FINANCE_PASS || import.meta.env.VITE_FINANCE_PASSWORD || ''
 const FINANCE_SESSION_KEY = 'qx_finance_session'
 
 const normalize = (s?: string) => (s || '').toString().trim().toLowerCase()
