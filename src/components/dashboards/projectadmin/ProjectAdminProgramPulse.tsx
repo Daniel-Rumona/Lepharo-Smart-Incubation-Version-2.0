@@ -25,18 +25,11 @@ import { db } from '@/firebase'
 import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
 import { activeJobsOn, groupJobs, type JobContractRecord } from '@/lib/jobs'
 import { activeInMonths, asOfMonthEnd, loadJobContracts } from '@/lib/jobsData'
+import { loginToQuantNow } from '@/lib/quantNowAuth'
 
 const { Text } = Typography
 
 const API_BASE_URL = 'https://quantnow-sa1e.onrender.com'
-const QX_FINANCE_EMAIL =
-    import.meta.env.VITE_QX_FINANCE_EMAIL ||
-    import.meta.env.VITE_FINANCE_EMAIL ||
-    ''
-const QX_FINANCE_PASSWORD =
-    import.meta.env.VITE_QX_FINANCE_PASSWORD ||
-    import.meta.env.VITE_FINANCE_PASSWORD ||
-    ''
 const FINANCE_SESSION_KEY = 'qx_finance_session'
 
 export type DateRangeValue = [Dayjs | null, Dayjs | null] | null
@@ -420,28 +413,15 @@ const getFinanceToken = async () => {
         if (legacyToken) return legacyToken
     }
 
-    if (!QX_FINANCE_EMAIL || !QX_FINANCE_PASSWORD) {
-        throw new Error('Finance credentials are not configured.')
-    }
-
-    const response = await axios.post(`${API_BASE_URL}/login`, {
-        email: QX_FINANCE_EMAIL,
-        password: QX_FINANCE_PASSWORD
-    })
-
-    const token = response.data?.token
-
-    if (!token) {
-        throw new Error('Finance API did not return an access token.')
-    }
+    const { token, user } = await loginToQuantNow()
 
     if (typeof window !== 'undefined') {
         window.localStorage.setItem(
             FINANCE_SESSION_KEY,
             JSON.stringify({
                 token,
-                user: response.data?.user,
-                email: response.data?.user?.email,
+                user,
+                email: user?.email,
                 savedAt: Date.now(),
                 expiresAt: Date.now() + 8 * 60 * 60 * 1000
             })

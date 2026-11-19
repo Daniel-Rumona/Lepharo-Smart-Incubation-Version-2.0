@@ -45,6 +45,7 @@ export * from "./kpiReminders";
 export * from "./planRoadmapCheckIns";
 export * from "./challengeDueReminders";
 export * from "./revenueMetricsSync";
+export { getQuantNowFinanceToken } from "./quantNowAuth";
 export { digitalTwinNightly, recalculateDigitalTwin } from "./digitalTwin";
 export * from "./workflowQueryReminders";
 export * from "./movStageReminders";

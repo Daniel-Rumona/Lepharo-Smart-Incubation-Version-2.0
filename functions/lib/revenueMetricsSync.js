@@ -27,6 +27,7 @@ exports.revenueMetricsSyncCron = void 0;
 const cronHeartbeat_1 = require("./cronHeartbeat");
 const logger = __importStar(require("firebase-functions/logger"));
 const firebase_1 = require("./firebase");
+const quantNowAuth_1 = require("./quantNowAuth");
 // QuantNow has no Firestore persistence of its own - the Finance page reads it
 // live, per SME company, keyed by email (see routes/operations/finance/index.tsx).
 // The KPI engine can't do that fan-out on every Tracker page view (one HTTP call
@@ -34,7 +35,6 @@ const firebase_1 = require("./firebase");
 // each company's monthly revenue into participantMonthlyMetrics once a day - the
 // same collection kpiCalculationService.ts already reads for the "metrics" source,
 // so "Monthly Revenue" KPIs need no engine changes, only this data to exist.
-const QUANTNOW_BASE_URL = "https://quantnow-sa1e.onrender.com";
 const REVENUE_HISTORY_MONTHS = 12;
 const CONCURRENCY = 5;
 const BATCH_WRITE_SIZE = 450;
@@ -52,25 +52,8 @@ const isExcludedCompanyEmail = (value) => {
         email === "lepharo@gmail.com");
 };
 const isAcceptedApplication = (application) => clean(application.applicationStatus || application.decision?.status).toLowerCase() === "accepted";
-async function getQuantNowToken() {
-    const email = process.env.QX_FINANCE_EMAIL;
-    const password = process.env.QX_FINANCE_PASSWORD;
-    if (!email || !password) {
-        throw new Error("Missing env: QX_FINANCE_EMAIL / QX_FINANCE_PASSWORD");
-    }
-    const res = await fetch(`${QUANTNOW_BASE_URL}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.token) {
-        throw new Error(data?.message || `QuantNow login failed (${res.status})`);
-    }
-    return data.token;
-}
 async function fetchAllCompanies(token) {
-    const res = await fetch(`${QUANTNOW_BASE_URL}/admin/all-memberships`, {
+    const res = await fetch(`${quantNowAuth_1.QUANTNOW_BASE_URL}/admin/all-memberships`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json().catch(() => ({}));
@@ -80,7 +63,7 @@ async function fetchAllCompanies(token) {
     return Array.isArray(data?.companies) ? data.companies : [];
 }
 async function fetchCompanyMonthlyRevenue(email) {
-    const url = new URL(`${QUANTNOW_BASE_URL}/api/stats/public/revenue-monthly`);
+    const url = new URL(`${quantNowAuth_1.QUANTNOW_BASE_URL}/api/stats/public/revenue-monthly`);
     url.searchParams.set("email", email);
     url.searchParams.set("months", String(REVENUE_HISTORY_MONTHS));
     const res = await fetch(url.toString());
@@ -115,11 +98,12 @@ exports.revenueMetricsSyncCron = (0, cronHeartbeat_1.scheduledJob)("revenueMetri
     timeZone: "Africa/Johannesburg",
     timeoutSeconds: 540,
     maxInstances: 1,
+    secrets: quantNowAuth_1.QUANTNOW_SECRETS,
 }, async () => {
     const heartbeatRef = firebase_1.db.collection("systemHeartbeats").doc("revenueMetricsSyncCron");
     let companies;
     try {
-        const token = await getQuantNowToken();
+        const { token } = await (0, quantNowAuth_1.loginToQuantNow)();
         companies = await fetchAllCompanies(token);
     }
     catch (error) {

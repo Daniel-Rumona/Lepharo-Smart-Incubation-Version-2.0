@@ -1,6 +1,7 @@
 import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
 import { admin, db } from "./firebase";
+import { QUANTNOW_BASE_URL, QUANTNOW_SECRETS, loginToQuantNow } from "./quantNowAuth";
 
 // QuantNow has no Firestore persistence of its own - the Finance page reads it
 // live, per SME company, keyed by email (see routes/operations/finance/index.tsx).
@@ -10,7 +11,6 @@ import { admin, db } from "./firebase";
 // same collection kpiCalculationService.ts already reads for the "metrics" source,
 // so "Monthly Revenue" KPIs need no engine changes, only this data to exist.
 
-const QUANTNOW_BASE_URL = "https://quantnow-sa1e.onrender.com";
 const REVENUE_HISTORY_MONTHS = 12;
 const CONCURRENCY = 5;
 const BATCH_WRITE_SIZE = 450;
@@ -33,25 +33,6 @@ const isExcludedCompanyEmail = (value: unknown) => {
 
 const isAcceptedApplication = (application: any) =>
   clean(application.applicationStatus || application.decision?.status).toLowerCase() === "accepted";
-
-async function getQuantNowToken(): Promise<string> {
-  const email = process.env.QX_FINANCE_EMAIL;
-  const password = process.env.QX_FINANCE_PASSWORD;
-  if (!email || !password) {
-    throw new Error("Missing env: QX_FINANCE_EMAIL / QX_FINANCE_PASSWORD");
-  }
-
-  const res = await fetch(`${QUANTNOW_BASE_URL}/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const data: any = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.token) {
-    throw new Error(data?.message || `QuantNow login failed (${res.status})`);
-  }
-  return data.token as string;
-}
 
 async function fetchAllCompanies(token: string): Promise<any[]> {
   const res = await fetch(`${QUANTNOW_BASE_URL}/admin/all-memberships`, {
@@ -113,13 +94,14 @@ export const revenueMetricsSyncCron = scheduledJob("revenueMetricsSyncCron",
     timeZone: "Africa/Johannesburg",
     timeoutSeconds: 540,
     maxInstances: 1,
+    secrets: QUANTNOW_SECRETS,
   },
   async () => {
     const heartbeatRef = db.collection("systemHeartbeats").doc("revenueMetricsSyncCron");
 
     let companies: any[];
     try {
-      const token = await getQuantNowToken();
+      const { token } = await loginToQuantNow();
       companies = await fetchAllCompanies(token);
     } catch (error: any) {
       const message = String(error?.message || error);

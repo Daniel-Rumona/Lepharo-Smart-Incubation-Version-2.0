@@ -59,6 +59,7 @@ import { loadSyntheticFinanceAccounts } from "@/services/syntheticFinance";
 import { useDataColor } from "@/lib/chartColors";
 import "./finance.css";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import { loginToQuantNow } from "@/lib/quantNowAuth";
 import {
     guideTarget,
     usePageGuides,
@@ -71,8 +72,6 @@ const { RangePicker } = DatePicker;
 
 const API_BASE_URL = "https://quantnow-sa1e.onrender.com";
 const QX_FRONTEND_URL = "https://qx.quantilytix.co.za";
-const QX_FINANCE_EMAIL = import.meta.env.VITE_QX_FINANCE_EMAIL || import.meta.env.VITE_FINANCE_EMAIL || "";
-const QX_FINANCE_PASSWORD = import.meta.env.VITE_QX_FINANCE_PASSWORD || import.meta.env.VITE_FINANCE_PASSWORD || "";
 
 /**
  * Keep the finance login alive instead of forcing the user to re-enter
@@ -283,23 +282,9 @@ const getFinanceTokenFromEnv = async (forceRefresh = false) => {
         if (existingToken) return existingToken;
     }
 
-    if (!QX_FINANCE_EMAIL || !QX_FINANCE_PASSWORD) {
-        throw new Error("Finance credentials are not configured.");
-    }
-
-    const response = await axios.post(`${API_BASE_URL}/login`, {
-        email: QX_FINANCE_EMAIL,
-        password: QX_FINANCE_PASSWORD,
-    });
-
-    const { token, user } = response.data || {};
-
-    if (!token) {
-        throw new Error("Finance API did not return an access token.");
-    }
-
+    const { token, user } = await loginToQuantNow();
     financeSession.setFromLogin(token, user);
-    return token as string;
+    return token;
 };
 
 const money = (value?: number | null) => {
