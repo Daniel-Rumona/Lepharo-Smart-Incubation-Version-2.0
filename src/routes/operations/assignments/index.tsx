@@ -1472,6 +1472,9 @@ export const InterventionsAssignments: React.FC = () => {
         plannedSessions: 0,
         attendanceCount: 0,
         attendancePossible: 0,
+        // Distinct SMEs who attended at least once / every held session.
+        reachedSmes: 0,
+        fullyAttendedSmes: 0,
     });
     const addToGroupModalVisible = activeModal === "addToGroup";
     const setAddToGroupModalVisible = makeModalSetter("addToGroup");
@@ -3793,13 +3796,16 @@ export const InterventionsAssignments: React.FC = () => {
             plannedSessions: fallback.plannedSessions,
             attendanceCount: 0,
             attendancePossible: fallback.sessionsHeld * members.length,
+            reachedSmes: 0,
+            fullyAttendedSmes: 0,
         });
 
-        getDocs(query(
-            collection(db, "appointmentSessions"),
-            where("groupKey", "==", String(selectedGroup.groupKey))
-        ))
-            .then((snapshot) => {
+        const groupKeyFilter = where("groupKey", "==", String(selectedGroup.groupKey));
+        Promise.all([
+            getDocs(query(collection(db, "appointmentSessions"), groupKeyFilter)),
+            getDocs(query(collection(db, "appointments"), groupKeyFilter)),
+        ])
+            .then(([snapshot, appointmentSnapshot]) => {
                 if (cancelled) return;
                 const completedSessions = snapshot.docs
                     .map((item) => ({ id: item.id, ...(item.data() as any) }))
@@ -3822,6 +3828,24 @@ export const InterventionsAssignments: React.FC = () => {
                     ),
                     0
                 );
+                // Delivery progress says the sessions happened; reach says who came.
+                const heldSessionIds = new Set(completedSessions.map((session) => session.id));
+                const sessionsAttendedBySme = new Map<string, Set<string>>();
+                appointmentSnapshot.docs.forEach((item) => {
+                    const appointment = item.data() as any;
+                    const sessionId = String(appointment.appointmentSessionId || "");
+                    const smeId = String(appointment.smeId || "");
+                    if (!smeId || !heldSessionIds.has(sessionId)) return;
+                    if (safeLower(appointment.attendance?.status) !== "attended") return;
+                    const attended = sessionsAttendedBySme.get(smeId) || new Set<string>();
+                    attended.add(sessionId);
+                    sessionsAttendedBySme.set(smeId, attended);
+                });
+                const reachedSmes = sessionsAttendedBySme.size;
+                const fullyAttendedSmes = [...sessionsAttendedBySme.values()].filter(
+                    (attended) => heldSessionIds.size > 0 && attended.size >= heldSessionIds.size
+                ).length;
+
                 const sharedDelivery = groupDeliveries[String(selectedGroup.groupKey)]
                 const cachedSessionSummary = groupSessionSummaries[String(selectedGroup.groupKey)]
 
@@ -3831,6 +3855,8 @@ export const InterventionsAssignments: React.FC = () => {
                     plannedSessions: Math.max(1, Number(sharedDelivery?.plannedSessions) || fallback.plannedSessions),
                     attendanceCount: Number(cachedSessionSummary?.attendanceCount) || attendanceCount,
                     attendancePossible: Number(cachedSessionSummary?.attendancePossible) || attendancePossible,
+                    reachedSmes,
+                    fullyAttendedSmes,
                 });
             })
             .catch((error) => {
@@ -6628,7 +6654,7 @@ export const InterventionsAssignments: React.FC = () => {
                                 {selectedGroup.memberCount ||
                                     getGroupMembers(selectedGroup.groupKey).length}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Group progress">
+                            <Descriptions.Item label="Delivery progress">
                                 <Progress
                                     percent={getGroupProgress(selectedGroup)}
                                     size="small"
@@ -6643,10 +6669,35 @@ export const InterventionsAssignments: React.FC = () => {
                             <Descriptions.Item label="Attendance">
                                 {groupDeliverySummary.loading
                                     ? "Loading…"
-                                    : groupDeliverySummary.attendancePossible
-                                        ? `${groupDeliverySummary.attendanceCount} attended of ${groupDeliverySummary.attendancePossible} possible attendances`
+                                    : groupDeliverySummary.attendancePossible && groupDeliverySummary.sessionsHeld
+                                        ? (() => {
+                                            // Totals are summed over sessions (person-sessions), which
+                                            // reads as a headcount; show a per-session average instead.
+                                            const { attendanceCount, attendancePossible, sessionsHeld } = groupDeliverySummary;
+                                            const avgAttended = Math.round(attendanceCount / sessionsHeld);
+                                            const avgInvited = Math.round(attendancePossible / sessionsHeld);
+                                            const turnout = Math.round((attendanceCount / attendancePossible) * 100);
+                                            return sessionsHeld > 1
+                                                ? `Average ${avgAttended} of ${avgInvited} invited per session (${turnout}% turnout)`
+                                                : `${attendanceCount} of ${attendancePossible} invited attended (${turnout}%)`;
+                                        })()
                                         : "No completed sessions yet"}
                             </Descriptions.Item>
+                            {!groupDeliverySummary.loading && groupDeliverySummary.sessionsHeld > 0 && (() => {
+                                const memberTotal =
+                                    Number(selectedGroup.memberCount) ||
+                                    getGroupMembers(selectedGroup.groupKey).length;
+                                const { reachedSmes, fullyAttendedSmes, sessionsHeld } = groupDeliverySummary;
+                                return (
+                                    <Descriptions.Item label="SMEs reached" span={2}>
+                                        {reachedSmes} of {memberTotal} attended at least once
+                                        {sessionsHeld > 1 ? ` · ${fullyAttendedSmes} attended all ${sessionsHeld}` : ""}
+                                        {memberTotal - reachedSmes > 0 && (
+                                            <Text type="secondary">{` · ${memberTotal - reachedSmes} never attended`}</Text>
+                                        )}
+                                    </Descriptions.Item>
+                                );
+                            })()}
                         </Descriptions>
 
                         <Table
