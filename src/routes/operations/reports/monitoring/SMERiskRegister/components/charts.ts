@@ -176,8 +176,18 @@ export function buildPortfolioRiskChartOptions(
                 borderWidth: 3,
                 borderColor: colors.surface,
                 borderRadius: 5,
+                // Each arc carries its SME count, centred in the ring.
                 dataLabels: {
-                    enabled: false
+                    enabled: true,
+                    distance: -16,
+                    format: '{point.y}',
+                    filter: { property: 'y', operator: '>', value: 0 },
+                    style: {
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        textOutline: 'none'
+                    }
                 },
                 showInLegend: false,
                 cursor: 'default'
@@ -512,7 +522,17 @@ export function buildDepartmentRiskPressureChartOptions(
         plotOptions: {
             ...base.plotOptions,
             series: {
-                stacking: 'normal'
+                stacking: 'normal',
+                dataLabels: {
+                    enabled: true,
+                    filter: { property: 'y', operator: '>', value: 0 },
+                    style: {
+                        color: '#ffffff',
+                        fontSize: '9px',
+                        fontWeight: '600',
+                        textOutline: 'none'
+                    }
+                }
             },
             column: {
                 borderWidth: 0,

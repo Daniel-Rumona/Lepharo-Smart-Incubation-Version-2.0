@@ -589,6 +589,16 @@ const FacilitatorsTab: React.FC<Props> = ({
                     data: points,
                     minSize: 10,
                     maxSize: 30,
+                    dataLabels: {
+                        enabled: true,
+                        allowOverlap: true,
+                        crop: false,
+                        overflow: "allow",
+                        verticalAlign: "bottom",
+                        y: -14,
+                        format: "{point.x:.1f}d · {point.y:.1f}/5",
+                        style: { textOutline: "none", fontWeight: "600" },
+                    },
                 } as any,
             ],
         };

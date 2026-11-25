@@ -1141,7 +1141,16 @@ const SAProvincesDrillMap: React.FC<Props> = ({
             xAxis: { categories: months, labels: { style: axisStyle } },
             legend: { enabled: true, itemStyle: { color: token.colorTextSecondary } },
             tooltip: { shared: true },
-            plotOptions: { column: { stacking: "normal" } },
+            plotOptions: {
+                column: {
+                    stacking: "normal",
+                    dataLabels: {
+                        enabled: true,
+                        filter: { property: "y", operator: ">", value: 0 },
+                        style: { textOutline: "none", fontWeight: "600", fontSize: "10px" },
+                    },
+                },
+            },
             credits: { enabled: false },
         };
 
@@ -1186,6 +1195,7 @@ const SAProvincesDrillMap: React.FC<Props> = ({
                 allowDecimals: false,
                 min: 0,
                 labels: { style: axisStyle },
+                stackLabels: { enabled: true, style: { textOutline: "none", fontWeight: "700" } },
             },
             series: [
                 {

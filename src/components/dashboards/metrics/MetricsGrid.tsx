@@ -33,6 +33,8 @@ export interface MetricsGridProps {
      * every tile keeps the same size - pair it with short `mobileTitle`s.
      */
     mobileColumns?: 2 | 3
+    /** Slim tiles on every screen size, not only on phones. */
+    compact?: boolean
 }
 
 const desktopSpanFor = (count: number) => {
@@ -55,7 +57,8 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
     metrics,
     gutter = [16, 16],
     desktopSpan,
-    mobileColumns = 2
+    mobileColumns = 2,
+    compact = false
 }) => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -96,7 +99,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                                 mobileSubtitle where a metric provides them. */}
                             <MetricTile
                                 {...tileProps}
-                                compact={isMobile}
+                                compact={compact || isMobile}
                                 icon={threeUp ? undefined : tileProps.icon}
                                 subtitle={isMobile && hideSubtitleOnMobile ? undefined : tileProps.subtitle}
                                 mobileSubtitle={hideSubtitleOnMobile ? undefined : tileProps.mobileSubtitle}

@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Col, Empty, Row, message, theme } from "antd";
+import { Col, Empty, Row, Segmented, message, theme } from "antd";
 import {
     AuditOutlined,
     CheckCircleOutlined,
     ClockCircleOutlined,
-    ExclamationCircleOutlined,
     FieldTimeOutlined,
+    InboxOutlined,
     SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import Highcharts from "highcharts";
@@ -17,7 +17,7 @@ import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { filterMovRecords, filterReportRecords, loadReportVisibilityContext } from "@/utils/reportVisibility";
 import { MetricsGrid, type DashboardMetric } from "@/components/dashboards/metrics/MetricsGrid";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
-import { packStage, safeToDate, type PackStage } from "@/routes/operations/movs/movData";
+import { packItems, packStage, safeToDate, type PackStage } from "@/routes/operations/movs/movData";
 import { getCanonicalInterventionStatus } from "./interventionStatus";
 
 type Props = {
@@ -27,18 +27,17 @@ type Props = {
     dateTo?: Date;
 };
 
-/** The stored MOV lifecycle (types/mov.ts). */
-type MovStage = "draft" | "awaiting_smme" | "awaiting_hod" | "queried" | "rejected" | "approved";
+/**
+ * Where a submitted MOV sits with M&E. A MOV counts as submitted once the
+ * Centre Coordinator confirms its monthly pack and passes it on to M&E.
+ */
+type MeStage = "me" | "verified";
 
-const STAGES: MovStage[] = ["approved", "awaiting_hod", "awaiting_smme", "queried", "rejected", "draft"];
+const ME_STAGES: MeStage[] = ["verified", "me"];
 
-const STAGE_LABEL: Record<MovStage, string> = {
-    draft: "Draft",
-    awaiting_smme: "Awaiting SME",
-    awaiting_hod: "Awaiting HOD",
-    queried: "Queried",
-    rejected: "Rejected",
-    approved: "Approved",
+const ME_STAGE_LABEL: Record<MeStage, string> = {
+    me: "Awaiting M&E",
+    verified: "Verified",
 };
 
 const PACK_STAGE_LABEL: Record<PackStage, string> = {
@@ -49,39 +48,72 @@ const PACK_STAGE_LABEL: Record<PackStage, string> = {
 
 type MovRow = {
     id: string;
-    stage: MovStage;
+    stage: MeStage;
     department: string;
     date: Date | null;
-    daysToApprove: number | null;
+    daysToVerify: number | null;
     assignmentId: string;
 };
 
-const stageOf = (mov: any): MovStage => {
-    if (mov?.approvedByHod === true) return "approved";
-    const status = String(mov?.status || "").toLowerCase();
-    return (STAGES as string[]).includes(status) ? (status as MovStage) : "draft";
+const approvalDate = (pack: any, step: string): Date | null =>
+    safeToDate(((pack?.approvals || []) as any[]).find(a => a?.step === step)?.date);
+
+const packMovIds = (pack: any): string[] =>
+    Array.from(
+        new Set(
+            (Array.isArray(pack?.movIds) ? pack.movIds : packItems(pack).map((m: any) => m?.id))
+                .filter(Boolean)
+                .map(String)
+        )
+    );
+
+/** One row per MOV in a pack the Centre Coordinator has passed to M&E. */
+const submittedRows = (packs: any[], liveMovs: Map<string, any>): MovRow[] => {
+    const rows = new Map<string, MovRow>();
+    packs.forEach(pack => {
+        const packStageNow = packStage(pack);
+        if (packStageNow === "cc") return;
+        const stage: MeStage = packStageNow;
+        const submittedAt = approvalDate(pack, "final_confirmation");
+        const verifiedAt = approvalDate(pack, "validation");
+        const snapshots = new Map(packItems(pack).map((m: any) => [String(m?.id || ""), m]));
+        packMovIds(pack).forEach(id => {
+            // The live MOV first; the pack's snapshot if the live one is gone.
+            // Both have already passed the viewer's report-visibility check.
+            const mov = liveMovs.get(id) || snapshots.get(id);
+            if (!mov) return;
+            const existing = rows.get(id);
+            if (existing?.stage === "verified") return;
+            rows.set(id, {
+                id,
+                stage,
+                department: mov.departmentName || mov.department || pack.department || "Unassigned",
+                date: safeToDate(mov.interventionDate || mov.periodEnd || mov.createdAt),
+                daysToVerify:
+                    stage === "verified" && submittedAt && verifiedAt
+                        ? Math.max(0, dayjs(verifiedAt).diff(submittedAt, "day", true))
+                        : null,
+                assignmentId: String(mov.assignedInterventionId || ""),
+            });
+        });
+    });
+    return Array.from(rows.values());
 };
 
-const toRow = (id: string, mov: any): MovRow => {
-    const stage = stageOf(mov);
-    const smeConfirmed = safeToDate(mov.smmeSignedAt || mov.smmeAcceptedAt);
-    const approvedAt = safeToDate(mov.hodApprovedAt);
-    return {
-        id,
-        stage,
-        department: mov.departmentName || mov.department || "Unassigned",
-        date: safeToDate(mov.interventionDate || mov.periodEnd || mov.createdAt),
-        daysToApprove:
-            stage === "approved" && smeConfirmed && approvedAt
-                ? Math.max(0, dayjs(approvedAt).diff(smeConfirmed, "day", true))
-                : null,
-        assignmentId: String(mov.assignedInterventionId || ""),
-    };
+// Stacked bars show each segment's count (empty segments stay blank).
+const STACKED_WITH_FIGURES = {
+    stacking: "normal",
+    borderWidth: 0,
+    dataLabels: {
+        enabled: true,
+        filter: { property: "y", operator: ">", value: 0 },
+        style: { textOutline: "none", fontWeight: "600" },
+    },
 };
 
 const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 
-/** MOV analytics for M&E: status, trend, departments and monthly packs. */
+/** MOV analytics for M&E: only MOVs submitted to M&E in a confirmed monthly pack. */
 export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: Props) {
     const { token } = theme.useToken();
     const { user } = useFullIdentity();
@@ -89,6 +121,7 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
     const [loading, setLoading] = useState(true);
     const [movs, setMovs] = useState<MovRow[]>([]);
     const [packs, setPacks] = useState<any[]>([]);
+    const [packUnit, setPackUnit] = useState<"packs" | "movs">("packs");
     const [completedAssignments, setCompletedAssignments] = useState<{ id: string; movId: string; date: Date | null }[]>([]);
 
     useEffect(() => {
@@ -111,8 +144,17 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
                 if (cancelled) return;
                 const visible = (snap: typeof movSnap) =>
                     filterReportRecords(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })), user?.email, visibility);
-                setMovs(visible(movSnap).map(m => toRow(m.id, m)));
-                setPacks(filterMovRecords(packSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })), user?.email));
+                const visiblePacks = filterMovRecords(packSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })), user?.email);
+                const liveMovs = new Map(visible(movSnap).map(m => [m.id, m]));
+                setMovs(submittedRows(visiblePacks, liveMovs));
+                // Each pack's MOV count, limited to MOVs this viewer may see.
+                setPacks(
+                    visiblePacks.map(pack => {
+                        const snapshotIds = new Set(packItems(pack).map((m: any) => String(m?.id || "")));
+                        const movCount = packMovIds(pack).filter(id => liveMovs.has(id) || snapshotIds.has(id)).length;
+                        return { ...pack, __movCount: movCount };
+                    })
+                );
                 setCompletedAssignments(
                     visible(assignmentSnap)
                         .filter(a => getCanonicalInterventionStatus(a) === "completed")
@@ -139,55 +181,56 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
     const periodMovs = useMemo(() => movs.filter(m => inPeriod(m.date)), [movs, dateFrom, dateTo]);
 
     const counts = useMemo(() => {
-        const byStage = Object.fromEntries(STAGES.map(s => [s, 0])) as Record<MovStage, number>;
+        const byStage = Object.fromEntries(ME_STAGES.map(s => [s, 0])) as Record<MeStage, number>;
         periodMovs.forEach(m => (byStage[m.stage] += 1));
-        const times = periodMovs.map(m => m.daysToApprove).filter((d): d is number => d !== null);
+        const times = periodMovs.map(m => m.daysToVerify).filter((d): d is number => d !== null);
         return {
             total: periodMovs.length,
             byStage,
-            avgDaysToApprove: times.length ? times.reduce((a, b) => a + b, 0) / times.length : null,
+            avgDaysToVerify: times.length ? times.reduce((a, b) => a + b, 0) / times.length : null,
         };
     }, [periodMovs]);
 
-    // Completed work with an approved MOV; the link can sit on either record.
+    // Completed work whose MOV has reached M&E; the link can sit on either record.
     const coverage = useMemo(() => {
-        const approved = movs.filter(m => m.stage === "approved");
-        const byId = new Set(approved.map(m => m.id));
-        const byAssignment = new Set(approved.map(m => m.assignmentId).filter(Boolean));
+        const byId = new Set(movs.map(m => m.id));
+        const byAssignment = new Set(movs.map(m => m.assignmentId).filter(Boolean));
         const completed = completedAssignments.filter(a => inPeriod(a.date));
         const evidenced = completed.filter(a => byAssignment.has(a.id) || byId.has(a.movId)).length;
         return { completed: completed.length, evidenced };
     }, [movs, completedAssignments, dateFrom, dateTo]);
 
+    const periodPacks = useMemo(
+        () =>
+            packs.filter(p => {
+                if (!dateFrom || !dateTo || !p.month) return true;
+                const month = dayjs(p.month, "YYYY-MM");
+                return !month.isBefore(dayjs(dateFrom), "month") && !month.isAfter(dayjs(dateTo), "month");
+            }),
+        [packs, dateFrom, dateTo]
+    );
+
+    const packTotals = useMemo(
+        () => ({ atCc: periodPacks.filter(p => packStage(p) === "cc").length }),
+        [periodPacks]
+    );
+
     const metrics: DashboardMetric[] = [
-        { key: "total", title: "MOVs", value: counts.total, icon: <AuditOutlined />, tone: "info", important: true },
+        { key: "total", title: "Submitted", value: counts.total, icon: <AuditOutlined />, tone: "info", important: true },
         {
-            key: "approved",
-            title: "Approved",
-            value: `${pct(counts.byStage.approved, counts.total)}%`,
-            subtitle: `${counts.byStage.approved} MOVs`,
+            key: "verified",
+            title: "Verified",
+            value: `${pct(counts.byStage.verified, counts.total)}%`,
             icon: <CheckCircleOutlined />,
             tone: "success",
             important: true,
         },
-        {
-            key: "waiting",
-            title: "Waiting",
-            value: counts.byStage.awaiting_smme + counts.byStage.awaiting_hod,
-            icon: <ClockCircleOutlined />,
-            tone: "warning",
-        },
-        {
-            key: "pushedBack",
-            title: "Queried / rejected",
-            value: counts.byStage.queried + counts.byStage.rejected,
-            icon: <ExclamationCircleOutlined />,
-            tone: "danger",
-        },
+        { key: "waiting", title: "Awaiting M&E", value: counts.byStage.me, icon: <ClockCircleOutlined />, tone: "warning" },
+        { key: "atCc", title: "Packs at CC", value: packTotals.atCc, icon: <InboxOutlined />, tone: "neutral" },
         {
             key: "speed",
-            title: "Days to approve",
-            value: counts.avgDaysToApprove === null ? "—" : counts.avgDaysToApprove.toFixed(1),
+            title: "Days to verify",
+            value: counts.avgDaysToVerify === null ? "—" : counts.avgDaysToVerify.toFixed(1),
             icon: <FieldTimeOutlined />,
             tone: "neutral",
         },
@@ -195,22 +238,15 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
             key: "coverage",
             title: "Evidence coverage",
             value: coverage.completed ? `${pct(coverage.evidenced, coverage.completed)}%` : "—",
-            subtitle: coverage.completed ? `${coverage.evidenced} of ${coverage.completed} completed` : undefined,
             icon: <SafetyCertificateOutlined />,
             tone: "accent",
             important: true,
         },
     ];
 
-    // Fixed blues for the waiting stages: the theme's primary and info colours
-    // follow the brand accent (red here), which read as "rejected".
-    const stageColor: Record<MovStage, string> = {
-        approved: token.colorSuccess,
-        awaiting_hod: "#3b82f6",
-        awaiting_smme: "#93c5fd",
-        queried: token.colorWarning,
-        rejected: token.colorError,
-        draft: token.colorTextQuaternary,
+    const stageColor: Record<MeStage, string> = {
+        verified: token.colorSuccess,
+        me: token.colorWarning,
     };
 
     const statusOptions = useMemo<Highcharts.Options>(
@@ -225,14 +261,24 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
             credits: { enabled: false },
             tooltip: { pointFormat: "<b>{point.y}</b> ({point.percentage:.0f}%)" },
             plotOptions: {
-                pie: { innerSize: "68%", borderWidth: 0, dataLabels: { enabled: false }, showInLegend: true },
+                pie: {
+                    innerSize: "68%",
+                    borderWidth: 0,
+                    showInLegend: true,
+                    dataLabels: {
+                        enabled: true,
+                        distance: 12,
+                        format: "{point.y} ({point.percentage:.0f}%)",
+                        style: { fontWeight: "600", textOutline: "none" },
+                    },
+                },
             },
             series: [
                 {
                     type: "pie",
                     name: "MOVs",
-                    data: STAGES.filter(s => counts.byStage[s] > 0).map(s => ({
-                        name: STAGE_LABEL[s],
+                    data: ME_STAGES.filter(s => counts.byStage[s] > 0).map(s => ({
+                        name: ME_STAGE_LABEL[s],
                         y: counts.byStage[s],
                         color: stageColor[s],
                     })),
@@ -242,7 +288,7 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
         [counts, token]
     );
 
-    // Generated vs approved per month of work.
+    // Submitted vs verified per month of work.
     const trendOptions = useMemo<Highcharts.Options>(() => {
         const months = Array.from(
             new Set(periodMovs.map(m => (m.date ? dayjs(m.date).format("YYYY-MM") : "")).filter(Boolean))
@@ -255,19 +301,22 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
             xAxis: { categories: months.map(k => dayjs(`${k}-01`).format("MMM YY")) },
             yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
             tooltip: { shared: true },
-            plotOptions: { column: { borderRadius: 3, borderWidth: 0 } },
+            plotOptions: {
+                column: { borderRadius: 3, borderWidth: 0, dataLabels: { enabled: true } },
+                spline: { dataLabels: { enabled: true } },
+            },
             series: [
                 {
                     type: "column",
-                    name: "Generated",
+                    name: "Submitted",
                     color: "#93c5fd",
                     data: months.map(k => periodMovs.filter(m => inMonth(m, k)).length),
                 },
                 {
                     type: "spline",
-                    name: "Approved",
+                    name: "Verified",
                     color: token.colorSuccess,
-                    data: months.map(k => periodMovs.filter(m => inMonth(m, k) && m.stage === "approved").length),
+                    data: months.map(k => periodMovs.filter(m => inMonth(m, k) && m.stage === "verified").length),
                 },
             ],
         };
@@ -281,52 +330,59 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
             title: { text: undefined },
             credits: { enabled: false },
             xAxis: { categories: departments, title: { text: undefined } },
-            yAxis: { min: 0, allowDecimals: false, title: { text: undefined }, reversedStacks: false },
+            yAxis: { min: 0, allowDecimals: false, title: { text: undefined }, reversedStacks: false, stackLabels: { enabled: true } },
             tooltip: { shared: true },
-            plotOptions: { series: { stacking: "normal", borderWidth: 0 } as any },
-            series: STAGES.map(stage => ({
+            plotOptions: { series: STACKED_WITH_FIGURES as any },
+            series: ME_STAGES.map(stage => ({
                 type: "bar" as const,
-                name: STAGE_LABEL[stage],
+                name: ME_STAGE_LABEL[stage],
                 color: stageColor[stage],
                 data: departments.map(d => periodMovs.filter(m => m.department === d && m.stage === stage).length),
             })),
         };
     }, [periodMovs, token]);
 
-    const periodPacks = useMemo(
-        () =>
-            packs.filter(p => {
-                if (!dateFrom || !dateTo || !p.month) return true;
-                const month = dayjs(p.month, "YYYY-MM");
-                return !month.isBefore(dayjs(dateFrom), "month") && !month.isAfter(dayjs(dateTo), "month");
-            }),
-        [packs, dateFrom, dateTo]
-    );
-
+    // Packs, or the MOVs inside them, per month and stage. Each point carries
+    // both figures so the tooltip can show the other one.
     const packOptions = useMemo<Highcharts.Options>(() => {
         const months = Array.from(new Set(periodPacks.map(p => String(p.month || "")).filter(Boolean))).sort();
         const colors: Record<PackStage, string> = { cc: "#3b82f6", me: token.colorWarning, verified: token.colorSuccess };
+        const showMovs = packUnit === "movs";
         return {
             chart: { type: "column", height: 300 },
             title: { text: undefined },
             credits: { enabled: false },
             xAxis: { categories: months.map(k => dayjs(`${k}-01`).format("MMM YY")) },
-            yAxis: { min: 0, allowDecimals: false, title: { text: undefined }, reversedStacks: false },
-            tooltip: { shared: true },
-            plotOptions: { series: { stacking: "normal", borderWidth: 0 } as any },
+            yAxis: { min: 0, allowDecimals: false, title: { text: undefined }, reversedStacks: false, stackLabels: { enabled: true } },
+            tooltip: {
+                shared: true,
+                formatter: function () {
+                    const points = ((this as any).points || []).filter((p: any) => p.y > 0);
+                    const lines = points.map((p: any) => {
+                        const { packs: n, movs: m } = p.point.options.custom || {};
+                        return `<span style="color:${p.color}">●</span> ${p.series.name}: <b>${n}</b> ${n === 1 ? "pack" : "packs"} · <b>${m}</b> MOVs`;
+                    });
+                    return `<b>${(this as any).x}</b><br/>${lines.join("<br/>") || "Nothing this month"}`;
+                },
+            },
+            plotOptions: { series: STACKED_WITH_FIGURES as any },
             series: (["verified", "me", "cc"] as PackStage[]).map(stage => ({
                 type: "column" as const,
                 name: PACK_STAGE_LABEL[stage],
                 color: colors[stage],
-                data: months.map(k => periodPacks.filter(p => p.month === k && packStage(p) === stage).length),
+                data: months.map(k => {
+                    const inCell = periodPacks.filter(p => p.month === k && packStage(p) === stage);
+                    const movTotal = inCell.reduce((sum, p) => sum + (p.__movCount || 0), 0);
+                    return { y: showMovs ? movTotal : inCell.length, custom: { packs: inCell.length, movs: movTotal } };
+                }),
             })),
         };
-    }, [periodPacks, token]);
+    }, [periodPacks, packUnit, token]);
 
-    if (!loading && !movs.length) {
+    if (!loading && !movs.length && !packs.length) {
         return (
             <MotionCard>
-                <Empty description="No MOVs yet." />
+                <Empty description="No MOVs have been submitted to M&E yet." />
             </MotionCard>
         );
     }
@@ -340,19 +396,40 @@ export default function MovsTab({ programId, departmentId, dateFrom, dateTo }: P
     return (
         <Row gutter={[16, 16]}>
             <Col span={24}>
-                {loading ? <MotionCard loading skeletonRows={2} /> : <MetricsGrid metrics={metrics} />}
+                {loading ? <MotionCard loading skeletonRows={2} /> : <MetricsGrid metrics={metrics} compact />}
             </Col>
             <Col xs={24} lg={9}>
-                {chart("Status", statusOptions, counts.total > 0)}
+                {chart("Status with M&E", statusOptions, counts.total > 0)}
             </Col>
             <Col xs={24} lg={15}>
                 {chart("Monthly trend", trendOptions, counts.total > 0)}
             </Col>
             <Col xs={24} lg={14}>
-                {chart("By department", departmentOptions, counts.total > 0)}
+                {chart("Submitted by department", departmentOptions, counts.total > 0)}
             </Col>
             <Col xs={24} lg={10}>
-                {chart("Monthly packs", packOptions, periodPacks.length > 0)}
+                <MotionCard
+                    title="Monthly packs"
+                    loading={loading}
+                    skeletonRows={6}
+                    extra={
+                        <Segmented
+                            size="small"
+                            value={packUnit}
+                            onChange={value => setPackUnit(value as "packs" | "movs")}
+                            options={[
+                                { label: "Packs", value: "packs" },
+                                { label: "MOVs", value: "movs" },
+                            ]}
+                        />
+                    }
+                >
+                    {periodPacks.length > 0 ? (
+                        <HighchartsReact highcharts={Highcharts} options={packOptions} />
+                    ) : (
+                        <Empty description="No data for this period" />
+                    )}
+                </MotionCard>
             </Col>
         </Row>
     );

@@ -657,8 +657,13 @@ const IncubateesInsights: React.FC<Props> = ({
                 innerSize: '60%',
                 borderWidth: 0,
                 showInLegend: true,
-                // The legend and tooltip carry names and counts.
-                dataLabels: { enabled: false }
+                // The legend carries names; each slice shows its count and share.
+                dataLabels: {
+                    enabled: true,
+                    distance: 14,
+                    format: '{point.y} ({point.percentage:.0f}%)',
+                    style: { fontWeight: '600', textOutline: 'none' }
+                }
             }
         },
         series: [
@@ -691,7 +696,12 @@ const IncubateesInsights: React.FC<Props> = ({
                 innerSize: '60%',
                 borderWidth: 0,
                 showInLegend: true,
-                dataLabels: { enabled: false }
+                dataLabels: {
+                    enabled: true,
+                    distance: 14,
+                    format: '{point.y} ({point.percentage:.0f}%)',
+                    style: { fontWeight: '600', textOutline: 'none' }
+                }
             }
         },
         series: [
