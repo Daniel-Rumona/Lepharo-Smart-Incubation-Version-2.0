@@ -11,11 +11,14 @@ import {
     Card,
     Col,
     Empty,
+    Input,
     Modal,
     Pagination,
+    Popover,
     Progress,
     Row,
     Space,
+    Table,
     Tag,
     Typography,
     theme
@@ -380,6 +383,173 @@ function PortfolioRiskPanel({
     )
 }
 
+type BlockerStage = 'department-review' | 'awaiting-sme' | 'ready-no-service'
+
+type BlockedSme = {
+    key: string
+    smeName: string
+    blockers: Array<{ stage: BlockerStage; department: string }>
+}
+
+const BLOCKER_STAGES: BlockerStage[] = [
+    'department-review',
+    'awaiting-sme',
+    'ready-no-service'
+]
+
+const BLOCKER_META: Record<
+    BlockerStage,
+    { label: string; explain: string; tag: string }
+> = {
+    'department-review': {
+        label: 'Awaiting department review',
+        explain: "The department hasn't confirmed its part of the diagnostic plan.",
+        tag: 'red'
+    },
+    'awaiting-sme': {
+        label: 'Awaiting SME confirmation',
+        explain: "The department confirmed; the SME hasn't signed off.",
+        tag: 'volcano'
+    },
+    'ready-no-service': {
+        label: 'Ready, no service',
+        explain: 'Both confirmed, but nothing has been delivered yet.',
+        tag: 'gold'
+    }
+}
+
+/** The hover card on the blockers badge: each blocker type and its SME count. */
+function BlockerBreakdown({
+    counts,
+    hasBlockers
+}: {
+    counts: Record<BlockerStage, number>
+    hasBlockers: boolean
+}) {
+    if (!hasBlockers) {
+        return <Text type="secondary">Every expected department is servicing its SMEs.</Text>
+    }
+
+    return (
+        <div style={{ maxWidth: 300 }}>
+            {BLOCKER_STAGES.map(stage => (
+                <div
+                    key={stage}
+                    style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        marginBottom: 8
+                    }}
+                >
+                    <div>
+                        <Tag color={BLOCKER_META[stage].tag} style={{ marginInlineEnd: 0 }}>
+                            {BLOCKER_META[stage].label}
+                        </Tag>
+                        <Text type="secondary" style={{ display: 'block', fontSize: 11, marginTop: 2 }}>
+                            {BLOCKER_META[stage].explain}
+                        </Text>
+                    </div>
+                    <Text strong style={{ whiteSpace: 'nowrap' }}>
+                        {counts[stage]} SME{counts[stage] === 1 ? '' : 's'}
+                    </Text>
+                </div>
+            ))}
+            <Text type="secondary" style={{ fontSize: 11 }}>
+                An SME stuck with several departments counts under each. Click to see the list.
+            </Text>
+        </div>
+    )
+}
+
+/** Every blocked SME, with which department is stuck at which stage. */
+function BlockedSmesModal({
+    open,
+    onClose,
+    list,
+    counts
+}: {
+    open: boolean
+    onClose: () => void
+    list: BlockedSme[]
+    counts: Record<BlockerStage, number>
+}) {
+    const [search, setSearch] = useState('')
+
+    const needle = search.trim().toLowerCase()
+    const shown = needle
+        ? list.filter(
+            item =>
+                item.smeName.toLowerCase().includes(needle) ||
+                item.blockers.some(b => b.department.toLowerCase().includes(needle))
+        )
+        : list
+
+    return (
+        <Modal
+            open={open}
+            onCancel={onClose}
+            footer={null}
+            width="min(860px, calc(100vw - 32px))"
+            title={`${list.length} SME${list.length === 1 ? '' : 's'} with blockers`}
+            destroyOnClose
+        >
+            <Input.Search
+                allowClear
+                placeholder="Search SME or department"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                style={{ marginBottom: 12 }}
+            />
+            <Table<BlockedSme>
+                size="small"
+                rowKey="key"
+                dataSource={shown}
+                pagination={{ pageSize: 10, hideOnSinglePage: true, showSizeChanger: false }}
+                columns={[
+                    {
+                        title: 'SME',
+                        dataIndex: 'smeName',
+                        width: 240,
+                        sorter: (a, b) => a.smeName.localeCompare(b.smeName)
+                    },
+                    {
+                        title: 'Blocked at',
+                        key: 'blockers',
+                        filters: BLOCKER_STAGES.map(stage => ({
+                            text: `${BLOCKER_META[stage].label} (${counts[stage]})`,
+                            value: stage
+                        })),
+                        onFilter: (value, record) =>
+                            record.blockers.some(b => b.stage === value),
+                        sorter: (a, b) => a.blockers.length - b.blockers.length,
+                        render: (_, record) => (
+                            <Space direction="vertical" size={4}>
+                                {BLOCKER_STAGES.filter(stage =>
+                                    record.blockers.some(b => b.stage === stage)
+                                ).map(stage => (
+                                    <div key={stage}>
+                                        <Tag color={BLOCKER_META[stage].tag}>
+                                            {BLOCKER_META[stage].label}
+                                        </Tag>
+                                        <Text style={{ fontSize: 12 }}>
+                                            {record.blockers
+                                                .filter(b => b.stage === stage)
+                                                .map(b => b.department)
+                                                .join(', ')}
+                                        </Text>
+                                    </div>
+                                ))}
+                            </Space>
+                        )
+                    }
+                ]}
+            />
+        </Modal>
+    )
+}
+
 function ServiceReadinessFlow({
     rows,
     shouldReduceMotion
@@ -389,10 +559,14 @@ function ServiceReadinessFlow({
 }) {
     const { token } = theme.useToken()
 
+    const [blockerListOpen, setBlockerListOpen] = useState(false)
+
     const departmentReviewSmes = new Set<string>()
     const awaitingSmeSmes = new Set<string>()
     const readyNoServiceSmes = new Set<string>()
     const servicedSmes = new Set<string>()
+    // Each blocked SME with the departments holding it up, for the list.
+    const blockedRows = new Map<string, BlockedSme>()
 
     rows.forEach(row => {
         const smeKey = String(
@@ -401,25 +575,53 @@ function ServiceReadinessFlow({
             row.key
         )
 
+        const block = (stage: BlockerStage, departmentName: string) => {
+            const entry = blockedRows.get(smeKey) || {
+                key: smeKey,
+                smeName: row.smeName || 'Unnamed SME',
+                blockers: []
+            }
+            entry.blockers.push({
+                stage,
+                department: departmentName || 'Unassigned department'
+            })
+            blockedRows.set(smeKey, entry)
+        }
+
         row.expectedDepartments.forEach(department => {
             if (!department.deptConfirmed) {
                 departmentReviewSmes.add(smeKey)
+                block('department-review', department.departmentName)
                 return
             }
 
             if (!department.smmeConfirmed) {
                 awaitingSmeSmes.add(smeKey)
+                block('awaiting-sme', department.departmentName)
                 return
             }
 
             if (department.servicedCount === 0) {
                 readyNoServiceSmes.add(smeKey)
+                block('ready-no-service', department.departmentName)
                 return
             }
 
             servicedSmes.add(smeKey)
         })
     })
+
+    const blockedList = Array.from(blockedRows.values()).sort(
+        (a, b) =>
+            b.blockers.length - a.blockers.length ||
+            a.smeName.localeCompare(b.smeName)
+    )
+
+    const blockerCounts: Record<BlockerStage, number> = {
+        'department-review': departmentReviewSmes.size,
+        'awaiting-sme': awaitingSmeSmes.size,
+        'ready-no-service': readyNoServiceSmes.size
+    }
 
     const blockedSmes = new Set<string>([
         ...departmentReviewSmes,
@@ -520,20 +722,53 @@ function ServiceReadinessFlow({
                         </Text>
                     </div>
 
-                    <Tag
-                        color={
-                            blockedSmes.size > 0
-                                ? 'red'
-                                : 'green'
+                    <Popover
+                        placement="bottomRight"
+                        title="What's blocking these SMEs"
+                        content={
+                            <BlockerBreakdown
+                                counts={blockerCounts}
+                                hasBlockers={blockedSmes.size > 0}
+                            />
                         }
-                        style={{
-                            marginInlineEnd: 0,
-                            borderRadius: 999
-                        }}
                     >
-                        {blockedSmes.size} SME
-                        {blockedSmes.size === 1 ? '' : 's'} with blockers
-                    </Tag>
+                        <Tag
+                            color={
+                                blockedSmes.size > 0
+                                    ? 'red'
+                                    : 'green'
+                            }
+                            role={blockedSmes.size > 0 ? 'button' : undefined}
+                            tabIndex={blockedSmes.size > 0 ? 0 : undefined}
+                            onClick={() => {
+                                if (blockedSmes.size > 0) setBlockerListOpen(true)
+                            }}
+                            onKeyDown={event => {
+                                if (
+                                    blockedSmes.size > 0 &&
+                                    (event.key === 'Enter' || event.key === ' ')
+                                ) {
+                                    event.preventDefault()
+                                    setBlockerListOpen(true)
+                                }
+                            }}
+                            style={{
+                                marginInlineEnd: 0,
+                                borderRadius: 999,
+                                cursor: blockedSmes.size > 0 ? 'pointer' : 'default'
+                            }}
+                        >
+                            {blockedSmes.size} SME
+                            {blockedSmes.size === 1 ? '' : 's'} with blockers
+                        </Tag>
+                    </Popover>
+
+                    <BlockedSmesModal
+                        open={blockerListOpen}
+                        onClose={() => setBlockerListOpen(false)}
+                        list={blockedList}
+                        counts={blockerCounts}
+                    />
                 </div>
 
                 <div
