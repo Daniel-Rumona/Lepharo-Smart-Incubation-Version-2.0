@@ -1228,10 +1228,12 @@ const WelcomeWizard: React.FC = () => {
                     </>
                 )}
             </Card>
+            {/* Until the notice is signed, Confirm & Sign above is the action; a
+                greyed-out Next/Finish beside Back only competes with it. */}
             {actionRow(
                 <>
                     {backButton()}
-                    {nextButton({ disabled: !popiaSigned })}
+                    {popiaSigned && nextButton({})}
                 </>
             )}
         </>

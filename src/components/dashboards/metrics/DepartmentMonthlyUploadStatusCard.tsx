@@ -136,7 +136,7 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
     title = (
         <Space size={8}>
             <CalendarOutlined />
-            <span>Department Monthly Upload Status</span>
+            <span>Department MOV Upload Status</span>
         </Space>
     ),
     dateRange,
@@ -692,7 +692,7 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                                                             background: visual.background,
                                                             border:
                                                                 month.state === 'upcoming' ||
-                                                                month.state === 'none'
+                                                                    month.state === 'none'
                                                                     ? `1px solid ${token.colorBorderSecondary}`
                                                                     : 'none'
                                                         }}

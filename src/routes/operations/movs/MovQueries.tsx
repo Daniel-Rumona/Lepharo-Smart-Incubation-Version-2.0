@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Alert, Button, Form, Input, Modal, Upload, message } from 'antd'
-import { ArrowRightOutlined, CheckOutlined, EditOutlined, FileSearchOutlined, MessageOutlined, PaperClipOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, CheckOutlined, EditOutlined, FileSearchOutlined, FileTextOutlined, MessageOutlined, PaperClipOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import { fmtDate } from './movData'
 import { StatusPill } from './movParts'
@@ -109,7 +109,9 @@ export const QueryThread: React.FC<{
     onSendBack?: (query: any, notes: string) => Promise<void>
     /** A query sent to you (the facilitator) that's waiting for your answer. */
     onAnswer?: (query: any) => void
-}> = ({ queries, currentUid, readOnly, onResolve, onAccept, onSendBack, onAnswer }) => {
+    /** In a pack's list: which MOV each query is about, and how to open it. Null for a whole-pack query. */
+    aboutOf?: (query: any) => { label: string; onOpen?: () => void } | null
+}> = ({ queries, currentUid, readOnly, onResolve, onAccept, onSendBack, onAnswer, aboutOf }) => {
     const [resolvingId, setResolvingId] = useState<string | null>(null)
     const [sendingBackId, setSendingBackId] = useState<string | null>(null)
     const [sendBackNotes, setSendBackNotes] = useState('')
@@ -152,6 +154,7 @@ export const QueryThread: React.FC<{
                 const resolution = String(q.resolutionNotes || '').trim()
                 const resolutionNote = resolution && resolution !== reply ? resolution : ''
                 const type = TYPE_LABELS[String(q.queryType || q.type || '')]
+                const about = aboutOf?.(q)
                 return (
                     <li key={q.id} className={`mv-thread-item${resolved ? ' is-resolved' : ''}`}>
                         <div className='mv-thread-head'>
@@ -167,6 +170,18 @@ export const QueryThread: React.FC<{
                         <div className='mv-thread-meta'>
                             {[type, fmtDate(q.createdAt || q.updatedAt)].filter(Boolean).join(' · ')}
                         </div>
+                        {about && (
+                            <div className='mv-thread-about'>
+                                <FileTextOutlined aria-hidden />
+                                {about.onOpen ? (
+                                    <button type='button' className='mv-thread-about-link' onClick={about.onOpen} title='Open this MOV'>
+                                        {about.label}
+                                    </button>
+                                ) : (
+                                    <span>{about.label}</span>
+                                )}
+                            </div>
+                        )}
                         <p className='mv-thread-text'>{q.queryMessage || q.message || '—'}</p>
                         {reply && (
                             <div className='mv-thread-reply'>

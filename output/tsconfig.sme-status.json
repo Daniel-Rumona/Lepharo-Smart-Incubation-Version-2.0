@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../src/routes/shared/incubatees/SmeStatusPanel.tsx",
+    "../src/routes/shared/incubatees/useSmeRows.ts",
+    "../src/routes/shared/incubatees/ParticipantFilters.tsx",
+    "../src/routes/shared/incubatees/ParticipantList.tsx",
+    "../src/routes/shared/incubatees/import/workbook.ts",
+    "../src/vite-env.d.ts"
+  ],
+  "references": []
+}

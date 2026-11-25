@@ -1,6 +1,6 @@
 import React from 'react'
 import { Badge, Button, Dropdown, Input, Popover, Segmented } from 'antd'
-import { DownOutlined, DownloadOutlined, FileExcelOutlined, FilterOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { DownOutlined, DownloadOutlined, FileExcelOutlined, FilterOutlined, MailOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
 import { ChoiceFilter, FilterPanel } from '@/components/workspace'
 import type { ChoiceDef, ParticipantFilterState } from './participantFilterDefs'
@@ -19,6 +19,9 @@ type Props = {
     /** Import a branch's Excel list into the programme (same people as Add SME). */
     onImport: () => void
     onExport: () => void
+    /** Email the SMEs in view; only passed for roles that may send messages. */
+    onMessageAll?: () => void
+    messageCount?: number
 }
 
 /** Search, status segments, additional filters and actions. Dates come from the topbar. */
@@ -30,7 +33,9 @@ export const ParticipantFilters: React.FC<Props> = ({
     addDisabled,
     onAdd,
     onImport,
-    onExport
+    onExport,
+    onMessageAll,
+    messageCount = 0
 }) => {
     const advancedChoices = choices.filter(choice => choice.key !== 'incubationStatus')
     const statusChoices = choices.find(choice => choice.key === 'incubationStatus')?.values || ['Active', 'Inactive', 'Dormant', 'Potential Exit']
@@ -108,6 +113,11 @@ export const ParticipantFilters: React.FC<Props> = ({
                             Add SME <DownOutlined />
                         </Button>
                     </Dropdown>
+                )}
+                {onMessageAll && (
+                    <Button className='ws-toolbar-button' icon={<MailOutlined />} onClick={onMessageAll} disabled={!messageCount}>
+                        Email SMEs ({messageCount})
+                    </Button>
                 )}
                 <Button data-guide='sme-export-all' className='ws-toolbar-button' icon={<DownloadOutlined />} onClick={onExport}>
                     Export SMEs

@@ -6,6 +6,28 @@
     flex: 0 0 auto;
 }
 
+/* Packs: the department picker shares the search box's row, so the search
+   gives up some width to it. */
+.ws-toolbar .ws-toolbar-search:has(+ .mv-toolbar-department) {
+    flex: 2 1 200px;
+}
+
+.mv-toolbar-department.ant-select {
+    flex: 1 1 180px;
+    min-width: 0;
+    height: 40px;
+}
+
+.mv-toolbar-department.ant-select .ant-select-selector {
+    border-radius: 12px;
+}
+
+@media (max-width: 767px) {
+    .mv-toolbar-department.ant-select {
+        flex-basis: 100%;
+    }
+}
+
 
 .mv-status-strip.ant-segmented {
     flex-basis: 100%;
@@ -304,6 +326,48 @@ html[data-theme="dark"] .mv-flag.is-warning {
     flex: 1 1 auto;
     font-size: 12px;
     color: var(--app-text-muted);
+}
+
+/* More / Show fewer under a pack's queries, centred like the table's pages. */
+.mv-thread-more.ant-btn {
+    display: block;
+    margin: 8px auto 0;
+}
+
+.mv-section-count {
+    font-weight: 400;
+    font-size: 13px;
+}
+
+/* Which MOV a pack query is about (SME · intervention), opening it on click. */
+.mv-thread-about {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+    min-width: 0;
+}
+
+.mv-thread-about-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--app-accent);
+    cursor: pointer;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.mv-thread-about-link:hover,
+.mv-thread-about-link:focus-visible {
+    text-decoration: underline;
 }
 
 .mv-thread-text {

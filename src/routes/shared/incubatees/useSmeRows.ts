@@ -1,18 +1,22 @@
 import { incubationState, latestSmeActivity, normalizeSmeStatus } from '@/lib/smeIncubation'
 import { applicationProgramId, isAcceptedApplication } from '@/lib/applicationPopulation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dayjs from 'dayjs'
+import type { DashboardDateRange } from '@/lib/useDashboardDateRange'
+import { buildPerformanceMonths, summarizePerformanceMonths } from './performanceMetrics'
 import { message } from 'antd'
-import { collection, getDocs, query, where, doc, getDoc, orderBy, documentId } from 'firebase/firestore'
+import { collection, getDocs, query, where, doc, getDoc, documentId } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { hasSmeGapSubmission } from '@/utils/agreementStatus'
-import { Application, MonthlyPerfRow, OwnershipSummary, Participant, ProgramDoc, SmeRow, buildUploadedByMonth, chunkArray, extractNearestHubFromProfile, getOnboardedAt, mergePrefUploaded, normalizeHeadcountMap, normalizeRevenueMap, resolveSmePhoto } from './participantsData'
+import { Application, MonthlyPerfRow, OwnershipSummary, Participant, ProgramDoc, SmeRow, chunkArray, extractNearestHubFromProfile, getOnboardedAt, resolveSmePhoto } from './participantsData'
 
 type UseSmeRowsArgs = {
     user: any
     activeProgramId?: string | null
     isAllPrograms: boolean
     isQuantilytixViewer: boolean
+    reportingRange: DashboardDateRange
     /** Called when the hub filter is hidden for this programme, so the page can clear it. */
     onHubFilterHidden: () => void
 }
@@ -21,7 +25,7 @@ type UseSmeRowsArgs = {
  * Loads the accepted SMEs for the active programme (with their reported revenue/headcount),
  * the active-intervention count per SME, and the viewer's onboarding and hub-filter permissions.
  */
-export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytixViewer, onHubFilterHidden }: UseSmeRowsArgs) => {
+export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytixViewer, reportingRange, onHubFilterHidden }: UseSmeRowsArgs) => {
     const [loading, setLoading] = useState(false)
     const [rows, setRows] = useState<SmeRow[]>([])
     const [activeInterventionsBySme, setActiveInterventionsBySme] = useState<Map<string, number>>(new Map())
@@ -189,28 +193,12 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
                         }
 
                         const histSnap = await getDocs(
-                            query(collection(db, `monthlyPerformance/${participantId}/history`), orderBy('createdAt', 'desc'))
+                            collection(db, `monthlyPerformance/${participantId}/history`)
                         )
                         perfHistory = histSnap.docs.map(h => h.data() as any)
                     }
 
-                    const uploaded = buildUploadedByMonth(perfHistory)
-                    const pRevArr = normalizeRevenueMap(participant?.revenueHistory?.monthly)
-                    const pHC = normalizeHeadcountMap(participant?.headcountHistory?.monthly)
-
-                    const mergedRev = mergePrefUploaded(uploaded.revenue, pRevArr)
-                    const mergedPerm = mergePrefUploaded(uploaded.perm, pHC.perm)
-                    const mergedTemp = mergePrefUploaded(uploaded.temp, pHC.temp)
-
-                    const totalRevenue = mergedRev.reduce<number>((acc, v) => acc + (v || 0), 0)
-
-                    let currentEmployees = 0
-                    for (let i = mergedPerm.length - 1; i >= 0; i--) {
-                        if (mergedPerm[i] != null || mergedTemp[i] != null) {
-                            currentEmployees = (mergedPerm[i] || 0) + (mergedTemp[i] || 0)
-                            break
-                        }
-                    }
+                    const performanceMonths = buildPerformanceMonths(perfHistory, participant)
 
                     const ownership: OwnershipSummary = {
                         blackOwnedPercent: participant?.blackOwnedPercent ?? (app as any).blackOwnedPercent ?? undefined,
@@ -310,22 +298,18 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
                             agreement: (app as any).signedAgreements?.['gap-analysis']
                         }),
                         ownership,
-                        metrics: {
-                            totalRevenue,
-                            currentEmployees
-                        }
+                        performanceMonths,
+                        metrics: summarizePerformanceMonths(performanceMonths, null, dayjs().format('YYYY-MM'))
                     }
                 })
             )
 
             setRows(smeRows)
-            if (smeRows.length) {
-                setSelectedAppId(current => current && smeRows.some(row => row.appId === current)
-                    ? current
-                    : smeRows[0].appId)
-            } else {
-                setSelectedAppId(null)
-            }
+            // The page chooses the initial SME after applying its filters and
+            // sort. Firestore's return order must not decide the opening page.
+            setSelectedAppId(current => current && smeRows.some(row => row.appId === current)
+                ? current
+                : null)
         } catch (err) {
             console.error(err)
             message.error('Failed to load SME overview.')
@@ -338,9 +322,19 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
         loadSMEs()
     }, [loadSMEs])
 
+    // Recalculate locally when the reporting range changes; no new reads needed.
+    const rangedRows = useMemo(() => rows.map(row => ({
+        ...row,
+        metrics: summarizePerformanceMonths(
+            row.performanceMonths || [],
+            reportingRange?.[0].format('YYYY-MM') || null,
+            reportingRange?.[1].format('YYYY-MM') || dayjs().format('YYYY-MM')
+        )
+    })), [rows, reportingRange])
+
     return {
         loading,
-        rows,
+        rows: rangedRows,
         setRows,
         activeInterventionsBySme,
         selectedAppId,

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Badge, Button, DatePicker, Drawer, Empty, Grid, Input, Popover, Segmented } from 'antd'
+import { Badge, Button, DatePicker, Drawer, Empty, Grid, Input, Popover, Segmented, Select } from 'antd'
 import { FilterOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { useSearchParams } from 'react-router-dom'
@@ -214,8 +214,9 @@ export const MovWorkspacePage: React.FC<{ role?: MovRole }> = ({ role = 'hod' })
     const packDepartments = role === 'cc' || role === 'me' ? optionsOf(p => clean(p.department)).sort() : []
     const packInvoiceOptions = optionsOf(invoiceOf, ['Attached', 'Missing'])
     const packQueryOptions = optionsOf(queriesOf, ['Open', 'None'])
-    const packFilterChoices = packYears.length + packDepartments.length + packInvoiceOptions.length + packQueryOptions.length
-    const activePackFilters = [packYear !== 'all', packDepartment !== 'all', packInvoiceFilter !== 'all', packQueries !== 'all'].filter(Boolean).length
+    // Department sits in the toolbar beside the search, not in the Filters popover.
+    const packFilterChoices = packYears.length + packInvoiceOptions.length + packQueryOptions.length
+    const activePackFilters = [packYear !== 'all', packInvoiceFilter !== 'all', packQueries !== 'all'].filter(Boolean).length
     useEffect(() => {
         if (!packRows.length) setSelectedPackId(null)
         else if (!selectedPackId || !packRows.some(p => p.id === selectedPackId)) setSelectedPackId(packRows[0].id)
@@ -261,12 +262,10 @@ export const MovWorkspacePage: React.FC<{ role?: MovRole }> = ({ role = 'hod' })
             canReset={activePackFilters > 0}
             onReset={() => {
                 setPackYear('all')
-                setPackDepartment('all')
                 setPackInvoiceFilter('all')
                 setPackQueries('all')
             }}
         >
-            <ChoiceFilter id='mv-pack-department' label='Department' allLabel='All departments' value={packDepartment} values={packDepartments} onChange={setPackDepartment} />
             <ChoiceFilter id='mv-pack-year' label='Year' allLabel='Any year' value={packYear} values={packYears} onChange={setPackYear} />
             <ChoiceFilter id='mv-pack-invoice' label='Invoice' allLabel='Any' value={packInvoiceFilter} values={packInvoiceOptions} onChange={setPackInvoiceFilter} />
             <ChoiceFilter id='mv-pack-queries' label='Open queries' allLabel='Any' value={packQueries} values={packQueryOptions} onChange={setPackQueries} />
@@ -355,6 +354,16 @@ export const MovWorkspacePage: React.FC<{ role?: MovRole }> = ({ role = 'hod' })
                                     onChange={e => setPackSearch(e.target.value)}
                                     aria-label='Search monthly packs'
                                 />
+                                {packDepartments.length > 0 && (
+                                    <Select
+                                        className='mv-toolbar-department'
+                                        value={packDepartment}
+                                        onChange={setPackDepartment}
+                                        options={[{ value: 'all', label: 'All departments' }, ...packDepartments.map(d => ({ value: d, label: d }))]}
+                                        popupMatchSelectWidth={false}
+                                        aria-label='Filter by department'
+                                    />
+                                )}
                                 {packFilterChoices > 0 && (
                                     <Popover content={packFilterPanel} trigger='click' placement='bottomLeft' title='Filters'>
                                         <Badge className='ws-toolbar-button' count={activePackFilters} size='small' offset={[-6, 4]}>

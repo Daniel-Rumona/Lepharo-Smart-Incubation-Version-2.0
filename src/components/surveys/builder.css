@@ -1,0 +1,6 @@
+/* Survey builder: answer option cards are flat; hover and typing tint the
+   border with the accent (set per card as --svb-accent from the theme). */
+.svb-option:hover,
+.svb-option:focus-within {
+    border-color: var(--svb-accent) !important;
+}

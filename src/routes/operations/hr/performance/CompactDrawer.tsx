@@ -3,15 +3,12 @@ import {
     Alert,
     Button,
     Card,
-    Col,
     DatePicker,
     Drawer,
-    Image,
+    Dropdown,
     Input,
     InputNumber,
     Modal,
-    Progress,
-    Row,
     Select,
     Space,
     Tabs,
@@ -23,6 +20,7 @@ import {
 } from 'antd'
 import {
     CheckCircleFilled,
+    ClockCircleOutlined,
     DeleteOutlined,
     EditOutlined,
     FilePdfOutlined,
@@ -55,8 +53,6 @@ import {
     compactDocId,
     compactStatus,
     headlineScore,
-    ratingColor,
-    ratingLabel,
     weightProblems,
     weightedScore,
     type CompactContent,
@@ -119,6 +115,8 @@ export const CompactDrawer: React.FC<{
     canCheckAsHr: boolean
     /** This employee's review records for the cycle, by phase. */
     reviewRecords?: Partial<Record<PhaseKey, ReviewRecord>>
+    /** The tab to open on: 'compact' (default), 'pdp' or a review phase. */
+    initialTab?: string
     user: { id: string; name: string; role: string }
     onSaved: () => void
 }> = ({
@@ -138,6 +136,7 @@ export const CompactDrawer: React.FC<{
     canSignAsManager,
     canCheckAsHr,
     reviewRecords = {},
+    initialTab = 'compact',
     user,
     onSaved
 }) => {
@@ -152,11 +151,13 @@ export const CompactDrawer: React.FC<{
     const [recalibrateOpen, setRecalibrateOpen] = useState(false)
     const [recalibrateReason, setRecalibrateReason] = useState<CompactRevision['reason'] | undefined>()
     const [recalibrateNote, setRecalibrateNote] = useState('')
+    const [detailsOpen, setDetailsOpen] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         if (!open) return
         setUnlocked(false)
-        setTab('compact')
+        setTab(initialTab)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open])
 
     useEffect(() => {
@@ -400,141 +401,171 @@ export const CompactDrawer: React.FC<{
     // ---- Rendering ----
     const sectionItems = (key: SectionKey) => content.items.filter(item => item.section === key)
 
-    const signoffCard = (
-        <Card
-            size='small'
-            title='Agreement'
-            extra={
-                <Tag color={COMPACT_STATUS_META[status].color} style={{ borderRadius: 999, margin: 0 }}>
-                    {COMPACT_STATUS_META[status].label}
-                </Tag>
-            }
-        >
-            <Row gutter={[12, 12]}>
+    // One strip: who has signed, and one button for whoever can sign next.
+    const signRole = SIGNOFF_ROLES.map(r => r.role).find(
+        role =>
+            !signoff[role] &&
+            ((role === 'manager' && isManage && canSignAsManager) ||
+                (role === 'employee' && mode === 'self' && exists) ||
+                (role === 'hr' && isManage && canCheckAsHr && !!signoff.manager && !!signoff.employee))
+    )
+    const signoffStrip = (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 14px', borderRadius: 12, background: token.colorFillQuaternary }}>
+            <Tag color={COMPACT_STATUS_META[status].color} style={{ borderRadius: 999, margin: 0 }}>
+                {COMPACT_STATUS_META[status].label}
+            </Tag>
+            <Space size={14} wrap style={{ flex: '1 1 auto' }}>
                 {SIGNOFF_ROLES.map(({ role, label, help }) => {
                     const signature = signoff[role]
-                    const canSign =
-                        !signature &&
-                        ((role === 'manager' && isManage && canSignAsManager) ||
-                            (role === 'employee' && mode === 'self' && exists) ||
-                            (role === 'hr' && isManage && canCheckAsHr && !!signoff.manager && !!signoff.employee))
                     return (
-                        <Col xs={24} md={8} key={role}>
-                            <div
-                                style={{
-                                    border: `1px solid ${token.colorBorderSecondary}`,
-                                    borderRadius: 12,
-                                    padding: 12,
-                                    height: '100%'
-                                }}
-                            >
-                                <Text type='secondary' style={{ fontSize: 12 }}>{label}</Text>
+                        <Tooltip key={role} title={signature ? `${signature.name}, ${dayjs(signature.at).format('D MMM YYYY, HH:mm')}` : help}>
+                            <Space size={4}>
                                 {signature ? (
-                                    <Space direction='vertical' size={2} style={{ display: 'flex', marginTop: 4 }}>
-                                        {signature.signatureURL ? (
-                                            <Image src={signature.signatureURL} height={36} preview={false} alt='Signature' fallback='' />
-                                        ) : null}
-                                        <Space size={6}>
-                                            <CheckCircleFilled style={{ color: token.colorSuccess }} />
-                                            <Text strong>{signature.name}</Text>
-                                        </Space>
-                                        <Text type='secondary' style={{ fontSize: 12 }}>{dayjs(signature.at).format('D MMM YYYY, HH:mm')}</Text>
-                                    </Space>
+                                    <CheckCircleFilled style={{ color: token.colorSuccess }} />
                                 ) : (
-                                    <Space direction='vertical' size={6} style={{ display: 'flex', marginTop: 4 }}>
-                                        <Text type='secondary' style={{ fontSize: 12 }}>{help}</Text>
-                                        {canSign ? (
-                                            <Button type='primary' size='small' onClick={() => signOrConfirm(role)} loading={saving}>
-                                                Sign
-                                            </Button>
-                                        ) : (
-                                            <Text type='secondary' style={{ fontSize: 12 }}>Not signed</Text>
-                                        )}
-                                    </Space>
+                                    <ClockCircleOutlined style={{ color: token.colorTextQuaternary }} />
                                 )}
-                            </div>
-                        </Col>
+                                <Text type={signature ? undefined : 'secondary'}>{label}</Text>
+                            </Space>
+                        </Tooltip>
                     )
                 })}
-            </Row>
+            </Space>
+            {signRole ? (
+                <Button type='primary' size='small' onClick={() => signOrConfirm(signRole)} loading={saving}>
+                    {signRole === 'hr' ? 'Record HR check' : 'Sign'}
+                </Button>
+            ) : null}
             {isManage && anySigned && !unlocked ? (
-                <Alert
-                    type='info'
-                    showIcon
-                    style={{ marginTop: 12 }}
-                    message='The compact is locked while it is signed.'
-                    action={
-                        <Button size='small' icon={<EditOutlined />} onClick={() => setUnlocked(true)}>
-                            Change compact
-                        </Button>
-                    }
-                />
+                <Button size='small' icon={<EditOutlined />} onClick={() => setUnlocked(true)}>
+                    Change goals
+                </Button>
             ) : null}
             {isManage && unlocked && changedSinceSigning ? (
-                <Alert type='warning' showIcon style={{ marginTop: 12 }} message='Saving these changes withdraws the signatures.' />
+                <Text type='warning' style={{ flexBasis: '100%', fontSize: 12 }}>
+                    Saving these changes withdraws the signatures; both sign again.
+                </Text>
             ) : null}
             {mode === 'self' && !exists ? (
-                <Alert type='info' showIcon style={{ marginTop: 12 }} message='Your line manager has not started your compact yet.' />
+                <Text type='secondary' style={{ flexBasis: '100%', fontSize: 12 }}>
+                    Your line manager has not started your compact yet.
+                </Text>
             ) : null}
-        </Card>
+        </div>
     )
 
+    const toggleDetails = (id: string) =>
+        setDetailsOpen(current => {
+            const next = new Set(current)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+
+    const standardLabel = (value?: string) => STANDARDS.find(s => s.value === value)?.label
+
+    // Read-only goals read as text; editing shows the fields, with standard
+    // and evidence behind a per-goal toggle.
     const itemColumns = (section: SectionKey) => {
+        const isCompetency = section === 'competencies'
         const kpaColumn = {
-            title: section === 'competencies' ? 'Competency' : 'KPA and KPI',
+            title: isCompetency ? 'Competency' : 'Goal and measure',
             key: 'kpa',
-            width: 340,
-            render: (_: any, item: CompactItem) => (
-                <Space direction='vertical' size={6} style={{ width: '100%' }}>
-                    {item.source ? (
-                        <Tag style={{ borderRadius: 999, margin: 0 }} color={item.cluster ? clusterColor(item.cluster) : 'geekblue'}>
-                            {item.cluster ? clusterLabel(item.cluster) : item.source.label || 'Linked'}
-                        </Tag>
-                    ) : null}
-                    <Input
-                        placeholder={section === 'competencies' ? 'Competency' : 'Key performance area'}
-                        value={item.kpa}
-                        disabled={!canEditCompact}
-                        status={item.kpa.trim() ? undefined : 'error'}
-                        onChange={e => updateItem(item.id, { kpa: e.target.value })}
-                    />
-                    <Input.TextArea
-                        placeholder={section === 'competencies' ? 'Expected behaviours' : 'Indicator: how achievement is measured'}
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        value={item.kpi}
-                        disabled={!canEditCompact}
-                        onChange={e => updateItem(item.id, { kpi: e.target.value })}
-                    />
-                </Space>
-            )
+            render: (_: any, item: CompactItem) => {
+                const tag = item.source || item.cluster ? (
+                    <Tag style={{ borderRadius: 999, margin: 0 }} color={item.cluster ? clusterColor(item.cluster) : 'geekblue'}>
+                        {item.cluster ? clusterLabel(item.cluster) : item.source?.label || 'Linked'}
+                    </Tag>
+                ) : null
+                if (!canEditCompact) {
+                    const meta = isCompetency
+                        ? [item.requiredLevel ? `Required level ${item.requiredLevel}` : '']
+                        : [item.target ? `Target: ${item.target}` : '', standardLabel(item.standard) || '', item.evidence ? `Evidence: ${item.evidence}` : '']
+                    return (
+                        <Space direction='vertical' size={2} style={{ width: '100%' }}>
+                            <Space size={6} wrap>
+                                <Text strong>{item.kpa || 'Untitled'}</Text>
+                                {tag}
+                            </Space>
+                            {item.kpi ? <Text type='secondary'>{item.kpi}</Text> : null}
+                            {meta.some(Boolean) ? (
+                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                    {meta.filter(Boolean).join(' · ')}
+                                </Text>
+                            ) : null}
+                        </Space>
+                    )
+                }
+                const showDetails = detailsOpen.has(item.id)
+                return (
+                    <Space direction='vertical' size={6} style={{ width: '100%' }}>
+                        {tag}
+                        <Input
+                            placeholder={isCompetency ? 'Competency' : 'Key performance area'}
+                            value={item.kpa}
+                            status={item.kpa.trim() ? undefined : 'error'}
+                            onChange={e => updateItem(item.id, { kpa: e.target.value })}
+                        />
+                        <Input.TextArea
+                            placeholder={isCompetency ? 'Expected behaviours' : 'Indicator: how achievement is measured'}
+                            autoSize={{ minRows: 1, maxRows: 4 }}
+                            value={item.kpi}
+                            onChange={e => updateItem(item.id, { kpi: e.target.value })}
+                        />
+                        {isCompetency ? null : showDetails ? (
+                            <Space direction='vertical' size={6} style={{ width: '100%' }}>
+                                <Select
+                                    allowClear
+                                    placeholder='Standard (quality, quantity, timeliness or cost)'
+                                    style={{ width: '100%' }}
+                                    value={item.standard}
+                                    options={STANDARDS}
+                                    onChange={value => updateItem(item.id, { standard: value })}
+                                />
+                                <Input.TextArea
+                                    placeholder='Source of evidence'
+                                    autoSize={{ minRows: 1, maxRows: 3 }}
+                                    value={item.evidence}
+                                    onChange={e => updateItem(item.id, { evidence: e.target.value })}
+                                />
+                                <Button type='link' size='small' style={{ padding: 0 }} onClick={() => toggleDetails(item.id)}>
+                                    Hide standard and evidence
+                                </Button>
+                            </Space>
+                        ) : (
+                            <Button type='link' size='small' style={{ padding: 0, height: 'auto' }} onClick={() => toggleDetails(item.id)}>
+                                {item.standard || item.evidence
+                                    ? `Standard and evidence: ${[standardLabel(item.standard), item.evidence].filter(Boolean).join(' · ')}`
+                                    : 'Add standard and evidence'}
+                            </Button>
+                        )}
+                    </Space>
+                )
+            }
         }
         const weightColumn = {
             title: 'Weight',
             key: 'weight',
-            width: 110,
-            render: (_: any, item: CompactItem) => (
-                <InputNumber
-                    min={0}
-                    max={100}
-                    value={item.weight}
-                    addonAfter='%'
-                    disabled={!canEditCompact}
-                    onChange={value => updateItem(item.id, { weight: Number(value || 0) })}
-                />
-            )
+            width: canEditCompact ? 110 : 80,
+            render: (_: any, item: CompactItem) =>
+                canEditCompact ? (
+                    <InputNumber min={0} max={100} value={item.weight} addonAfter='%' onChange={value => updateItem(item.id, { weight: Number(value || 0) })} />
+                ) : (
+                    <Text>{item.weight}%</Text>
+                )
         }
+        if (!canEditCompact) return [kpaColumn, weightColumn]
         const removeColumn = {
             title: '',
             key: 'remove',
             width: 48,
-            render: (_: any, item: CompactItem) =>
-                canEditCompact ? (
-                    <Tooltip title='Remove item'>
-                        <Button type='text' danger icon={<DeleteOutlined />} onClick={() => removeItem(item.id)} />
-                    </Tooltip>
-                ) : null
+            render: (_: any, item: CompactItem) => (
+                <Tooltip title='Remove'>
+                    <Button type='text' danger icon={<DeleteOutlined />} onClick={() => removeItem(item.id)} />
+                </Tooltip>
+            )
         }
-        if (section === 'competencies') {
+        if (isCompetency) {
             return [
                 kpaColumn,
                 {
@@ -546,22 +577,20 @@ export const CompactDrawer: React.FC<{
                             placeholder='Cluster'
                             style={{ width: '100%' }}
                             value={item.cluster}
-                            disabled={!canEditCompact}
                             options={['leadership', 'behavioural', 'functional'].map(value => ({ value, label: clusterLabel(value as any) }))}
                             onChange={value => updateItem(item.id, { cluster: value })}
                         />
                     )
                 },
                 {
-                    title: 'Required proficiency',
+                    title: 'Required level',
                     key: 'requiredLevel',
-                    width: 170,
+                    width: 140,
                     render: (_: any, item: CompactItem) => (
                         <Select
                             placeholder='Level'
                             style={{ width: '100%' }}
                             value={item.requiredLevel}
-                            disabled={!canEditCompact}
                             options={proficiencyOptions}
                             onChange={value => updateItem(item.id, { requiredLevel: value })}
                         />
@@ -574,44 +603,15 @@ export const CompactDrawer: React.FC<{
         return [
             kpaColumn,
             {
-                title: 'Standard',
-                key: 'standard',
-                width: 150,
-                render: (_: any, item: CompactItem) => (
-                    <Select
-                        allowClear
-                        placeholder='Measure'
-                        style={{ width: '100%' }}
-                        value={item.standard}
-                        disabled={!canEditCompact}
-                        options={STANDARDS}
-                        onChange={value => updateItem(item.id, { standard: value })}
-                    />
-                )
-            },
-            {
                 title: 'Target',
                 key: 'target',
+                width: 240,
                 render: (_: any, item: CompactItem) => (
                     <Input.TextArea
                         placeholder='e.g. 95% by 31 Dec'
                         autoSize={{ minRows: 1, maxRows: 3 }}
                         value={item.target}
-                        disabled={!canEditCompact}
                         onChange={e => updateItem(item.id, { target: e.target.value })}
-                    />
-                )
-            },
-            {
-                title: 'Evidence',
-                key: 'evidence',
-                render: (_: any, item: CompactItem) => (
-                    <Input.TextArea
-                        placeholder='Source of evidence'
-                        autoSize={{ minRows: 1, maxRows: 3 }}
-                        value={item.evidence}
-                        disabled={!canEditCompact}
-                        onChange={e => updateItem(item.id, { evidence: e.target.value })}
                     />
                 )
             },
@@ -620,9 +620,11 @@ export const CompactDrawer: React.FC<{
         ]
     }
 
+    const emptySections = SECTIONS.filter(s => !content.sectionWeights[s.key] && !sectionItems(s.key).length)
+
     const compactTab = (
         <Space direction='vertical' size={16} style={{ width: '100%' }}>
-            {signoffCard}
+            {signoffStrip}
 
             {isLegacySeed ? (
                 <Alert
@@ -633,96 +635,84 @@ export const CompactDrawer: React.FC<{
                 />
             ) : null}
 
-            <Card
-                size='small'
-                title='Section weights'
-                extra={
-                    <Space>
-                        {canEditCompact ? (
-                            <Button size='small' icon={<UnorderedListOutlined />} onClick={() => setLibraryOpen(true)}>
-                                Add from library
-                            </Button>
-                        ) : null}
+            {canEditCompact ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Space size={6}>
+                        <Text type='secondary'>Section weights</Text>
                         <Tag color={sectionTotal === 100 ? 'green' : 'red'} style={{ margin: 0 }}>
                             {sectionTotal}% of 100%
                         </Tag>
                     </Space>
-                }
-            >
-                <Row gutter={[12, 12]}>
-                    {SECTIONS.map(section => (
-                        <Col xs={12} md={6} key={section.key}>
-                            <Text type='secondary' style={{ fontSize: 12 }}>{section.label}</Text>
-                            <InputNumber
-                                min={0}
-                                max={100}
-                                value={content.sectionWeights[section.key]}
-                                disabled={!canEditCompact}
-                                onChange={value => setSectionWeight(section.key, Number(value || 0))}
-                                addonAfter='%'
-                                style={{ width: '100%' }}
-                            />
-                        </Col>
-                    ))}
-                </Row>
-                <div style={{ display: 'flex', height: 6, borderRadius: 999, overflow: 'hidden', marginTop: 12, background: token.colorFillSecondary }}>
-                    {SECTIONS.filter(s => content.sectionWeights[s.key] > 0).map((s, i) => (
-                        <div
-                            key={s.key}
-                            style={{
-                                width: `${Math.min(content.sectionWeights[s.key], 100)}%`,
-                                background: [token.colorPrimary, token.colorInfo, token.colorWarning, token.colorSuccess][i % 4]
-                            }}
-                        />
-                    ))}
+                    <Space wrap>
+                        {emptySections.length ? (
+                            <Dropdown
+                                trigger={['click']}
+                                menu={{
+                                    items: emptySections.map(s => ({ key: s.key, label: s.label })),
+                                    onClick: ({ key }) => addItem(key as SectionKey)
+                                }}
+                            >
+                                <Button size='small' icon={<PlusOutlined />}>
+                                    Add section
+                                </Button>
+                            </Dropdown>
+                        ) : null}
+                        <Button size='small' icon={<UnorderedListOutlined />} onClick={() => setLibraryOpen(true)}>
+                            Add from library
+                        </Button>
+                    </Space>
                 </div>
-            </Card>
+            ) : null}
 
             {SECTIONS.map(section => {
                 const items = sectionItems(section.key)
                 const weight = content.sectionWeights[section.key]
                 const itemTotal = items.reduce((sum, item) => sum + Number(item.weight || 0), 0)
-                if (!weight && !items.length) {
-                    return canEditCompact ? (
-                        <Button key={section.key} type='dashed' block icon={<PlusOutlined />} onClick={() => addItem(section.key)}>
-                            Add {section.label.toLowerCase()}
-                        </Button>
-                    ) : null
-                }
+                if (!weight && !items.length) return null
+                if (!canEditCompact && !weight) return null
                 return (
                     <Card
                         key={section.key}
                         size='small'
                         title={
-                            <Space direction='vertical' size={0} style={{ padding: '6px 0' }}>
-                                <Space>
+                            <Space size={8} wrap style={{ padding: '4px 0' }}>
+                                <Tooltip title={section.description}>
                                     <Text strong>{section.label}</Text>
-                                    <Tag style={{ borderRadius: 999 }}>{weight}% of compact</Tag>
-                                </Space>
-                                <Text type='secondary' style={{ fontSize: 12, fontWeight: 400 }}>{section.description}</Text>
+                                </Tooltip>
+                                {canEditCompact ? (
+                                    <InputNumber
+                                        size='small'
+                                        min={0}
+                                        max={100}
+                                        value={weight}
+                                        addonAfter='% of compact'
+                                        style={{ width: 150 }}
+                                        onChange={value => setSectionWeight(section.key, Number(value || 0))}
+                                    />
+                                ) : (
+                                    <Tag style={{ borderRadius: 999, margin: 0 }}>{weight}% of compact</Tag>
+                                )}
                             </Space>
                         }
                         extra={
-                            <Space>
-                                {canEditCompact && items.length > 0 && itemTotal !== 100 ? (
-                                    <Button size='small' type='link' onClick={() => balanceSection(section.key)}>
-                                        Balance
-                                    </Button>
-                                ) : null}
-                                <Tag color={itemTotal === 100 ? 'green' : 'red'} style={{ margin: 0 }}>Items {itemTotal}%</Tag>
-                            </Space>
+                            canEditCompact ? (
+                                <Space>
+                                    {items.length > 0 && itemTotal !== 100 ? (
+                                        <Button size='small' type='link' onClick={() => balanceSection(section.key)}>
+                                            Balance
+                                        </Button>
+                                    ) : null}
+                                    <Tag color={itemTotal === 100 ? 'green' : 'red'} style={{ margin: 0 }}>
+                                        Goals {itemTotal}%
+                                    </Tag>
+                                </Space>
+                            ) : null
                         }
                     >
-                        <EditableRows
-                            rows={items}
-                            isMobile={isMobile}
-                            scrollX={900}
-                            emptyText='No items yet'
-                            columns={itemColumns(section.key)}
-                        />
+                        <EditableRows rows={items} isMobile={isMobile} scrollX={canEditCompact ? 760 : undefined} emptyText='No goals yet' columns={itemColumns(section.key)} />
                         {canEditCompact ? (
                             <Button type='link' icon={<PlusOutlined />} style={{ paddingLeft: 0, marginTop: 8 }} onClick={() => addItem(section.key)}>
-                                Add item
+                                Add goal
                             </Button>
                         ) : null}
                     </Card>
@@ -745,6 +735,7 @@ export const CompactDrawer: React.FC<{
             weightsValid={!problems.length}
             record={reviewRecords[phase] || null}
             employee={employee}
+            lineManagerName={lineManagerName}
             cycle={cycle}
             user={user}
             isLineManager={canSignAsManager}
@@ -941,16 +932,12 @@ export const CompactDrawer: React.FC<{
             }
         >
             {isManage && attendanceSignals?.length ? (
-                <Alert
-                    type='info'
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message='Attendance over the last 30 days (supporting evidence only)'
-                    description={attendanceSignals.join(' · ')}
-                />
+                <Text type='secondary' style={{ display: 'block', fontSize: 12, marginBottom: 12 }}>
+                    Attendance, last 30 days (evidence only): {attendanceSignals.join(' · ')}
+                </Text>
             ) : null}
 
-            {isManage && problems.length ? (
+            {canEditCompact && problems.length ? (
                 <Alert
                     type='warning'
                     showIcon

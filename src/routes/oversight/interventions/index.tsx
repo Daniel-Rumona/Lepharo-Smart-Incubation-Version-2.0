@@ -187,7 +187,7 @@ export function ControlTowerView({ access, data, nameOf }: { access: Access; dat
     const drillStuck = useMemo(() => (drill ? model.stuck.filter(item => item.departmentId === drill) : []), [model.stuck, drill])
 
     if (!access.allowed) {
-        return <Result status="403" title="Not available" subTitle="The Interventions Control Tower is for ROM, M&E and project admins." />
+        return <Result status="403" title="Not available" subTitle="Intervention Oversight is for ROM, M&E and project admins." />
     }
 
     const openStuck = (nextKind: Kind) => {
@@ -405,7 +405,7 @@ export function ControlTowerView({ access, data, nameOf }: { access: Access; dat
     return (
         <div style={{ padding: '6px 24px', flex: 1, minHeight: 0 }}>
             <Helmet>
-                <title>Interventions Control Tower | Incubation Platform</title>
+                <title>Intervention Oversight | Incubation Platform</title>
             </Helmet>
 
             <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>

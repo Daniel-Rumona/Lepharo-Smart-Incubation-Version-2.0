@@ -129,7 +129,7 @@ export const ChaserCard: React.FC<{ draft: ChaserDraft; words?: string; onStarte
                     ) : preview?.spec && items.length ? (
                         <>
                             <Text type='secondary' style={{ fontSize: 12 }}>
-                                Nudges go out in your name through the Control Tower reminder, one a day at most per record.
+                                Nudges go out in your name through the Intervention Oversight reminder, one a day at most per record.
                             </Text>
                             <Button type='primary' shape='round' icon={<SendOutlined />} loading={starting} onClick={() => void start()} style={{ justifySelf: 'start' }}>
                                 Start chasing

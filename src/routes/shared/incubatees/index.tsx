@@ -37,6 +37,7 @@ import { SmeStatusPanel, SmeStatusSummary, smeStatusColor } from './SmeStatusPan
 import { MoaViewerModal } from './MoaViewerModal'
 import { ImportSmesModal } from './import/ImportSmesModal'
 import { exportAllSmes } from './exportParticipants'
+import { MessageComposer, canSendMessages, type MessageRecipient } from '@/components/messaging/MessageComposer'
 import './participants.css'
 
 const { useBreakpoint } = Grid
@@ -124,6 +125,7 @@ const SMEOverview: React.FC = () => {
         activeProgramId,
         isAllPrograms,
         isQuantilytixViewer,
+        reportingRange,
         onHubFilterHidden: () => setFilters(prev => ({ ...prev, hub: 'all' }))
     })
 
@@ -186,11 +188,16 @@ const SMEOverview: React.FC = () => {
 
     // Desktop always shows a detail: keep the selection while it's visible, otherwise take the first row.
     useEffect(() => {
-        if (!sortedRows.length) return
+        // Let the deep-link effect select its SME before applying a default.
+        if (loading || linkedSme) return
+        if (!sortedRows.length) {
+            setSelectedAppId(null)
+            return
+        }
         if (!selectedAppId || !sortedRows.some(r => r.appId === selectedAppId)) {
             setSelectedAppId(sortedRows[0].appId)
         }
-    }, [sortedRows, selectedAppId])
+    }, [sortedRows, selectedAppId, loading, linkedSme])
 
 
     const selectSme = (record: SmeRow) => {
@@ -203,6 +210,18 @@ const SMEOverview: React.FC = () => {
     }
 
     const handleExportAll = useCallback(() => exportAllSmes(filteredRows), [filteredRows])
+
+    // Email SMEs: the server decides which of them this role may reach.
+    const canMessage = canSendMessages(user?.role)
+    const [messageTo, setMessageTo] = useState<MessageRecipient[] | null>(null)
+    const toRecipient = (row: SmeRow): MessageRecipient | null =>
+        row.participantId ? { participantId: row.participantId, name: row.companyName } : null
+    const messageableRows = useMemo(() => {
+        const seen = new Set<string>()
+        return filteredRows
+            .map(toRecipient)
+            .filter((r): r is MessageRecipient => !!r && !seen.has(r.participantId) && !!seen.add(r.participantId))
+    }, [filteredRows])
 
     const editRow = useMemo(() => rows.find(r => r.appId === editAppId) || null, [rows, editAppId])
     const sectorChoices = useMemo(
@@ -268,6 +287,10 @@ const SMEOverview: React.FC = () => {
                                     record={selectedRow}
                                     canEdit={hasOnboardingAccess || isQuantilytixViewer}
                                     onEdit={record => setEditAppId(record.appId)}
+                                    onMessage={canMessage ? record => {
+                                        const recipient = toRecipient(record)
+                                        if (recipient) setMessageTo([recipient])
+                                    } : undefined}
                                     statusAction={
                                         <SmeStatusPanel
                                             row={selectedRow}
@@ -385,7 +408,8 @@ const SMEOverview: React.FC = () => {
                     },
                     {
                         key: 'revenue',
-                        title: isPhone ? 'Revenue' : 'Total revenue',
+                        title: isPhone ? 'Revenue' : reportingRange ? 'Revenue in period' : 'Revenue to date',
+                        subtitle: 'Reported months · dated records only',
                         value: new Intl.NumberFormat('en-ZA', {
                             style: 'currency', currency: 'ZAR', maximumFractionDigits: isPhone ? 1 : 0,
                             ...(isPhone ? { notation: 'compact' as const } : {})
@@ -395,7 +419,8 @@ const SMEOverview: React.FC = () => {
                     },
                     {
                         key: 'employees',
-                        title: isPhone ? 'Employees' : 'Current employees',
+                        title: isPhone ? 'Employees' : reportingRange ? 'Employees at period end' : 'Latest reported employees',
+                        subtitle: 'Latest reported permanent + temporary',
                         value: overviewMetrics.employees,
                         icon: <UserOutlined />,
                         tone: 'info' as const
@@ -412,6 +437,7 @@ const SMEOverview: React.FC = () => {
                         <motion.div {...rise(i * 0.05)}>
                             <MetricTile
                                 title={t.title}
+                                subtitle={t.subtitle}
                                 value={t.value}
                                 icon={t.icon}
                                 tone={t.tone}
@@ -433,6 +459,8 @@ const SMEOverview: React.FC = () => {
                     onAdd={() => navigate(`/participants/new/${activeProgramId}`)}
                     onImport={() => setImportOpen(true)}
                     onExport={handleExportAll}
+                    onMessageAll={canMessage ? () => setMessageTo(messageableRows) : undefined}
+                    messageCount={messageableRows.length}
                 />
             </motion.div>
 
@@ -515,6 +543,13 @@ const SMEOverview: React.FC = () => {
                 onImported={() => void loadSMEs()}
                 programId={activeProgramId && !isAllPrograms ? activeProgramId : null}
                 actor={{ email: user?.email || null, name: user?.name || null }}
+            />
+
+            <MessageComposer
+                open={!!messageTo}
+                recipients={messageTo || []}
+                senderName={user?.name || undefined}
+                onClose={() => setMessageTo(null)}
             />
 
         </div >

@@ -1,0 +1,139 @@
+✔ ordinary records remain eligible; flags and scoped IDs suppress synthetic records (6.4605ms)
+✔ server-created records retain synthetic provenance without undefined fields (10.8823ms)
+✔ manual MOV reminders suppress app-generated IDs within a demo programme (1073.2329ms)
+✔ synthetic SME inquiries skip email even when the notification source matches (244.9648ms)
+✔ synthetic inquiry referrals suppress email and notification after authorization (142.2403ms)
+✖ onApplicationDecisionEmail skips before any lookup or notification (345.012ms)
+✖ onAppointmentWriteNotifyIncubatee skips before any lookup or notification (314.8314ms)
+✔ onAssignedInterventionEmail skips before any lookup or notification (299.5854ms)
+✔ onNotificationCreatedEmail skips before any lookup or notification (72.4018ms)
+✔ onNotificationCreatedPush skips before any lookup or notification (97.9246ms)
+✔ syncProgramToBranchCoordinators skips before any lookup or notification (59.976ms)
+✖ outcomeFollowUpReminderCron skips synthetic backlog before side effects (349.7979ms)
+✖ movStageReminderCron skips synthetic backlog before side effects (177.9413ms)
+✖ workflowQueryReminderCron skips synthetic backlog before side effects (39.5005ms)
+✖ requireMoaAfter3Months skips synthetic backlog before side effects (76.5579ms)
+✖ complianceExpiryReminderCron skips synthetic backlog before side effects (356.7352ms)
+✖ appointmentCompletionNotifier skips synthetic backlog before side effects (220.7226ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 9
+ℹ fail 8
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12683.1285
+
+✖ failing tests:
+
+test at functions\src\syntheticData.test.cjs:198:3
+✖ onApplicationDecisionEmail skips before any lookup or notification (345.012ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\emailApplications.ts:323:65)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:199:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:198:3
+✖ onAppointmentWriteNotifyIncubatee skips before any lookup or notification (314.8314ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\emailAppointments.ts:266:74)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:199:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ outcomeFollowUpReminderCron skips synthetic backlog before side effects (349.7979ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\outcomeFollowUps.ts:129:72)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ movStageReminderCron skips synthetic backlog before side effects (177.9413ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\movStageReminders.ts:72:65)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ workflowQueryReminderCron skips synthetic backlog before side effects (39.5005ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\workflowQueryReminders.ts:28:70)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ requireMoaAfter3Months skips synthetic backlog before side effects (76.5579ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\moaFlag.ts:38:67)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ complianceExpiryReminderCron skips synthetic backlog before side effects (356.7352ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\complianceExpiry.ts:436:73)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+
+test at functions\src\syntheticData.test.cjs:223:3
+✖ appointmentCompletionNotifier skips synthetic backlog before side effects (220.7226ms)
+  Error: Unexpected side effect: ./cronHeartbeat
+      at C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:47:13
+      at Object.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\emailAppointments.ts:266:74)
+      at Module._compile (node:internal/modules/cjs/loader:1873:14)
+      at handlerModule (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:137:5)
+      at TestContext.<anonymous> (C:\Users\danie\Downloads\LPH-Smart-Inc-main\functions\src\syntheticData.test.cjs:224:35)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)

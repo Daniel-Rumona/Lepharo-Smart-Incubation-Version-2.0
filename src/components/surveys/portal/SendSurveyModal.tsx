@@ -20,6 +20,7 @@ import {
     currentQuestions,
     questionCount,
     toResponseQuestions,
+    trainingCompanyName,
     type SentSurvey,
     type SurveyTemplate
 } from './surveyData'
@@ -159,7 +160,7 @@ const loadTrainingRecipients = async (trainingId: string): Promise<Recipient[]> 
         rows.push({
             key: d.id,
             participantName: String(person.name || '').trim() || 'Unnamed person',
-            companyName: String(enrollment.companyName || '').trim() || 'Unnamed Company',
+            companyName: trainingCompanyName(enrollment),
             email: String(person.email || '').trim(),
             group: '',
             branchId: '',
@@ -178,7 +179,7 @@ const loadTrainingRecipients = async (trainingId: string): Promise<Recipient[]> 
         rows.push({
             key: enrollmentId + '_director',
             participantName: String(enrollment.name || '').trim() || 'Unnamed person',
-            companyName: String(enrollment.companyName || '').trim() || 'Unnamed Company',
+            companyName: trainingCompanyName(enrollment),
             email: String(enrollment.email || '').trim(),
             group: '',
             branchId: '',
@@ -578,7 +579,7 @@ export const SendSurveyModal: React.FC<Props> = ({
                         ) : (
                             <Empty
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                description='No published surveys yet. Publish one from Templates.'
+                                description='No surveys are ready to send. Open a template and click Send, or Make ready to send in the builder.'
                             />
                         )}
                     </Form.Item>

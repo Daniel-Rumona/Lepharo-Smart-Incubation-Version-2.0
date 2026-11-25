@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx'
 import { type MoaVars } from '@/components/modals/Contracts/moa.pages'
 import { functionsBaseUrl } from '@/firebaseConfig'
 import dayjs from 'dayjs'
+import type { PerformanceMonth } from './performanceMetrics'
 import { activeJobsOn, type Job, type JobContractRecord } from '@/lib/jobs'
 import { asOfMonthEnd } from '@/lib/jobsData'
 
@@ -223,6 +224,7 @@ export type SmeRow = {
     manuallyCreated?: boolean
     gapCompleted: boolean
     ownership: OwnershipSummary
+    performanceMonths?: PerformanceMonth[]
     metrics: {
         totalRevenue: number
         currentEmployees: number

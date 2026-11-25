@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Col, Input, Modal, Progress, Row, Select, Space, Steps, Tag, Typography, message, theme } from 'antd'
-import { CheckCircleFilled, WarningOutlined } from '@ant-design/icons'
+import { Button, Card, Input, Modal, Select, Space, Tag, Tooltip, Typography, message, theme } from 'antd'
+import { CheckCircleFilled, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -27,7 +27,7 @@ import {
 } from './ipm'
 import type { CompactEmployee, CompactMode } from './CompactDrawer'
 
-const { Text, Title, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 const ratingOptions = RATING_SCALE.map(r => ({ value: r.value, label: `${r.value} · ${r.label}` }))
 
@@ -54,6 +54,7 @@ export const ReviewPanel: React.FC<{
     weightsValid: boolean
     record: ReviewRecord | null
     employee: CompactEmployee | null
+    lineManagerName?: string
     cycle: PerformanceCycle | null
     user: { id: string; name: string; role: string }
     isLineManager: boolean
@@ -74,6 +75,7 @@ export const ReviewPanel: React.FC<{
     weightsValid,
     record,
     employee,
+    lineManagerName,
     cycle,
     user,
     isLineManager,
@@ -261,121 +263,238 @@ export const ReviewPanel: React.FC<{
     }
 
     const shown = result.score ?? result.partial
-    const steps = (
-        <Steps
-            size='small'
-            direction={isMobile ? 'vertical' : 'horizontal'}
-            current={stageIndex(stage)}
-            status={stage === 'disputed' ? 'error' : stage === 'validated' ? 'finish' : 'process'}
-            items={REVIEW_STAGES.map(s => ({
-                title: s.key === 'discussion' && stage === 'disputed' ? 'Disputed' : s.label,
-                description: s.owner
-            }))}
-        />
+    const hideScore = isSelf && !managerSubmitted
+    const stepNumber = Math.min(stageIndex(stage) + 1, REVIEW_STAGES.length)
+    const employeeName = isSelf ? 'you' : employee?.name || 'the employee'
+    const managerName = isLineManager ? 'you' : lineManagerName || 'the line manager'
+    const unsigned = [
+        !record?.signoff?.manager ? managerName : '',
+        !record?.signoff?.employee ? employeeName : ''
+    ].filter(Boolean)
+    const waitingOn: Record<typeof stage, string> = {
+        self: `Waiting on ${employeeName}`,
+        manager: `Waiting on ${managerName}`,
+        discussion: unsigned.length ? `Waiting on ${unsigned.join(' and ')} to sign` : 'Signed',
+        disputed: 'Disputed · HR is mediating',
+        calibration: 'Signed · with HR for calibration',
+        validation: 'Calibrated · awaiting the CEO',
+        validated: `Final · validated by ${record?.validation?.byName || 'the CEO'}`
+    }
+    const stageTitle = stage === 'disputed' ? 'Discuss and sign' : stage === 'validated' ? 'Complete' : REVIEW_STAGES[stageIndex(stage)]?.label
+
+    const statusBar = (
+        <div
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                flexWrap: 'wrap',
+                padding: '12px 16px',
+                borderRadius: 12,
+                background: stage === 'disputed' ? token.colorErrorBg : token.colorFillQuaternary
+            }}
+        >
+            <div>
+                <Text type='secondary' style={{ fontSize: 12, display: 'block' }}>
+                    {stage === 'validated' ? phaseLabel : `${phaseLabel} · step ${stepNumber} of ${REVIEW_STAGES.length}`}
+                </Text>
+                <Text strong>
+                    {stageTitle} · {waitingOn[stage]}
+                </Text>
+                {stage === 'discussion' && gaps.length ? (
+                    <Text type='secondary' style={{ fontSize: 12, display: 'block' }}>
+                        {gaps.length} goal{gaps.length === 1 ? '' : 's'} where the self and final ratings differ: discuss these first.
+                    </Text>
+                ) : null}
+            </div>
+            <Space size={16} wrap>
+                <Space size={10}>
+                    {(['manager', 'employee'] as const).map(role => {
+                        const signature = record?.signoff?.[role]
+                        return (
+                            <Tooltip key={role} title={signature ? `${signature.name}, ${dayjs(signature.at).format('D MMM YYYY')}` : 'Not signed yet'}>
+                                <Space size={4}>
+                                    {signature ? (
+                                        <CheckCircleFilled style={{ color: token.colorSuccess }} />
+                                    ) : (
+                                        <ClockCircleOutlined style={{ color: token.colorTextQuaternary }} />
+                                    )}
+                                    <Text type={signature ? undefined : 'secondary'} style={{ fontSize: 12 }}>
+                                        {role === 'manager' ? 'Manager' : 'Employee'}
+                                    </Text>
+                                </Space>
+                            </Tooltip>
+                        )
+                    })}
+                </Space>
+                {hideScore || shown === null ? (
+                    <Tag style={{ borderRadius: 999, margin: 0 }}>Not rated yet</Tag>
+                ) : record?.calibration && calibrated !== null ? (
+                    <Tooltip title={`Before calibration: ${shown.toFixed(2)}`}>
+                        <Tag color={ratingColor(calibrated)} style={{ borderRadius: 999, margin: 0, fontSize: 13 }}>
+                            {calibrated.toFixed(2)} · {ratingLabel(calibrated)} (calibrated)
+                        </Tag>
+                    </Tooltip>
+                ) : (
+                    <Tooltip title={result.score === null ? `${result.rated} of ${result.total} goals rated so far` : ''}>
+                        <Tag color={ratingColor(shown)} style={{ borderRadius: 999, margin: 0, fontSize: 13 }}>
+                            {shown.toFixed(2)} · {ratingLabel(shown)}
+                            {result.score === null ? ' so far' : ''}
+                        </Tag>
+                    </Tooltip>
+                )}
+            </Space>
+        </div>
     )
 
-    const columns = [
-        {
-            title: 'KPA',
-            key: 'kpa',
-            width: 240,
-            render: (_: unknown, item: CompactItem) => (
-                <Space direction='vertical' size={0}>
-                    <Text strong>{item.kpa || 'Untitled'}</Text>
-                    <Text type='secondary' style={{ fontSize: 12 }}>
-                        {sectionLabel(item)} · weight {item.weight}%{item.target ? ` · target ${item.target}` : ''}
-                    </Text>
-                </Space>
-            )
-        },
-        {
-            title: 'Self',
-            key: 'self',
-            width: 220,
-            render: (_: unknown, item: CompactItem) => (
+    const ratingTag = (value?: number | null) =>
+        value ? (
+            <Tag color={ratingColor(value)} style={{ margin: 0 }}>
+                {ratingOptions.find(o => o.value === value)?.label || value}
+            </Tag>
+        ) : (
+            <Text type='secondary'>Not rated</Text>
+        )
+
+    const gapTag = (item: CompactItem) => {
+        const gap = gaps.find(g => g.itemId === item.id)
+        return gap ? (
+            <Tag color={Math.abs(gap.gap) >= 2 ? 'red' : 'gold'} style={{ margin: 0 }}>
+                Gap {gap.gap > 0 ? `+${gap.gap}` : gap.gap}
+            </Tag>
+        ) : null
+    }
+
+    const goalColumn = {
+        title: 'Goal',
+        key: 'kpa',
+        width: 260,
+        render: (_: unknown, item: CompactItem) => (
+            <Space direction='vertical' size={0}>
+                <Text strong>{item.kpa || 'Untitled'}</Text>
+                <Text type='secondary' style={{ fontSize: 12 }}>
+                    {sectionLabel(item)} · {item.weight}%{item.target ? ` · target ${item.target}` : ''}
+                </Text>
+            </Space>
+        )
+    }
+
+    // The employee's own assessment, editable until the manager submits.
+    const selfColumn = (title: string) => ({
+        title,
+        key: 'self',
+        render: (_: unknown, item: CompactItem) => {
+            const entry = self[item.id] || {}
+            if (!canEditSelf) {
+                return entry.rating || entry.comment ? (
+                    <Space direction='vertical' size={2}>
+                        <Space size={6}>
+                            {ratingTag(entry.rating)}
+                            {isManage ? gapTag(item) : null}
+                        </Space>
+                        {entry.comment ? <Text>{entry.comment}</Text> : null}
+                        {entry.evidence ? (
+                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                Evidence: {entry.evidence}
+                            </Text>
+                        ) : null}
+                    </Space>
+                ) : (
+                    <Text type='secondary'>{record?.selfSubmittedAt ? 'No rating given' : 'Not submitted yet'}</Text>
+                )
+            }
+            return (
                 <Space direction='vertical' size={6} style={{ width: '100%' }}>
                     <Select
                         allowClear
-                        placeholder={canEditSelf ? 'Rate yourself' : 'Not rated'}
+                        placeholder='Rate yourself'
                         style={{ width: '100%' }}
-                        disabled={!canEditSelf}
-                        value={self[item.id]?.rating ?? undefined}
+                        value={entry.rating ?? undefined}
                         options={ratingOptions}
                         onChange={value => setSelf(s => ({ ...s, [item.id]: { ...s[item.id], rating: value ?? null } }))}
                     />
                     <Input.TextArea
-                        placeholder='Your comment'
+                        placeholder='What you delivered'
                         autoSize={{ minRows: 1, maxRows: 4 }}
-                        disabled={!canEditSelf}
-                        value={self[item.id]?.comment}
+                        value={entry.comment}
                         onChange={e => setSelf(s => ({ ...s, [item.id]: { ...s[item.id], comment: e.target.value } }))}
                     />
                     <Input
                         placeholder='Evidence (document, link, result)'
-                        disabled={!canEditSelf}
-                        value={self[item.id]?.evidence}
+                        value={entry.evidence}
                         onChange={e => setSelf(s => ({ ...s, [item.id]: { ...s[item.id], evidence: e.target.value } }))}
                     />
                 </Space>
             )
-        },
-        {
-            title: 'Manager',
-            key: 'manager',
-            width: 220,
-            render: (_: unknown, item: CompactItem) =>
-                isSelf && !managerSubmitted ? (
-                    <Text type='secondary'>Shown once your line manager submits</Text>
-                ) : (
-                    <Space direction='vertical' size={6} style={{ width: '100%' }}>
-                        <Select
-                            allowClear
-                            placeholder='Manager rating'
-                            style={{ width: '100%' }}
-                            disabled={!canEditManager}
-                            value={review.ratings[item.id]?.manager ?? undefined}
-                            options={ratingOptions}
-                            onChange={value => onRating(item.id, { manager: value ?? null })}
-                        />
-                        <Input.TextArea
-                            placeholder='Manager comment'
-                            autoSize={{ minRows: 1, maxRows: 4 }}
-                            disabled={!canEditManager}
-                            value={review.ratings[item.id]?.managerComment}
-                            onChange={e => onRating(item.id, { managerComment: e.target.value })}
-                        />
-                    </Space>
-                )
-        },
-        {
-            title: 'Final',
-            key: 'final',
-            width: 190,
-            render: (_: unknown, item: CompactItem) => {
-                if (isSelf && !managerSubmitted) return <Text type='secondary'>—</Text>
-                const gap = gaps.find(g => g.itemId === item.id)
+        }
+    })
+
+    // The manager's rating. It is also the final rating, unless HR changes the
+    // final rating while mediating a dispute.
+    const managerColumn = (title: string) => ({
+        title,
+        key: 'manager',
+        render: (_: unknown, item: CompactItem) => {
+            const rating = review.ratings[item.id] || {}
+            if (isSelf && !managerSubmitted) return <Text type='secondary'>Shown once your line manager submits</Text>
+            if (!canEditManager) {
                 return (
-                    <Space direction='vertical' size={4} style={{ width: '100%' }}>
-                        <Select
-                            allowClear
-                            placeholder='Final rating'
-                            style={{ width: '100%' }}
-                            disabled={!canEditManager}
-                            status={canEditManager && !review.ratings[item.id]?.final ? 'warning' : undefined}
-                            value={review.ratings[item.id]?.final ?? undefined}
-                            options={ratingOptions}
-                            onChange={value => onRating(item.id, { final: value ?? null })}
-                        />
-                        {gap ? (
-                            <Tag color={Math.abs(gap.gap) >= 2 ? 'red' : 'gold'} style={{ margin: 0 }}>
-                                Gap {gap.gap > 0 ? `+${gap.gap}` : gap.gap} vs self
-                            </Tag>
-                        ) : null}
+                    <Space direction='vertical' size={2}>
+                        <Space size={6} wrap>
+                            {ratingTag(rating.final ?? rating.manager)}
+                            {isSelf ? gapTag(item) : null}
+                            {rating.final && rating.manager && rating.final !== rating.manager ? (
+                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                    (manager rated {rating.manager})
+                                </Text>
+                            ) : null}
+                        </Space>
+                        {rating.managerComment ? <Text>{rating.managerComment}</Text> : null}
                     </Space>
                 )
             }
+            if (stage === 'disputed') {
+                return (
+                    <Space direction='vertical' size={4} style={{ width: '100%' }}>
+                        <Text type='secondary' style={{ fontSize: 12 }}>
+                            Manager rated {rating.manager ?? '—'}. Final after mediation:
+                        </Text>
+                        <Select
+                            placeholder='Final rating'
+                            style={{ width: '100%' }}
+                            value={rating.final ?? undefined}
+                            options={ratingOptions}
+                            onChange={value => onRating(item.id, { final: value ?? null })}
+                        />
+                    </Space>
+                )
+            }
+            return (
+                <Space direction='vertical' size={6} style={{ width: '100%' }}>
+                    <Select
+                        allowClear
+                        placeholder='Rating'
+                        style={{ width: '100%' }}
+                        status={!rating.final ? 'warning' : undefined}
+                        value={rating.final ?? rating.manager ?? undefined}
+                        options={ratingOptions}
+                        onChange={value => onRating(item.id, { manager: value ?? null, final: value ?? null })}
+                    />
+                    <Input.TextArea
+                        placeholder='Comment'
+                        autoSize={{ minRows: 1, maxRows: 4 }}
+                        value={rating.managerComment}
+                        onChange={e => onRating(item.id, { managerComment: e.target.value })}
+                    />
+                </Space>
+            )
         }
-    ]
+    })
+
+    const columns = isSelf
+        ? [goalColumn, selfColumn('Your assessment'), ...(managerSubmitted ? [managerColumn('Line manager')] : [])]
+        : [goalColumn, selfColumn("Employee's view"), managerColumn(isLineManager ? 'Your rating' : 'Line manager')]
 
     const actions: React.ReactNode[] = []
     if (isSelf) {
@@ -385,25 +504,32 @@ export const ReviewPanel: React.FC<{
                     Save draft
                 </Button>,
                 <Button key='submit' type='primary' onClick={() => saveSelf(true)} loading={busy}>
-                    {record?.selfSubmittedAt ? 'Update submission' : 'Submit self-assessment'}
+                    {record?.selfSubmittedAt ? 'Update submission' : 'Submit to my line manager'}
                 </Button>
             )
         }
         if (stage === 'discussion' && !record?.signoff?.employee) {
+            if (!record?.dispute) {
+                actions.push(
+                    <Button key='dispute' danger icon={<WarningOutlined />} onClick={() => setDisputeOpen(true)}>
+                        I disagree
+                    </Button>
+                )
+            }
             actions.push(
                 <Button key='sign' type='primary' onClick={() => confirmSign('employee')} loading={busy}>
                     Sign review
                 </Button>
             )
-            if (!record?.dispute) {
-                actions.push(
-                    <Button key='dispute' danger icon={<WarningOutlined />} onClick={() => setDisputeOpen(true)}>
-                        Raise dispute
-                    </Button>
-                )
-            }
         }
     } else if (isLineManager || isOverseer) {
+        if (managerSubmitted && isLineManager && (stage === 'discussion' || stage === 'disputed')) {
+            actions.push(
+                <Button key='reopen' onClick={reopen} loading={busy}>
+                    Reopen
+                </Button>
+            )
+        }
         if (!managerSubmitted && isLineManager) {
             actions.push(
                 <Button key='submit' type='primary' onClick={submitAssessment} loading={busy}>
@@ -418,78 +544,26 @@ export const ReviewPanel: React.FC<{
                 </Button>
             )
         }
-        if (managerSubmitted && isLineManager && (stage === 'discussion' || stage === 'disputed')) {
-            actions.push(
-                <Button key='reopen' onClick={reopen} loading={busy}>
-                    Reopen assessment
-                </Button>
-            )
-        }
     }
 
-    const signatureLine = (role: 'manager' | 'employee', label: string) => {
-        const signature = record?.signoff?.[role]
-        return (
-            <Space size={6}>
-                {signature ? <CheckCircleFilled style={{ color: token.colorSuccess }} /> : null}
-                <Text type={signature ? undefined : 'secondary'}>
-                    {label}: {signature ? `${signature.name}, ${dayjs(signature.at).format('D MMM YYYY')}` : 'not signed'}
-                </Text>
-            </Space>
-        )
-    }
+    // Each person writes their own overall comment and reads the other's.
+    const overallBlock = (label: string, value: string | undefined, editable: boolean, onChange: (text: string) => void, placeholder: string) => (
+        <div style={{ flex: '1 1 280px' }}>
+            <Text type='secondary' style={{ fontSize: 12 }}>{label}</Text>
+            {editable ? (
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} />
+            ) : (
+                <Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }} type={value ? undefined : 'secondary'}>
+                    {value || 'No comment yet'}
+                </Paragraph>
+            )}
+        </div>
+    )
+    const showManagerOverall = !isSelf || managerSubmitted
 
     return (
         <Space direction='vertical' size={16} style={{ width: '100%' }}>
-            <Card size='small'>{steps}</Card>
-
-            {stage === 'self' && isSelf ? (
-                <Alert
-                    type='info'
-                    showIcon
-                    message='Assess yourself first'
-                    description='Rate each item, explain what you delivered, and point to your evidence. Then submit it to your line manager.'
-                />
-            ) : null}
-            {stage === 'manager' && isSelf ? <Alert type='info' showIcon message='Submitted. Your line manager is now assessing.' /> : null}
-
-            <Card size='small'>
-                <Row gutter={[16, 12]} align='middle'>
-                    <Col xs={24} md={8}>
-                        <Text type='secondary' style={{ fontSize: 12 }}>
-                            {result.score !== null ? 'Weighted final rating' : 'Rating so far'}
-                        </Text>
-                        <Space align='baseline' size={8} style={{ display: 'flex' }}>
-                            <Title level={2} style={{ margin: 0 }}>
-                                {isSelf && !managerSubmitted ? '—' : shown !== null ? shown.toFixed(2) : '—'}
-                            </Title>
-                            <Text type='secondary'>/ 5</Text>
-                        </Space>
-                        {calibrated !== null && record?.calibration ? (
-                            <Tag color={ratingColor(calibrated)} style={{ borderRadius: 999 }}>
-                                Calibrated {calibrated.toFixed(2)} · {ratingLabel(calibrated)}
-                            </Tag>
-                        ) : shown !== null && !(isSelf && !managerSubmitted) ? (
-                            <Tag color={ratingColor(shown)} style={{ borderRadius: 999 }}>{ratingLabel(shown)}</Tag>
-                        ) : null}
-                    </Col>
-                    <Col xs={24} md={16}>
-                        <Text type='secondary' style={{ fontSize: 12 }}>
-                            {result.rated} of {result.total} items have a final rating
-                        </Text>
-                        <Progress percent={result.total ? Math.round((result.rated / result.total) * 100) : 0} />
-                        <Space direction='vertical' size={2}>
-                            {signatureLine('manager', 'Line manager')}
-                            {signatureLine('employee', 'Employee')}
-                            {record?.validation ? (
-                                <Text type='success'>
-                                    Validated by {record.validation.byName || 'the CEO'} on {dayjs(record.validation.at).format('D MMM YYYY')}
-                                </Text>
-                            ) : null}
-                        </Space>
-                    </Col>
-                </Row>
-            </Card>
+            {statusBar}
 
             {record?.dispute ? (
                 <Card size='small' title={record.dispute.resolution ? 'Dispute (resolved)' : 'Dispute'}>
@@ -501,16 +575,16 @@ export const ReviewPanel: React.FC<{
                             <Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{record.dispute.reason}</Paragraph>
                         </div>
                         {record.dispute.resolution ? (
-                            <Alert type='success' showIcon message='Resolution' description={record.dispute.resolution} />
+                            <Text type='success'>Resolution: {record.dispute.resolution}</Text>
                         ) : isOverseer && isManage ? (
                             <>
                                 <Input.TextArea
-                                    placeholder='How the dispute was resolved (HR mediation)'
+                                    placeholder='How the dispute was resolved'
                                     autoSize={{ minRows: 2, maxRows: 6 }}
                                     value={resolution}
                                     onChange={e => setResolution(e.target.value)}
                                 />
-                                <Button type='primary' onClick={resolveDispute} loading={busy}>
+                                <Button type='primary' onClick={resolveDispute} loading={busy} style={{ width: 'fit-content' }}>
                                     Resolve dispute
                                 </Button>
                             </>
@@ -521,40 +595,22 @@ export const ReviewPanel: React.FC<{
                 </Card>
             ) : null}
 
-            {gaps.length && (managerSubmitted || isManage) ? (
-                <Alert
-                    type={gaps.some(g => Math.abs(g.gap) >= 2) ? 'warning' : 'info'}
-                    showIcon
-                    message={`${gaps.length} item${gaps.length === 1 ? '' : 's'} where self and final ratings differ`}
-                    description='Discuss these first: what was delivered, the evidence, and what affected performance.'
-                />
-            ) : null}
+            <EditableRows<CompactItem> rows={items} isMobile={isMobile} emptyText='No weighted goals in the compact' columns={columns} />
 
-            <Card size='small' title={phaseLabel}>
-                <EditableRows<CompactItem> rows={items} isMobile={isMobile} scrollX={900} emptyText='No weighted items in the compact' columns={columns} />
-            </Card>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                {overallBlock(isSelf ? 'Your overall comment' : "Employee's overall comment", overallSelf, canEditSelf, setOverallSelf, 'Your year so far, in a few lines')}
+                {showManagerOverall
+                    ? overallBlock(
+                          isLineManager ? 'Your overall comment' : "Line manager's overall comment",
+                          review.overallManagerComment,
+                          canEditManager,
+                          text => onOverall({ overallManagerComment: text }),
+                          'Overall feedback'
+                      )
+                    : null}
+            </div>
 
-            <Card size='small' title='Overall comments'>
-                <Row gutter={12}>
-                    <Col xs={24} md={12}>
-                        <Text type='secondary' style={{ fontSize: 12 }}>Employee</Text>
-                        <Input.TextArea rows={4} disabled={!canEditSelf} value={overallSelf} onChange={e => setOverallSelf(e.target.value)} />
-                    </Col>
-                    <Col xs={24} md={12}>
-                        <Text type='secondary' style={{ fontSize: 12 }}>Line manager</Text>
-                        <Input.TextArea
-                            rows={4}
-                            disabled={!canEditManager}
-                            value={review.overallManagerComment}
-                            onChange={e => onOverall({ overallManagerComment: e.target.value })}
-                        />
-                    </Col>
-                </Row>
-            </Card>
-
-            {actions.length ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>{actions}</div>
-            ) : null}
+            {actions.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>{actions}</div> : null}
 
             <Modal
                 open={disputeOpen}

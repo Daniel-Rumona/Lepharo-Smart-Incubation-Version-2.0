@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from 'react'
-import { Drawer, Empty, Progress, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
-import { AlertOutlined, AuditOutlined, CheckCircleOutlined, CommentOutlined, FileDoneOutlined, RiseOutlined, TeamOutlined } from '@ant-design/icons'
+import { Empty, Progress, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { AlertOutlined, CheckCircleOutlined, CommentOutlined, FileDoneOutlined, RiseOutlined, TeamOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
 import { MobileCardList } from '@/components/shared/MobileCardList'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { cycleStatusTag } from './CyclesModal'
 import {
     ACTION_LABELS,
     PHASES,
@@ -78,14 +77,12 @@ const difference = (value: number | null, base: number | null) => {
  * check-ins and reviews; everything still waiting on someone; and ratings
  * rolled up from individuals to department, centre and company.
  */
-export const ComplianceDrawer: React.FC<{
-    open: boolean
-    onClose: () => void
+export const CompliancePanel: React.FC<{
     cycle: PerformanceCycle | null
     rows: ComplianceRow[]
     departments: { value: string; label: string }[]
     nameOf: (uid?: string | null) => string | undefined
-}> = ({ open, onClose, cycle, rows, departments, nameOf }) => {
+}> = ({ cycle, rows, departments, nameOf }) => {
     const isMobile = useIsMobile()
     const [view, setView] = useState<View>('compliance')
     const [department, setDepartment] = useState<string>()
@@ -213,24 +210,7 @@ export const ComplianceDrawer: React.FC<{
     )
 
     return (
-        <Drawer
-            open={open}
-            onClose={onClose}
-            width={isMobile ? '100%' : 1100}
-            destroyOnClose
-            title={
-                <Space wrap>
-                    <AuditOutlined />
-                    {`IPM compliance${cycle ? ` · ${cycle.label}` : ''}`}
-                    {cycle ? cycleStatusTag(cycle.status) : null}
-                    {cycle ? (
-                        <Tag color={cycle.reminders ? 'green' : 'default'} style={{ borderRadius: 999, margin: 0 }}>
-                            {cycle.reminders ? 'Reminders on' : 'Reminders off'}
-                        </Tag>
-                    ) : null}
-                </Space>
-            }
-        >
+        <>
             {!cycle ? (
                 <Empty description='Open a performance cycle first.' />
             ) : (
@@ -494,6 +474,6 @@ export const ComplianceDrawer: React.FC<{
                     ) : null}
                 </Space>
             )}
-        </Drawer>
+        </>
     )
 }

@@ -16,7 +16,10 @@ import {
     responseRate,
     sentStatusOf,
     type SentSurvey,
-    type SurveyTemplate
+    type SurveyTemplate,
+    sendSummaryText,
+    templateStatusOf,
+    type TemplateSendSummary
 } from './surveyData'
 import type { SentSort, TemplateSort } from './SurveyToolbar'
 
@@ -45,7 +48,14 @@ type Props = {
     emptyText: string
 } & (
     | { view: 'sent'; surveys: SentSurvey[]; sort: SentSort; onSortChange: (sort: SentSort) => void }
-    | { view: 'templates'; templates: SurveyTemplate[]; sort: TemplateSort; onSortChange: (sort: TemplateSort) => void }
+    | {
+        view: 'templates'
+        templates: SurveyTemplate[]
+        /** Per template id: its sending history. */
+        sendSummaries?: Map<string, TemplateSendSummary>
+        sort: TemplateSort
+        onSortChange: (sort: TemplateSort) => void
+    }
 )
 
 const sentRow = (survey: SentSurvey): Row => {
@@ -74,24 +84,22 @@ const sentRow = (survey: SentSurvey): Row => {
     }
 }
 
-const templateRow = (template: SurveyTemplate): Row => {
+const templateRow = (template: SurveyTemplate, summary?: TemplateSendSummary): Row => {
     const count = questionCount(template.fields)
+    const status = templateStatusOf(template, summary)
     return {
         id: template.id,
         title: template.title,
+        // Once sent, when and how it went says more than when it was edited.
         meta: [
             `${count} question${count === 1 ? '' : 's'}`,
-            formatDay(template.updatedAt) && `Updated ${formatDay(template.updatedAt)}`
+            sendSummaryText(summary) || (formatDay(template.updatedAt) && `Updated ${formatDay(template.updatedAt)}`)
         ]
             .filter(Boolean)
             .join(' · '),
-        side: template.archived ? (
-            <Tag color='warning' bordered={false}>
-                Archived
-            </Tag>
-        ) : (
-            <Tag color={template.status === 'published' ? 'success' : 'default'} bordered={false}>
-                {template.status === 'published' ? 'Published' : 'Draft'}
+        side: (
+            <Tag color={status.color} bordered={false}>
+                {status.label}
             </Tag>
         )
     }
@@ -99,7 +107,7 @@ const templateRow = (template: SurveyTemplate): Row => {
 
 export const SurveyList: React.FC<Props> = props => {
     const { loading, selectedId, onSelect, resetKey, emptyText } = props
-    const rows = props.view === 'sent' ? props.surveys.map(sentRow) : props.templates.map(templateRow)
+    const rows = props.view === 'sent' ? props.surveys.map(sentRow) : props.templates.map(t => templateRow(t, props.sendSummaries?.get(t.id)))
     const [page, setPage] = useState(1)
     const reduceMotion = useReducedMotion()
 

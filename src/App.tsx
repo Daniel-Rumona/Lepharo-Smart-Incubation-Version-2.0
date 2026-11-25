@@ -203,6 +203,7 @@ const InquiriesList = lazy(() => import("@/routes/receptionist/inquiries"));
 const InquiryDetailPage = lazy(() => import("@/routes/receptionist/inquiries/[id]"));
 const InternalResourceRequestView = lazy(() => import("./routes/resources/internal"));
 const InterventionDatabaseView = lazy(() => import("./routes/interventions"));
+const VerifiedInterventions = lazy(() => import("./routes/interventions/VerifiedInterventions"));
 const InterventionsAssignments = lazy(() => import("./routes/operations/assignments"));
 const InterventionDigitalTwin = lazy(() => import("./routes/oversight/digital-twin"));
 const InterventionsControlTower = lazy(() => import("./routes/oversight/interventions"));
@@ -785,6 +786,10 @@ const App = () => {
                                                         <Route
                                                             path="interventions/assignments"
                                                             element={<InterventionsAssignments />}
+                                                        />
+                                                        <Route
+                                                            path="interventions/verified"
+                                                            element={<VerifiedInterventions />}
                                                         />
                                                         <Route path="kpis">
                                                             <Route path="setup" element={<KPIManager />} />

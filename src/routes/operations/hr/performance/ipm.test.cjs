@@ -279,3 +279,45 @@ test('scores roll up by group and for the company, unrated people excluded from 
     assert.deepEqual(company, { key: 'company', label: 'Company', count: 5, rated: 4, average: 3.5 })
     assert.deepEqual(groups.map(g => [g.label, g.count, g.rated, g.average]), [['Unassigned', 1, 1, 5], ['A', 3, 2, 3.5], ['B', 1, 1, 2]])
 })
+
+const { nextStep } = load('./nextStep.ts')
+
+test('the next step prefers the viewer\'s own, then overdue, and names who it waits on', () => {
+    const names = { m: 'Sipho', e: 'Thandi' }
+    const nameOf = uid => names[uid]
+    const subject = { uid: 'e', name: 'Thandi', lineManagerId: 'm', isSelf: false }
+    const asManager = { uid: 'm', isHr: false, isCeo: false }
+    const actions = [
+        { kind: 'self-assessment', owner: 'employee', employeeUid: 'e', phase: 'midYear' },
+        { kind: 'check-in', owner: 'manager', employeeUid: 'e' }
+    ]
+    const mine = nextStep(actions, subject, asManager, nameOf)
+    assert.equal(mine.text, 'Hold a check-in')
+    assert.equal(mine.mine, true)
+    assert.equal(mine.target, 'check-ins')
+
+    const other = nextStep(actions.slice(0, 1), subject, asManager, nameOf)
+    assert.equal(other.text, 'Waiting on Thandi: self-assessment (mid-year)')
+    assert.equal(other.mine, false)
+    assert.equal(other.target, 'review')
+
+    const self = nextStep([{ kind: 'compact-employee', owner: 'employee', employeeUid: 'e', overdue: true }], { ...subject, isSelf: true }, { uid: 'e', isHr: false, isCeo: false }, nameOf)
+    assert.deepEqual([self.text, self.mine, self.overdue], ['Sign the compact', true, true])
+
+    const asHr = nextStep(
+        [{ kind: 'manager-assessment', owner: 'manager', employeeUid: 'e', phase: 'yearEnd' }, { kind: 'calibrate', owner: 'hr', employeeUid: 'e', phase: 'midYear' }],
+        subject,
+        { uid: 'hr', isHr: true, isCeo: false },
+        nameOf
+    )
+    assert.equal(asHr.text, 'Calibrate the rating (mid-year)')
+
+    const overdueFirst = nextStep(
+        [{ kind: 'check-in', owner: 'employee', employeeUid: 'e' }, { kind: 'self-assessment', owner: 'manager', employeeUid: 'e', phase: 'midYear', overdue: true }],
+        subject,
+        { uid: 'x', isHr: false, isCeo: false },
+        nameOf
+    )
+    assert.equal(overdueFirst.text, 'Waiting on Sipho: self-assessment (mid-year)')
+    assert.equal(nextStep([], subject, asManager, nameOf), null)
+})

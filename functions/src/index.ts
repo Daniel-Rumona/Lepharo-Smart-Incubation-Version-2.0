@@ -30,6 +30,7 @@ export * from "./syncCoordinatorPrograms";
 export * from "./departmentNameCascade";
 export * from "./lineManagers";
 export { linkMySmeAccount } from "./smeIdentity";
+export { sendUserMessage } from "./userMessages";
 export { checkLoginAccess } from "./loginAccess";
 export {
   requestSmeLoginCode,

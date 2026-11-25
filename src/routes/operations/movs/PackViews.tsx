@@ -27,6 +27,9 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
 import type { MovWorkspace, QueryCounts } from './useMovWorkspace'
 
+/** How many queries a pack's Queries section shows before More. */
+const QUERY_PREVIEW = 2
+
 const STEPS = [
     { step: 'hod_submission', label: 'Submitted by HOD' },
     { step: 'final_confirmation', label: 'Confirmed by CC' },
@@ -151,6 +154,13 @@ export const PackDetail: React.FC<{
     const decided = ws.decidedItems(pack)
     const openQueries = (s: 'cc' | 'me') => queries.filter(q => String(q.status || 'open').toLowerCase() !== 'resolved' && queryStage(q, ws.isMonitoringDepartment) === s)
     const queriesFor = (id: string) => queries.filter(q => String(q.context?.movId || q.movId || q.context?.movRowId || '') === id)
+    // The Queries section shows a few, unresolved first; More expands the rest in place.
+    const [allQueries, setAllQueries] = useState(false)
+    useEffect(() => setAllQueries(false), [pack.id])
+    const isOpenQuery = (q: any) => String(q.status || 'open').toLowerCase() !== 'resolved'
+    const orderedQueries = [...queries.filter(isOpenQuery), ...queries.filter(q => !isOpenQuery(q))]
+    const shownQueries = allQueries ? orderedQueries : orderedQueries.slice(0, QUERY_PREVIEW)
+    const hiddenQueries = orderedQueries.length - shownQueries.length
 
     // Who acts now, and what's still in the way.
     const ccTurn = stage === 'cc' && (role === 'cc' || role === 'me')
@@ -355,11 +365,24 @@ export const PackDetail: React.FC<{
 
                     {queries.length > 0 && (
                         <section>
-                            <h3 className='ws-section-title'>Queries</h3>
+                            <h3 className='ws-section-title'>
+                                Queries
+                                {queries.length > QUERY_PREVIEW && (
+                                    <span className='mv-muted mv-section-count'> · {queries.filter(isOpenQuery).length} open of {queries.length}</span>
+                                )}
+                            </h3>
                             <QueryThread
-                                queries={queries}
+                                queries={shownQueries}
                                 currentUid={currentUid}
                                 readOnly={role === 'hod' || role === 'facilitator'}
+                                aboutOf={q => {
+                                    const movId = String(q.context?.movId || q.movId || q.context?.movRowId || '')
+                                    if (!movId) return { label: 'Whole pack' }
+                                    const item = items.find(m => m.id === movId)
+                                    const label = [item?.smmeCompanyName || q.context?.smmeCompanyName, item?.interventionTitle || q.context?.interventionTitle]
+                                        .map(v => String(v || '').trim()).filter(Boolean).join(' · ') || 'MOV no longer in this pack'
+                                    return { label, onOpen: item ? () => setOpenItem(item) : undefined }
+                                }}
                                 onAccept={async q => {
                                     await run(`q-${q.id}`, () => ws.acceptPackAnswer(q.id).then(() => undefined), 'Answer accepted.')
                                 }}
@@ -367,6 +390,11 @@ export const PackDetail: React.FC<{
                                     await run(`q-${q.id}`, () => ws.sendBackAnswer(q.id, notes).then(() => undefined), 'Sent back.')
                                 }}
                             />
+                            {queries.length > QUERY_PREVIEW && (
+                                <Button type='link' className='mv-thread-more' onClick={() => setAllQueries(v => !v)}>
+                                    {allQueries ? 'Show fewer' : `More (${hiddenQueries})`}
+                                </Button>
+                            )}
                         </section>
                     )}
 
@@ -376,7 +404,7 @@ export const PackDetail: React.FC<{
                             size='small'
                             rowKey={(m: Mov, i) => m.id || `${m.smmeCompanyName}-${i}`}
                             dataSource={items}
-                            pagination={items.length > 10 ? { pageSize: 10, size: 'small', showSizeChanger: false } : false}
+                            pagination={items.length > 10 ? { pageSize: 10, size: 'small', showSizeChanger: false, position: ['bottomCenter'] } : false}
                             scroll={{ x: 680 }}
                             onRow={(m: Mov) => ({ onClick: () => setOpenItem(m), style: { cursor: 'pointer' } })}
                             columns={[

@@ -30,6 +30,16 @@ export const deleteTemplate = async (templateId: string) => {
     await deleteDoc(doc(db, 'formTemplates', templateId))
 }
 
+/**
+ * Makes a draft template ready to send (status "published"). This never sends
+ * anything: it only lets the template be picked in the Send window.
+ */
+export const makeTemplateReady = (templateId: string) =>
+    updateDoc(doc(db, 'formTemplates', templateId), {
+        status: 'published',
+        updatedAt: new Date().toISOString()
+    })
+
 /** Archived templates leave the Templates list and the Send window; sent surveys keep working. */
 export const setTemplateArchived = (templateId: string, archived: boolean) =>
     updateDoc(doc(db, 'formTemplates', templateId), {

@@ -221,7 +221,7 @@ const INCUBATEE_BOTTOM_NAV_LABELS: Record<string, string> = {
 // desktop; the mobile bottom bar stays at four, the last one reachable from More.
 const OPERATIONS_PRIMARY_KEYS:Partial<Record<DepartmentRoleKey, string[]>> = {
     hr: ["dashboard", "sme-incubatees", "employees", "leave-requests", "reports"],
-    monitoring: ["dashboard", "sme-incubatees", "kpis-tracker", "movs", "reports"],
+    monitoring: ["dashboard", "monitoring-participants", "kpis-tracker", "movs", "reports"],
     financialCompliance: ["dashboard", "finance", "sme-incubatees", "assignments", "appointments", "reports"],
     hse: ["dashboard", "jobs", "sme-incubatees", "assignments", "appointments", "reports"],
     inhouseFinance: ["dashboard", "sme-incubatees", "requested", "invoices", "reported"],
@@ -1108,7 +1108,7 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "control-tower",
                         to: "/projectadmin/control-tower",
-                        label: "Control Tower",
+                        label: "Intervention Oversight",
                         icon: <RadarChartOutlined />,
                     },
                     {
@@ -1148,10 +1148,23 @@ export const CustomLayout: React.FC = () => {
             },
             { key: "digital-twin", to: "/projectadmin/digital-twin", label: "Intervention Twin", icon: <RadarChartOutlined /> },
             {
-                key: "interventions",
+                key: "projectadmin-interventions",
                 icon: <FileSearchOutlined />,
-                to: "/projectadmin/movs",
-                label: "MOVs",
+                label: "Interventions",
+                children: [
+                    {
+                        key: "interventions",
+                        icon: <FileSearchOutlined />,
+                        to: "/projectadmin/movs",
+                        label: "MOVs",
+                    },
+                    {
+                        key: "verified-interventions",
+                        to: "/interventions/verified",
+                        label: "Database",
+                        icon: <SafetyCertificateOutlined />,
+                    },
+                ],
             },
             {
                 key: "inquiries",
@@ -1827,7 +1840,7 @@ export const CustomLayout: React.FC = () => {
                 icon: <TeamOutlined />,
             },
             {
-                key: "performance",
+                key: "employee-performance",
                 to: "/operations/hr/performance",
                 label: "Performance",
                 icon: <TrophyOutlined />,
@@ -1942,7 +1955,7 @@ export const CustomLayout: React.FC = () => {
             {
                 key: "control-tower",
                 to: "/operations/control-tower",
-                label: "Control Tower",
+                label: "Intervention Oversight",
                 icon: <RadarChartOutlined />,
             },
             { key: "digital-twin", to: "/operations/digital-twin", label: "Intervention Twin", icon: <RadarChartOutlined /> },
@@ -1974,6 +1987,12 @@ export const CustomLayout: React.FC = () => {
                         to: "/operations/movs",
                         label: "MOV(s)",
                         icon: <PaperClipOutlined />,
+                    },
+                    {
+                        key: "verified-interventions",
+                        to: "/interventions/verified",
+                        label: "Database",
+                        icon: <SafetyCertificateOutlined />,
                     },
                     {
                         key: "interventions-req",
@@ -2024,6 +2043,12 @@ export const CustomLayout: React.FC = () => {
                         to: "/operations/monitoring/movs",
                         label: "MOVs",
                         icon: <PaperClipOutlined />,
+                    },
+                    {
+                        key: "verified-interventions",
+                        to: "/interventions/verified",
+                        label: "Database",
+                        icon: <SafetyCertificateOutlined />,
                     },
                     { key: "digital-twin", to: "/operations/digital-twin", label: "Intervention Twin", icon: <RadarChartOutlined /> },
                     {
@@ -2573,6 +2598,7 @@ export const CustomLayout: React.FC = () => {
         "interventions-manager",
         "impact-analytics",
         "assignments",
+        "verified-interventions",
     ];
 
     const SHARED_COORDINATOR_TOP = [
@@ -2638,7 +2664,7 @@ export const CustomLayout: React.FC = () => {
                     "compliance",
                     "risk",
                 ],
-                "monitoring-interventions": ["movs", "digital-twin"],
+                "monitoring-interventions": ["movs", "verified-interventions", "digital-twin"],
             },
         },
 
@@ -3618,7 +3644,8 @@ export const CustomLayout: React.FC = () => {
         <SmeWaitingProvider enabled={role === "incubatee"}>
             <Layout className="workspace-shell" style={{ minHeight: "100vh", background: pageBg }}>
                 <WhatsNewTour />
-                {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && !isImmersiveChatMobile && (
+                {/* Builders are full screen: their own header has Back, Save and Publish. */}
+                {!/^\/operations\/(training\/courses|surveys)\/builder(?:\/|$)/.test(location.pathname) && !isImmersiveChatMobile && (
                     <div className="workspace-header-wrap">
                         <header
                             className={`workspace-topbar ${isMobile ? "workspace-topbar-mobile workspace-topbar-nonav" : ""} ${isIncubateeMobileHeader ? "workspace-topbar-incubatee-mobile" : ""}`}

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button, Input, Segmented } from 'antd'
-import { FileTextOutlined, PlusOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons'
+import { BarChartOutlined, FileTextOutlined, PlusOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons'
 import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
 
 export type PortalView = 'sent' | 'templates'
@@ -30,9 +30,11 @@ type Props = {
     onChange: (patch: Partial<PortalFilters>) => void
     onSend: () => void
     onCreate: () => void
+    /** Opens the analytics window across the sent surveys. */
+    onAnalytics: () => void
 }
 
-export const SurveyToolbar: React.FC<Props> = ({ filters, onChange, onSend, onCreate }) => {
+export const SurveyToolbar: React.FC<Props> = ({ filters, onChange, onSend, onCreate, onAnalytics }) => {
     const isSent = filters.view === 'sent'
 
     return (
@@ -71,7 +73,7 @@ export const SurveyToolbar: React.FC<Props> = ({ filters, onChange, onSend, onCr
                         }
                         options={[
                             { label: 'All', value: 'all' },
-                            { label: 'Published', value: 'published' },
+                            { label: 'Ready', value: 'published' },
                             { label: 'Draft', value: 'draft' },
                             { label: 'Archived', value: 'archived' }
                         ]}
@@ -87,6 +89,10 @@ export const SurveyToolbar: React.FC<Props> = ({ filters, onChange, onSend, onCr
                     ]}
                     aria-label='Sent surveys or templates'
                 />
+
+                <Button className='ws-toolbar-button' icon={<BarChartOutlined />} onClick={onAnalytics}>
+                    Analytics
+                </Button>
 
                 {isSent ? (
                     <Button className='ws-toolbar-button' type='primary' icon={<SendOutlined />} onClick={onSend}>

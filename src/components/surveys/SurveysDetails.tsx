@@ -27,7 +27,10 @@ import {
     useSentSurveys,
     useSurveyTemplates,
     type SentSurvey,
-    type SurveyTemplate
+    type SurveyTemplate,
+    sendSummaries,
+    currentQuestions,
+    formatDay
 } from './portal/surveyData'
 import {
     DEFAULT_PORTAL_FILTERS,
@@ -40,11 +43,13 @@ import { SurveyList } from './portal/SurveyList'
 import { SentSurveyDetail } from './portal/SentSurveyDetail'
 import { TemplateDetail } from './portal/TemplateDetail'
 import { SendSurveyModal } from './portal/SendSurveyModal'
+import { SurveyAnalyticsModal } from './portal/SurveyAnalyticsModal'
 import {
     SurveyActionBlocked,
     closeSentSurvey,
     deleteSentSurvey,
     deleteTemplate,
+    makeTemplateReady,
     setTemplateArchived,
     updateSurveyQuestions
 } from './portal/surveyActions'
@@ -107,12 +112,21 @@ const SurveysDetailsPage: React.FC = () => {
     const [selectedId, setSelectedId] = useState<string>()
     const [drawerOpen, setDrawerOpen] = useState(false)
     const [sendOpen, setSendOpen] = useState(false)
+    const [analyticsOpen, setAnalyticsOpen] = useState(false)
+    // Set when opened from a survey: the window starts on it.
+    const [analyticsSurveyId, setAnalyticsSurveyId] = useState<string | null>(null)
+    const openAnalytics = (surveyId: string | null = null) => {
+        setAnalyticsSurveyId(surveyId)
+        setAnalyticsOpen(true)
+    }
     const [sendTemplateId, setSendTemplateId] = useState<string | null>(null)
     // Set when the Send window adds SMEs to an existing survey.
     const [addToSurveyId, setAddToSurveyId] = useState<string | null>(null)
 
     const isSent = filters.view === 'sent'
     const published = useMemo(() => templates.filter(t => t.status === 'published' && !t.archived), [templates])
+    // Each template's sending history, for its status and "Sent 17 Nov · 32/35".
+    const templateSends = useMemo(() => sendSummaries(surveys), [surveys])
     const sentTemplateIds = useMemo(
         () => new Set(surveys.map(s => s.templateId).filter((id): id is string => !!id)),
         [surveys]
@@ -172,6 +186,17 @@ const SurveysDetailsPage: React.FC = () => {
         setAddToSurveyId(null)
         setSendOpen(true)
     }
+
+    // A draft made ready from its Send button: open Send once the reloaded
+    // list has it as ready (the Send window only offers ready templates).
+    const [pendingSendId, setPendingSendId] = useState<string | null>(null)
+    useEffect(() => {
+        if (pendingSendId && published.some(t => t.id === pendingSendId)) {
+            openSend(pendingSendId)
+            setPendingSendId(null)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingSendId, published])
 
     const openAddSmes = (surveyId: string) => {
         setSendTemplateId(null)
@@ -250,6 +275,34 @@ const SurveysDetailsPage: React.FC = () => {
      * When the survey's template now asks different questions from what the
      * SMEs still answering were sent, they can be given the new ones.
      */
+    /**
+     * A template sent before: did its questions change since the latest round?
+     * Unchanged, a new round would repeat it, so people are added to that round
+     * instead (while it's open). Undefined until that round's copies load.
+     */
+    const resendFor = (template: SurveyTemplate) => {
+        const latest = surveys
+            .filter(s => s.templateId === template.id)
+            .sort((a, b) => (toDate(b.sentAt)?.getTime() || 0) - (toDate(a.sentAt)?.getTime() || 0))[0]
+        if (!latest || !latest.loaded) return undefined
+        const sentQuestions = currentQuestions(latest.recipients)
+        const changed =
+            !sentQuestions.length || questionsSignature(template.fields) !== questionsSignature(sentQuestions)
+        const canAdd = canManageSurvey(latest) && sentStatusOf(latest) !== 'closed'
+        return {
+            changed,
+            lastSent: latest.sentAt ? formatDay(latest.sentAt) : 'last time',
+            onAddRecipients: canAdd
+                ? () => {
+                    // Show that round, so what was added is in view afterwards.
+                    patchFilters({ view: 'sent' })
+                    setSelectedId(latest.id)
+                    openAddSmes(latest.id)
+                }
+                : undefined
+        }
+    }
+
     const questionUpdateFor = (survey: SentSurvey) => {
         const template = templates.find(t => t.id === survey.templateId)
         if (!template || !template.fields.length || !canManageSurvey(survey)) return undefined
@@ -277,14 +330,28 @@ const SurveysDetailsPage: React.FC = () => {
             canManage={canManageSurvey(selectedSurvey)}
             onDelete={() => run(() => deleteSentSurvey(selectedSurvey.id), 'Survey deleted')}
             onCloseNow={() => run(() => closeSentSurvey(selectedSurvey.id), 'Survey closed')}
+            onAnalytics={() => openAnalytics(selectedSurvey.id)}
         />
     ) : selectedTemplate ? (
         <TemplateDetail
             template={selectedTemplate}
             onEdit={() => navigate(`${BUILDER_PATH}/${encodeURIComponent(selectedTemplate.id)}`)}
             onSend={() => openSend(selectedTemplate.id)}
+            onMakeReadyAndSend={async () => {
+                try {
+                    await makeTemplateReady(selectedTemplate.id)
+                    message.success("Ready to send. Nothing has been sent yet: choose who gets it.")
+                    setPendingSendId(selectedTemplate.id)
+                    reloadTemplates()
+                } catch (error) {
+                    console.error(error)
+                    message.error('Could not make the survey ready to send.')
+                }
+            }}
             canManage={canManageTemplate(selectedTemplate)}
             hasBeenSent={sentTemplateIds.has(selectedTemplate.id)}
+            sendSummary={templateSends.get(selectedTemplate.id)}
+            resend={resendFor(selectedTemplate)}
             onDelete={() =>
                 run(async () => {
                     await deleteTemplate(selectedTemplate.id)
@@ -337,6 +404,7 @@ const SurveysDetailsPage: React.FC = () => {
                     filters={filters}
                     onChange={patchFilters}
                     onSend={() => openSend()}
+                    onAnalytics={() => openAnalytics()}
                     onCreate={() => navigate(BUILDER_PATH)}
                 />
             </motion.div>
@@ -358,6 +426,7 @@ const SurveysDetailsPage: React.FC = () => {
                     <SurveyList
                         view='templates'
                         templates={visibleTemplates}
+                        sendSummaries={templateSends}
                         sort={filters.templateSort}
                         onSortChange={templateSort => patchFilters({ templateSort })}
                         loading={loading}
@@ -394,6 +463,13 @@ const SurveysDetailsPage: React.FC = () => {
                     {detail}
                 </Drawer>
             )}
+
+            <SurveyAnalyticsModal
+                open={analyticsOpen}
+                onClose={() => setAnalyticsOpen(false)}
+                surveys={surveys}
+                initialSurveyId={analyticsSurveyId}
+            />
 
             <SendSurveyModal
                 open={sendOpen}

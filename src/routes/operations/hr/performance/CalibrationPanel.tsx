@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Drawer, Empty, Input, InputNumber, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
-import { CheckCircleFilled, SafetyOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Input, InputNumber, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { CheckCircleFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -54,16 +54,14 @@ const stageColor = (stage: ReviewStage) =>
  * departments and levels so ratings are fair and consistent, adjusting with a
  * recorded reason; the CEO then validates them, which locks the review.
  */
-export const CalibrationDrawer: React.FC<{
-    open: boolean
-    onClose: () => void
+export const CalibrationPanel: React.FC<{
     cycle: PerformanceCycle | null
     rows: CalibrationRow[]
     isCeo: boolean
     departments: { value: string; label: string }[]
     user: { id: string; name: string }
     onSaved: () => void
-}> = ({ open, onClose, cycle, rows, isCeo, departments, user, onSaved }) => {
+}> = ({ cycle, rows, isCeo, departments, user, onSaved }) => {
     const isMobile = useIsMobile()
     const [phase, setPhase] = useState<PhaseKey>('midYear')
     const [department, setDepartment] = useState<string>()
@@ -71,8 +69,8 @@ export const CalibrationDrawer: React.FC<{
     const [busy, setBusy] = useState<string | null>(null)
 
     useEffect(() => {
-        if (open) setEdits({})
-    }, [open, phase])
+        setEdits({})
+    }, [phase])
 
     const visible = useMemo(
         () =>
@@ -202,25 +200,6 @@ export const CalibrationDrawer: React.FC<{
         value === null ? <Text type='secondary'>—</Text> : <Tag color={ratingColor(value)} style={{ margin: 0 }}>{value.toFixed(2)}</Tag>
 
     return (
-        <Drawer
-            open={open}
-            onClose={onClose}
-            width={isMobile ? '100%' : 1100}
-            destroyOnClose
-            title={
-                <Space>
-                    <SafetyOutlined />
-                    {`Calibration${cycle ? ` · ${cycle.label}` : ''}`}
-                </Space>
-            }
-            extra={
-                isCeo && readyToValidate.length ? (
-                    <Button type='primary' onClick={validateAll}>
-                        {isMobile ? `Validate (${readyToValidate.length})` : `Validate all calibrated (${readyToValidate.length})`}
-                    </Button>
-                ) : null
-            }
-        >
             <Space direction='vertical' size={14} style={{ width: '100%' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     <Segmented
@@ -238,6 +217,11 @@ export const CalibrationDrawer: React.FC<{
                         options={departments}
                         style={{ width: isMobile ? '100%' : 240 }}
                     />
+                    {isCeo && readyToValidate.length ? (
+                        <Button type='primary' onClick={validateAll} style={isMobile ? { width: '100%' } : { marginLeft: 'auto' }}>
+                            {`Validate all calibrated (${readyToValidate.length})`}
+                        </Button>
+                    ) : null}
                 </div>
 
                 <Alert
@@ -315,6 +299,5 @@ export const CalibrationDrawer: React.FC<{
                     />
                 )}
             </Space>
-        </Drawer>
     )
 }

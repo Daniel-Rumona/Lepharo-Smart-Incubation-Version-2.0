@@ -3,6 +3,7 @@ import {
     Alert,
     Button,
     Modal,
+    Pagination,
     Row,
     Col,
     Layout,
@@ -57,6 +58,23 @@ import { workflowQueryService, type WorkflowQueryView } from '@/services/workflo
 
 const { Text } = Typography
 const { useToken } = theme
+const QUERIES_PAGE_SIZE = 5
+
+function isQueryRaisedByDepartment(
+    queryItem: WorkflowQueryView,
+    departmentId: string,
+    departmentName: string,
+    departmentNames: Record<string, string>
+) {
+    const raisedDepartmentId = String(queryItem.raisedBy?.departmentId || '').trim()
+    // IDs are authoritative when both sides have them. Older queries may
+    // only have the raising department's name saved in the actor snapshot.
+    if (departmentId && raisedDepartmentId) return departmentId === raisedDepartmentId
+    const raisedDepartmentName = String(
+        queryItem.raisedBy?.departmentName || queryItem.raisedByDept || departmentNames[raisedDepartmentId] || ''
+    ).trim().toLowerCase()
+    return !!departmentName && !!raisedDepartmentName && departmentName === raisedDepartmentName
+}
 
 
 /* ----------------------------- types ------------------------------ */
@@ -252,6 +270,7 @@ export const OperationsDashboard: React.FC = () => {
     const [workflowQueries, setWorkflowQueries] = useState<WorkflowQueryView[]>([])
     const [queriesLoading, setQueriesLoading] = useState(true)
     const [queriesModalOpen, setQueriesModalOpen] = useState(false)
+    const [queriesPage, setQueriesPage] = useState(1)
     const [resolvingQuery, setResolvingQuery] = useState<WorkflowQueryView | null>(null)
     const [remindingQueryId, setRemindingQueryId] = useState<string | null>(null)
 
@@ -513,13 +532,31 @@ export const OperationsDashboard: React.FC = () => {
         totalRequired || enriched.length
     )
 
+    const userDepartmentId = String(user?.departmentId || '').trim()
+    const userDepartmentName = String(user?.departmentName || deptMap[userDepartmentId] || '').trim().toLowerCase()
+
     const openQueries = useMemo(
         () => workflowQueries.filter(queryItem =>
+            isQueryRaisedByDepartment(queryItem, userDepartmentId, userDepartmentName, deptMap) &&
             !['resolved', 'cancelled'].includes(String(queryItem.status || '').toLowerCase()) &&
             withinRange(queryItem.updatedAt || queryItem.createdAt)
         ),
-        [withinRange, workflowQueries]
+        [withinRange, workflowQueries, userDepartmentId, userDepartmentName, deptMap]
     )
+
+    const currentQueriesPage = Math.min(queriesPage, Math.max(1, Math.ceil(openQueries.length / QUERIES_PAGE_SIZE)))
+    const paginatedQueries = openQueries.slice(
+        (currentQueriesPage - 1) * QUERIES_PAGE_SIZE,
+        currentQueriesPage * QUERIES_PAGE_SIZE
+    )
+
+    useEffect(() => {
+        setQueriesPage(1)
+    }, [queriesModalOpen, withinRange, userDepartmentId, userDepartmentName])
+
+    useEffect(() => {
+        setQueriesPage(currentQueriesPage)
+    }, [currentQueriesPage])
 
     const queryMetric = useMemo<DashboardMetric[]>(() => {
         // Zero queries is a good state, not a dashboard metric that needs a
@@ -820,9 +857,8 @@ export const OperationsDashboard: React.FC = () => {
                 <Alert
                     type='error'
                     showIcon
-                    style={{ marginBottom: 24 }}
-                    message='Some dashboard data failed to load'
-                    description={loadError}
+                    style={{ marginBottom: 16, padding: '6px 12px' }}
+                    message={`Some dashboard data failed to load: ${loadError}`}
                     action={
                         <Button
                             size='small'
@@ -998,7 +1034,19 @@ export const OperationsDashboard: React.FC = () => {
             <Modal
                 open={queriesModalOpen}
                 onCancel={() => setQueriesModalOpen(false)}
-                footer={null}
+                footer={!queriesLoading && openQueries.length > 0 ? (
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <Pagination
+                            current={currentQueriesPage}
+                            pageSize={QUERIES_PAGE_SIZE}
+                            total={openQueries.length}
+                            onChange={setQueriesPage}
+                            showSizeChanger={false}
+                            hideOnSinglePage
+                        />
+                    </div>
+                ) : null}
+                styles={{ body: { maxHeight: '60vh', overflowY: 'auto' } }}
                 centered
                 title={`Open queries · ${periodLabel}`}
                 width={760}
@@ -1012,8 +1060,8 @@ export const OperationsDashboard: React.FC = () => {
                 ) : openQueries.length === 0 ? (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No open queries in this period.' />
                 ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {openQueries.map(queryItem => {
+                    <div key={currentQueriesPage} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {paginatedQueries.map(queryItem => {
                             const sme = String(
                                 (queryItem as any).participantName ||
                                 (queryItem as any).beneficiaryName ||

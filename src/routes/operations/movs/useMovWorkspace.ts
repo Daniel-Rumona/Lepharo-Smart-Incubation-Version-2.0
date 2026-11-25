@@ -696,7 +696,8 @@ export const useMovWorkspace = (user: Actor, activeProgramId: string | null | un
                         movId: item.id,
                         participantId: item.beneficiaryId || item.smmeId || item.participantId || null,
                         interventionId: item.interventionId || null,
-                        interventionTitle: item.interventionTitle || null
+                        interventionTitle: item.interventionTitle || null,
+                        smmeCompanyName: item.smmeCompanyName || null
                     }
                     : { interventionTitle: `${pack.department || 'Department'} pack` }),
                 departmentName: item?.departmentName || pack.department || null,

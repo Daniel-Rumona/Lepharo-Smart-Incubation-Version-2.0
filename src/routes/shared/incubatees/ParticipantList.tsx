@@ -61,9 +61,10 @@ export const ParticipantList: React.FC<Props> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedId])
 
+    const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / PAGE_SIZE)))
     const pageItems = rows.slice(
-        (page - 1) * PAGE_SIZE,
-        page * PAGE_SIZE
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE
     )
 
     return (
@@ -228,7 +229,7 @@ export const ParticipantList: React.FC<Props> = ({
                             <div className='ws-pagination'>
                                 <Pagination
                                     size='small'
-                                    current={page}
+                                    current={currentPage}
                                     pageSize={PAGE_SIZE}
                                     total={rows.length}
                                     onChange={setPage}

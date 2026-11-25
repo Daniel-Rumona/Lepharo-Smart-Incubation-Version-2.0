@@ -1,0 +1,35 @@
+✔ Excel import preserves Inactive as distinct from Dormant and normalises Potential Exit (1773.1525ms)
+✔ status filter stays available and selects only the requested category (379.6489ms)
+✔ 79 days since activity: Active, qualified=false (7.5983ms)
+✔ 80 days since activity: Potential Exit, qualified=false (0.6247ms)
+✔ 89 days since activity: Potential Exit, qualified=false (0.4285ms)
+✔ 90 days since activity: Potential Exit, qualified=true (0.3987ms)
+✔ 120 days since activity: Potential Exit, qualified=true (0.4901ms)
+✔ status changes do not reset the inactivity clock (0.619ms)
+✔ inactive and dormant remain distinct until new participation occurs (0.8834ms)
+✔ late-recorded participation also restores Active when newer than the activity used for the status decision (0.6852ms)
+✔ onboarding baseline is labelled, never presented as real activity (0.568ms)
+✔ unknown, invalid and future dates cannot qualify an SME for exit (0.6097ms)
+✔ already exited records are never reactivated automatically (0.3462ms)
+✔ group completion, no-shows, cancelled work and generic edits are not participation (0.9749ms)
+✔ individual attendance uses the session date rather than the later data-entry date (0.6837ms)
+✔ completed individual work, confirmations and check-ins count; latest date wins (0.5132ms)
+✔ legacy statuses normalise without conflating inactive and dormant (0.3098ms)
+✔ ROM can change status with an audit reason without resetting participation (451.834ms)
+✔ unauthenticated and non-ROM users cannot change status (355.2276ms)
+✔ a blank audit reason is rejected (126.6796ms)
+✔ an old SME cannot escape the 80-day rule by changing its status (130.8092ms)
+✔ activity in another programme does not reset this programme countdown (117.1649ms)
+✔ appointment activity trigger restores Active and clears exit qualification (143.8463ms)
+✔ deleting attendance recomputes activity rather than retaining a stale watermark (121.6958ms)
+✔ pending applications cannot be changed through the SME status endpoint (198.6303ms)
+✔ disabled staff cannot update status even in an onboarding department (151.6592ms)
+✔ late participation restores an SME previously flagged using its onboarding baseline (122.4134ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4404.8181

@@ -77,6 +77,7 @@ import ImportQuestionsModal, {
     type ImportQuestionsOptions
 } from '../modals/surveys/ImportQuestionsModal'
 import PreviewSurveyModal from '../modals/surveys/PreviewSurveyModal'
+import './builder.css'
 import ExportDesignModal from '../modals/surveys/ExportDesignModal'
 import {
     normalizeExportDesign,
@@ -479,6 +480,7 @@ const ChoiceOptionsEditor: React.FC<{
                                         key={
                                             index
                                         }
+                                        className='svb-option'
                                         style={{
                                             gridColumn:
                                                 options.length === 5
@@ -495,13 +497,15 @@ const ChoiceOptionsEditor: React.FC<{
                                                 '10px 10px 10px 12px',
                                             borderRadius:
                                                 14,
+                                            // Flat: a drop shadow reads as a smudge in
+                                            // dark mode. Hover/focus tint the border.
                                             border: `1px solid ${token.colorBorderSecondary}`,
                                             background:
-                                                token.colorBgContainer,
-                                            boxShadow:
-                                                '0 4px 14px rgba(15,23,42,.035)',
+                                                token.colorFillQuaternary,
+                                            boxShadow: 'none',
                                             transition:
-                                                'all .2s ease'
+                                                'border-color .2s ease',
+                                            ['--svb-accent' as string]: token.colorPrimaryBorder
                                         }}
                                     >
                                         {yesNo ? (
@@ -1034,7 +1038,9 @@ export default function SurveyBuilder() {
     })
 
     useEffect(() => {
-        if (!surveyData.department && user?.departmentId) {
+        // New surveys only: a template being edited keeps its own department
+        // (none = shared), and filling one in would look like an unsaved edit.
+        if (!routeTemplateId && !surveyData.department && user?.departmentId) {
             setSurveyData(prev => ({ ...prev, department: user.departmentId }))
         }
     }, [user?.departmentId]) // runs once when user loads
@@ -1343,7 +1349,6 @@ export default function SurveyBuilder() {
                     doc(db, 'formTemplates', editingTemplateId),
                     writePayload
                 )
-                message.success('Form template updated')
             } else {
                 const created = await addDoc(
                     collection(db, 'formTemplates'),
@@ -1351,7 +1356,18 @@ export default function SurveyBuilder() {
                 )
                 savedId = created.id
                 setEditingTemplateId(savedId)
-                message.success('Form template saved')
+            }
+
+            // Say what actually happened: making a template ready never sends it.
+            const nowReady = payload.status === 'published'
+            const wasReady = baseline?.status === 'published' && !!editingTemplateId
+            if (nowReady && !wasReady) {
+                message.success({
+                    content: "Ready to send. Nobody has received it yet: send it from the Surveys page when you're ready.",
+                    duration: 6
+                })
+            } else {
+                message.success(nowReady ? 'Changes saved' : 'Draft saved')
             }
 
             // Build the new canonical state that matches Firestore
@@ -1429,7 +1445,9 @@ export default function SurveyBuilder() {
     }, [routeTemplateId])
 
     const surveyTitle = surveyData.title.trim() || 'Untitled survey'
-    const saveLabel = surveyData.status === 'published' ? 'Save changes' : 'Save draft'
+    // "Ready to send" is the published status: it can be sent, nothing is sent.
+    const isReady = surveyData.status === 'published'
+    const saveLabel = isReady ? 'Save changes' : 'Save draft'
 
     const handleBack = () => {
         if (shouldPromptDraft) {
@@ -1915,7 +1933,7 @@ export default function SurveyBuilder() {
                             }}
                         >
                             {surveyData.status === 'published'
-                                ? 'Published'
+                                ? 'Ready to send'
                                 : 'Draft'}
                         </Tag>
                     </div>
@@ -1967,6 +1985,8 @@ export default function SurveyBuilder() {
                 minHeight: 0,
                 width: '100%',
                 padding: isMobile ? '0 12px' : '0 24px',
+                // Full screen (no app top bar), so the page brings its own top gap.
+                paddingTop: isMobile ? 'calc(12px + env(safe-area-inset-top))' : 20,
                 // Room under the content for the fixed bottom bar, when there is one.
                 paddingBottom: showDesktopSidePanel ? 20 : 'calc(84px + env(safe-area-inset-bottom))'
             }}
@@ -1978,7 +1998,8 @@ export default function SurveyBuilder() {
                 size='small'
                 style={{
                     position: 'sticky',
-                    top: 0,
+                    // Keeps a gap from the window edge while it sticks.
+                    top: isMobile ? 8 : 12,
                     zIndex: 10,
                     marginBottom: 14,
                     background: token.colorBgContainer
@@ -2075,11 +2096,12 @@ export default function SurveyBuilder() {
                                         label: 'Preview',
                                         onClick: () => setIsPreviewVisible(true)
                                     },
-                                    {
+                                    // A ready template saves with its primary button.
+                                    !isReady && {
                                         key: 'save',
                                         icon: <SaveOutlined />,
                                         label: saveLabel,
-                                        disabled: savingTemplate,
+                                        disabled: savingTemplate || !isDirty,
                                         onClick: () => saveTemplate(surveyData.status)
                                     }
                                 ].filter(Boolean) as MenuProps['items']
@@ -2145,27 +2167,57 @@ export default function SurveyBuilder() {
                                 </Button>
                             ) : null}
 
-                            <Button
-                                shape='round'
-                                icon={<SaveOutlined />}
-                                loading={savingTemplate}
-                                onClick={() => saveTemplate(surveyData.status)}
-                            >
-                                {saveLabel}
-                            </Button>
+                            {/* A ready template has one save: the primary button. */}
+                            {!isReady ? (
+                                <Button
+                                    shape='round'
+                                    icon={<SaveOutlined />}
+                                    loading={savingTemplate}
+                                    disabled={!isDirty}
+                                    onClick={() => saveTemplate(surveyData.status)}
+                                >
+                                    {saveLabel}
+                                </Button>
+                            ) : null}
                         </Space>
                     )}
 
-                    <Button
-                        type='primary'
-                        shape='round'
-                        icon={<SendOutlined />}
-                        loading={savingTemplate}
-                        onClick={publishSurvey}
-                        style={{ flex: '0 0 auto' }}
-                    >
-                        Publish
-                    </Button>
+                    {isReady ? (
+                        // Only offered once something actually changed.
+                        isDirty ? (
+                            <Button
+                                type='primary'
+                                shape='round'
+                                icon={<SaveOutlined />}
+                                loading={savingTemplate}
+                                onClick={() => saveTemplate('published')}
+                                style={{ flex: '0 0 auto' }}
+                            >
+                                Save changes
+                            </Button>
+                        ) : (
+                            <Text
+                                type='secondary'
+                                style={{ flex: '0 0 auto', whiteSpace: 'nowrap', padding: '0 6px' }}
+                            >
+                                <CheckOutlined style={{ marginRight: 6 }} />
+                                {isMobile ? 'Saved' : 'All changes saved'}
+                            </Text>
+                        )
+                    ) : (
+                        <Tooltip title="Lets this survey be picked in Send survey. Nobody receives anything until you send it and choose who gets it.">
+                            <Button
+                                type='primary'
+                                shape='round'
+                                icon={<SendOutlined />}
+                                loading={savingTemplate}
+                                onClick={publishSurvey}
+                                style={{ flex: '0 0 auto' }}
+                            >
+                                {isMobile ? 'Make ready' : 'Make ready to send'}
+                            </Button>
+                        </Tooltip>
+                    )}
                 </div>
             </MotionCard>
 

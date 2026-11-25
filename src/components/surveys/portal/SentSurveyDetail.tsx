@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { App, Button, Dropdown, Empty, Progress, Segmented, Tag, type MenuProps } from 'antd'
+import { App, Button, Dropdown, Empty, Modal, Progress, Segmented, Tag, Tooltip, type MenuProps } from 'antd'
 import {
     ArrowLeftOutlined,
+    ArrowRightOutlined,
     BarChartOutlined,
     CheckCircleOutlined,
     ClockCircleOutlined,
@@ -53,6 +54,8 @@ type Props = {
     questionUpdate?: { waiting: number; submitted: number; onUpdate: () => Promise<void> }
     onDelete: () => Promise<void>
     onCloseNow: () => Promise<void>
+    /** Opens the analytics window on this survey. */
+    onAnalytics?: () => void
 }
 
 const Bars: React.FC<{ rows: { label: string; count: number }[]; total: number }> = ({ rows, total }) => (
@@ -126,7 +129,8 @@ export const SentSurveyDetail: React.FC<Props> = ({
     onAddSmes,
     questionUpdate,
     onDelete,
-    onCloseNow
+    onCloseNow,
+    onAnalytics
 }) => {
     const [tab, setTab] = useState<DetailTab>('insights')
     const [openRecipientId, setOpenRecipientId] = useState<string | null>(null)
@@ -164,7 +168,7 @@ export const SentSurveyDetail: React.FC<Props> = ({
         })),
         design,
         answers: recipient.answers || {},
-        respondent: [recipient.participantName, recipient.companyName].filter(Boolean).join(' · '),
+        respondent: Array.from(new Set([recipient.participantName, recipient.companyName].filter(Boolean))).join(' · '),
         signer: { name: recipient.participantName, date: formatDay(recipient.submittedAt) }
     })
 
@@ -235,6 +239,12 @@ export const SentSurveyDetail: React.FC<Props> = ({
         })
 
     const secondaryActions = [
+        onAnalytics && survey.completed > 0 && {
+            key: 'analytics',
+            icon: <BarChartOutlined />,
+            label: 'Analytics',
+            onClick: onAnalytics
+        },
         survey.completed > 0 && {
             key: 'pdfs',
             icon: <FilePdfOutlined />,
@@ -257,6 +267,27 @@ export const SentSurveyDetail: React.FC<Props> = ({
         [survey.recipients]
     )
     const openRecipient = survey.recipients.find(r => r.id === openRecipientId) || null
+    // The window steps through submitted responses in the list's order.
+    const answered = useMemo(() => recipients.filter(r => r.completed), [recipients])
+    const openIndex = openRecipient ? answered.findIndex(r => r.id === openRecipient.id) : -1
+    const stepTo = (delta: -1 | 1) => {
+        const next = answered[openIndex + delta]
+        if (next) setOpenRecipientId(next.id)
+    }
+
+    // ← / → move between responses while the window is open (not while typing).
+    useEffect(() => {
+        if (!openRecipient) return
+        const onKey = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null
+            if (target && /^(input|textarea|select)$/i.test(target.tagName)) return
+            if (event.key === 'ArrowLeft') stepTo(-1)
+            if (event.key === 'ArrowRight') stepTo(1)
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openRecipient?.id, openIndex, answered])
 
     const enter = (delay = 0) =>
         reduceMotion
@@ -337,7 +368,7 @@ export const SentSurveyDetail: React.FC<Props> = ({
                         />
                     </motion.div>
                     <div className='ws-detail-pane'>
-                        <motion.div key={`${survey.id}-${tab}-${openRecipientId || ''}`} {...enter(0.08)}>
+                        <motion.div key={`${survey.id}-${tab}`} {...enter(0.08)}>
                             {tab === 'insights' &&
                                 (survey.completed === 0 ? (
                                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No responses yet' />
@@ -354,30 +385,7 @@ export const SentSurveyDetail: React.FC<Props> = ({
                                 ))}
 
                             {tab === 'recipients' &&
-                                (openRecipient ? (
-                                    <>
-                                        <Button
-                                            className='svp-back'
-                                            type='text'
-                                            icon={<ArrowLeftOutlined />}
-                                            onClick={() => setOpenRecipientId(null)}
-                                        >
-                                            {openRecipient.companyName}
-                                        </Button>
-                                        <Button
-                                            icon={<FilePdfOutlined />}
-                                            style={{ float: 'right' }}
-                                            onClick={() => downloadOne(openRecipient)}
-                                        >
-                                            Download PDF
-                                        </Button>
-                                        <SurveyResponseViewer
-                                            questions={openRecipient.questions || openRecipient.fields || []}
-                                            answers={openRecipient.answers || {}}
-                                            showTOC
-                                        />
-                                    </>
-                                ) : recipients.length ? (
+                                (recipients.length ? (
                                     <div className='svp-recipient-list' role='list' aria-label='Recipients'>
                                         {recipients.map(recipient => {
                                             const state = recipientState(recipient)
@@ -395,7 +403,12 @@ export const SentSurveyDetail: React.FC<Props> = ({
                                                     <div className='ws-row-main'>
                                                         <div className='ws-row-name'>{recipient.companyName}</div>
                                                         <div className='ws-row-meta'>
-                                                            {[recipient.participantName, recipient.email]
+                                                            {[
+                                                                // A director often carries the company's name; don't say it twice.
+                                                                recipient.participantName !== recipient.companyName &&
+                                                                    recipient.participantName,
+                                                                recipient.email
+                                                            ]
                                                                 .filter(Boolean)
                                                                 .join(' · ')}
                                                         </div>
@@ -426,6 +439,73 @@ export const SentSurveyDetail: React.FC<Props> = ({
                     </div>
                 </div>
             </MotionCard>
+
+            {/* A response opens in its own wide window, with room for its
+                sections; the list stays as it was behind it. */}
+            <Modal
+                open={!!openRecipient}
+                onCancel={() => setOpenRecipientId(null)}
+                footer={null}
+                width={1040}
+                centered
+                destroyOnClose
+                // Shows its scrollbar (modals hide theirs app-wide): a long
+                // response needs a visible sense of where you are.
+                rootClassName='svp-response-modal'
+                styles={{ body: { maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 8 } }}
+                title={
+                    openRecipient ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingRight: 28 }}>
+                            <EntityAvatar name={openRecipient.companyName} size={36} />
+                            <div style={{ flex: '1 1 200px', minWidth: 0, textAlign: 'left' }}>
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {openRecipient.companyName}
+                                </div>
+                                <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.65 }}>
+                                    {[
+                                        openRecipient.participantName !== openRecipient.companyName &&
+                                            openRecipient.participantName,
+                                        openRecipient.submittedAt && `Submitted ${formatDay(openRecipient.submittedAt)}`,
+                                        answered.length > 1 && `${openIndex + 1} of ${answered.length}`
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <Tooltip title='Previous response (←)'>
+                                    <Button
+                                        icon={<ArrowLeftOutlined />}
+                                        aria-label='Previous response'
+                                        disabled={openIndex <= 0}
+                                        onClick={() => stepTo(-1)}
+                                    />
+                                </Tooltip>
+                                <Tooltip title='Next response (→)'>
+                                    <Button
+                                        icon={<ArrowRightOutlined />}
+                                        aria-label='Next response'
+                                        disabled={openIndex < 0 || openIndex >= answered.length - 1}
+                                        onClick={() => stepTo(1)}
+                                    />
+                                </Tooltip>
+                                <Button icon={<FilePdfOutlined />} onClick={() => downloadOne(openRecipient)}>
+                                    Download PDF
+                                </Button>
+                            </div>
+                        </div>
+                    ) : null
+                }
+            >
+                {openRecipient ? (
+                    <SurveyResponseViewer
+                        key={openRecipient.id}
+                        questions={openRecipient.questions || openRecipient.fields || []}
+                        answers={openRecipient.answers || {}}
+                        showTOC
+                    />
+                ) : null}
+            </Modal>
         </div>
     )
 }

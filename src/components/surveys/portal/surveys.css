@@ -206,3 +206,31 @@
 .svp-due {
     width: 100%;
 }
+
+/* A response window keeps a slim visible scrollbar: modals hide theirs
+   app-wide (src/index.css), but a long response needs to show where you are.
+   Phones keep the app's hidden scrollbars (touch scrolling shows position). */
+@media (min-width: 901px) {
+    /* auto, not thin: Chrome ignores the slim ::-webkit-scrollbar styling
+       below whenever scrollbar-width is set to anything else. */
+    .svp-response-modal .ant-modal-body {
+        scrollbar-width: auto;
+        -ms-overflow-style: auto;
+    }
+    @supports (-moz-appearance: none) {
+        .svp-response-modal .ant-modal-body {
+            scrollbar-width: thin;
+        }
+    }
+    .svp-response-modal .ant-modal-body::-webkit-scrollbar {
+        display: block;
+        width: 6px;
+    }
+    .svp-response-modal .ant-modal-body::-webkit-scrollbar-button {
+        display: none;
+    }
+    .svp-response-modal .ant-modal-body::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(127, 127, 127, 0.45);
+    }
+}

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import {
     Timestamp,
     collection,
+    doc,
+    getDoc,
     getDocs,
     onSnapshot,
     query,
@@ -164,12 +166,28 @@ export const toResponseQuestions = (fields: SurveyField[]) =>
         defaultValue: field.defaultValue
     }))
 
+const UNNAMED_COMPANY = 'Unnamed Company'
+
+/**
+ * A training SME's company name, the way the training pages title it: many
+ * enrollments keep the SME's name in `name` with `companyName` left empty.
+ */
+export const trainingCompanyName = (enrollment: { companyName?: unknown; name?: unknown }) =>
+    String(enrollment.companyName || '').trim() || String(enrollment.name || '').trim() || UNNAMED_COMPANY
+
+/**
+ * Copies sent by the original Surveys page carry one name, `name`, taken from
+ * the participant's beneficiaryName: that is the company, not a person, and
+ * there is no person's name to show.
+ */
+const isLegacyCopy = (data: any) => !data.companyName && !data.participantName && !!data.name
+
 const toRecipient = (id: string, data: any): SurveyRecipient => ({
     ...data,
     id,
     participantId: String(data.participantId || id),
-    participantName: data.participantName || data.name || 'Participant',
-    companyName: data.companyName || 'Unnamed Company',
+    participantName: isLegacyCopy(data) ? '' : data.participantName || data.name || 'Participant',
+    companyName: isLegacyCopy(data) ? String(data.name) : data.companyName || UNNAMED_COMPANY,
     email: data.email || '',
     group: data.group || '',
     completed: data.completed === true,
@@ -231,10 +249,54 @@ export const useSentSurveys = (departmentId?: string | null, programId?: string 
         return () => unsubscribes.forEach(unsubscribe => unsubscribe())
     }, [idsKey])
 
+    // Training copies sent before the company name was read correctly say
+    // "Unnamed Company"; their enrollment has the real name.
+    const [trainingCompanies, setTrainingCompanies] = useState<Record<string, string>>({})
+    const missingKey = useMemo(
+        () =>
+            Array.from(
+                new Set(
+                    Object.values(responsesByForm)
+                        .flat()
+                        .filter(r => (r as any).audience === 'training' && r.companyName === UNNAMED_COMPANY)
+                        .map(r => String((r as any).enrollmentId || ''))
+                        .filter(Boolean)
+                )
+            )
+                .sort()
+                .join('|'),
+        [responsesByForm]
+    )
+    useEffect(() => {
+        const ids = (missingKey ? missingKey.split('|') : []).filter(id => !(id in trainingCompanies))
+        if (!ids.length) return
+        let active = true
+        Promise.all(
+            ids.map(id =>
+                getDoc(doc(db, 'trainingEnrollments', id))
+                    .then(snap => [id, snap.exists() ? trainingCompanyName(snap.data()) : UNNAMED_COMPANY] as const)
+                    .catch(() => [id, UNNAMED_COMPANY] as const)
+            )
+        ).then(found => {
+            if (active) setTrainingCompanies(previous => ({ ...previous, ...Object.fromEntries(found) }))
+        })
+        return () => {
+            active = false
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [missingKey])
+
     const surveys = useMemo<SentSurvey[]>(
         () =>
             sentDocs.map(sent => {
-                const recipients = responsesByForm[sent.id] || []
+                const recipients = (responsesByForm[sent.id] || []).map(r => {
+                    if (r.companyName !== UNNAMED_COMPANY) return r
+                    const enrollmentId = String((r as any).enrollmentId || '')
+                    if (trainingCompanies[enrollmentId] && trainingCompanies[enrollmentId] !== UNNAMED_COMPANY) {
+                        return { ...r, companyName: trainingCompanies[enrollmentId] }
+                    }
+                    return r
+                })
                 return {
                     id: sent.id,
                     title: sent.title || 'Untitled Survey',
@@ -250,7 +312,7 @@ export const useSentSurveys = (departmentId?: string | null, programId?: string 
                     total: recipients.length
                 }
             }),
-        [sentDocs, responsesByForm]
+        [sentDocs, responsesByForm, trainingCompanies]
     )
 
     return { surveys, loading }
@@ -386,7 +448,7 @@ export type QuestionSummary = SummaryBase &
 
 const CHOICE_TYPES = new Set(['radio', 'select', 'checkbox', 'multiple'])
 
-const answerFor = (recipient: SurveyRecipient, field: SurveyField) => {
+export const answerFor = (recipient: SurveyRecipient, field: SurveyField) => {
     const answers = recipient.answers
     if (Array.isArray(answers)) {
         // Very old responses kept answers by position in their own copy.
@@ -454,4 +516,58 @@ export const summarizeQuestions = (recipients: SurveyRecipient[]): QuestionSumma
                     .reverse()
             }
         })
+}
+
+// ─────────────────────────────────────────────────────────────
+// A template's sending history
+// ─────────────────────────────────────────────────────────────
+
+export type TemplateSendSummary = {
+    /** How many times it was sent (separate sent surveys). */
+    count: number
+    lastSentAt: Date | null
+    responded: number
+    total: number
+}
+
+/** Per template id: how often it was sent and how those sends went. */
+export const sendSummaries = (surveys: SentSurvey[]): Map<string, TemplateSendSummary> => {
+    const byTemplate = new Map<string, TemplateSendSummary>()
+    surveys.forEach(survey => {
+        if (!survey.templateId) return
+        const current = byTemplate.get(survey.templateId) || { count: 0, lastSentAt: null, responded: 0, total: 0 }
+        const sentAt = toDate(survey.sentAt)
+        byTemplate.set(survey.templateId, {
+            count: current.count + 1,
+            lastSentAt: sentAt && (!current.lastSentAt || sentAt > current.lastSentAt) ? sentAt : current.lastSentAt,
+            responded: current.responded + survey.completed,
+            total: current.total + survey.total
+        })
+    })
+    return byTemplate
+}
+
+/**
+ * What a template's tag says. "Published" only means it may be sent, which
+ * reads as unsent; once it has gone out, its history is what matters.
+ */
+export const templateStatusOf = (
+    template: Pick<SurveyTemplate, 'status' | 'archived'>,
+    summary?: TemplateSendSummary
+): { label: string; color: string } => {
+    if (template.archived) return { label: 'Archived', color: 'warning' }
+    if (template.status !== 'published') return { label: 'Draft', color: 'default' }
+    if (summary?.count) return { label: summary.count > 1 ? `Sent ${summary.count} times` : 'Sent', color: 'processing' }
+    return { label: 'Ready to send', color: 'success' }
+}
+
+/** "Sent 17 Nov · 32/35 responded" or "Sent 2 times · last 17 Nov · 40/45 responded". */
+export const sendSummaryText = (summary?: TemplateSendSummary) => {
+    if (!summary?.count) return ''
+    const when = summary.lastSentAt ? dayjs(summary.lastSentAt).format('D MMM') : ''
+    const sent =
+        summary.count > 1
+            ? `Sent ${summary.count} times${when ? ` · last ${when}` : ''}`
+            : `Sent${when ? ` ${when}` : ''}`
+    return summary.total ? `${sent} · ${summary.responded}/${summary.total} responded` : sent
 }
