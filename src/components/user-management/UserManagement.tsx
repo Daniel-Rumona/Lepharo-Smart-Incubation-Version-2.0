@@ -581,33 +581,74 @@ export const UserManagement: React.FC = () => {
     useEffect(() => {
         setLoading(true)
 
+        const toUser = (d: any): User => {
+            const data = d.data() as any
+            return {
+                id: d.id,
+                ...data,
+                createdAt: data.createdAt?.toDate
+                    ? data.createdAt.toDate().toISOString()
+                    : typeof data.createdAt === 'string'
+                        ? data.createdAt
+                        : new Date().toISOString(),
+                status: data.status || 'Active',
+                assignedPrograms: Array.isArray(data.assignedPrograms)
+                    ? data.assignedPrograms
+                    : []
+            } as User
+        }
+
+        // With the persistent cache on, Firestore fires the first snapshot from
+        // whatever users docs happen to be cached (at least the signed-in
+        // user's own). Treating that as loaded hid the skeleton and showed a
+        // partial list and wrong totals until the server answered. So until the
+        // server has replied once, cache-only snapshots are held back and the
+        // skeleton stays up -- unless we're offline (the cache is all there is)
+        // or the server takes too long, in which case the cache is shown rather
+        // than a skeleton that never ends. includeMetadataChanges makes sure we
+        // still hear about the server sync when it changes nothing.
+        let synced = false
+        let pendingCache: User[] | null = null
+
+        const show = (list: User[]) => {
+            setUsers(list)
+            setLoading(false)
+        }
+
+        const fallback = window.setTimeout(() => {
+            if (!synced && pendingCache) {
+                synced = true
+                show(pendingCache)
+            }
+        }, 15000)
+
         const unsub = onSnapshot(
             collection(db, 'users'),
+            { includeMetadataChanges: true },
             snap => {
-                const list = snap.docs.map(d => {
-                    const data = d.data() as any
-                    return {
-                        id: d.id,
-                        ...data,
-                        createdAt: data.createdAt?.toDate
-                            ? data.createdAt.toDate().toISOString()
-                            : typeof data.createdAt === 'string'
-                                ? data.createdAt
-                                : new Date().toISOString(),
-                        status: data.status || 'Active',
-                        assignedPrograms: Array.isArray(data.assignedPrograms)
-                            ? data.assignedPrograms
-                            : []
-                    } as User
-                })
+                const list = snap.docs.map(toUser)
+                const offline =
+                    typeof navigator !== 'undefined' && navigator.onLine === false
 
-                setUsers(list)
-                setLoading(false)
+                if (!synced && snap.metadata.fromCache && !offline) {
+                    pendingCache = list
+                    return
+                }
+
+                synced = true
+                window.clearTimeout(fallback)
+                show(list)
             },
-            () => setLoading(false)
+            () => {
+                window.clearTimeout(fallback)
+                setLoading(false)
+            }
         )
 
-        return () => unsub()
+        return () => {
+            window.clearTimeout(fallback)
+            unsub()
+        }
     }, [])
 
     // open modal for create/edit
@@ -1271,17 +1312,21 @@ export const UserManagement: React.FC = () => {
     }
 
     // ====== SCOPED DATA (drives both table and metrics) ======
-    const visibleUsers = users.filter(u => canSeeUser(user, u))
+    // Memoised so the totals and search memos below don't recompute over the
+    // whole users collection on every keystroke and re-render.
+    const domainFilteredUsers = React.useMemo(() => {
+        const visibleUsers = users.filter(u => canSeeUser(user, u))
 
-    const scopedUsers = isAdmin(user)
-        ? visibleUsers
-        : isMainDepartmentUser
-            ? visibleUsers.filter(u => !isIncubateeUser(u))
-            : visibleUsers
+        const scopedUsers = isAdmin(user)
+            ? visibleUsers
+            : isMainDepartmentUser
+                ? visibleUsers.filter(u => !isIncubateeUser(u))
+                : visibleUsers
 
-    const domainFilteredUsers = scopedUsers.filter(
-        u => !shouldHideRow(user, u.email)
-    )
+        return scopedUsers.filter(u => !shouldHideRow(user, u.email))
+        // canSeeUser reads these through its closure.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [users, user, isMainDepartmentUser, isMainCenterCoordinator, assignableRoles])
 
     const visibleAssignableRoles = React.useMemo(() => {
         // hard guard: admin should **never** see an empty list

@@ -59,6 +59,7 @@ import { applyHighchartsTheme } from "@/lib/highchartsTheme";
 // ───────────────────────────────────────────────────────────
 import { CustomLayout } from "@/components/layout";
 import { RouteFallback } from "@/components/layout/RouteFallback";
+import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import ApplicantLayout from "./components/ApplicantLayout";
 import { useIdentity } from "@/contexts/IdentityContext";
 
@@ -288,7 +289,7 @@ const WellnessResponsesPage = lazy(() => import("./routes/coordinator/interventi
 
 const SystemAdminOnlyRoute = () => {
     const { actor, loading } = useIdentity();
-    if (loading) return null;
+    if (loading) return <PageSkeleton variant="list" />;
 
     const role = String(actor?.role || "").toLowerCase();
     return role === "system_admin" ? (

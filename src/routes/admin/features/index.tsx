@@ -143,9 +143,9 @@ const ROLES = [
 const ROLE_LABELS: Record<string, string> = {
   system_admin: "System Admin",
   director: "Director",
-  operations: "Heads Of Departments",
-  headofdepartment: "Heads Of Departments",
-  headsofdepartment: "Heads Of Departments",
+  operations: "Head Of Department",
+  headofdepartment: "Head Of Department",
+  headsofdepartment: "Head Of Department",
   coordinator: "Coordinator",
   projectadmin: "Center Coordinator",
   receptionist: "Receptionist",

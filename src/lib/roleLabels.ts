@@ -1,6 +1,6 @@
 /** Display names for stored role keys, shared by the account menu and settings. */
 const ROLE_LABELS: Record<string, string> = {
-    operations: 'Heads Of Departments',
+    operations: 'Head Of Department',
     coordinator: 'Project Coordinator',
     projectadmin: 'Center Coordinator',
     incubatee: 'SME',
@@ -11,8 +11,8 @@ const ROLE_LABELS: Record<string, string> = {
     system_admin: 'System Admin',
     employee: 'Employee',
     government: 'Government',
-    headsofdepartment: 'Heads Of Departments',
-    hod: 'Heads Of Departments',
+    headsofdepartment: 'Head Of Department',
+    hod: 'Head Of Department',
     center_coordinator: 'Center Coordinator'
 }
 

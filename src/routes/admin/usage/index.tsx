@@ -127,6 +127,16 @@ const tallyActions = (visits: Visit[]): ActionStat[] => {
     return [...counts.values()].sort((a, b) => b.count - a.count)
 }
 
+/**
+ * Routes that render a different screen per department, so their <title>
+ * depends on who visited (e.g. /operations/reports is "ROM Reports" for the ROM
+ * department and "HR Reports" for HR). Naming the row after the most common
+ * title would label the whole route after one department.
+ */
+const SHARED_PAGE_LABELS: Record<string, string> = {
+    '/operations/reports': 'Department Reports'
+}
+
 /** The title seen most often for a page; titles vary while a page loads. */
 const commonTitle = (visits: Visit[]) => {
     const counts = new Map<string, number>()
@@ -293,7 +303,9 @@ const UsageStatistics: React.FC = () => {
 
     const pageLabels = useMemo(() => {
         const map = new Map<string, string>()
-        groupBy(visits, v => v.page).forEach((rows, page) => map.set(page, commonTitle(rows) || routeLabel(page)))
+        groupBy(visits, v => v.page).forEach((rows, page) =>
+            map.set(page, SHARED_PAGE_LABELS[page] || commonTitle(rows) || routeLabel(page))
+        )
         return map
     }, [visits])
 
